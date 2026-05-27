@@ -1,0 +1,13 @@
+package com.sy.mapper.game;
+
+import com.baomidou.mybatisplus.core.mapper.BaseMapper;
+import com.sy.model.game.EqCharactersRecord;
+import org.apache.ibatis.annotations.Mapper;
+
+import java.util.List;
+
+@Mapper
+public interface EqCharactersRecordMapper extends BaseMapper<EqCharactersRecord> {
+    EqCharactersRecord getEquipmentNew();
+    List<EqCharactersRecord> getEquipmentList();
+}
