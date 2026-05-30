@@ -2187,10 +2187,15 @@ public class GameServiceServiceImpl implements GameServiceService {
 
         LevelUpResult result = this.calculateLevelUp(mainLevel, mainExp, materials, expTable, silverTable, maxLevel, token.getId());
 
-
         for (Map.Entry<String, Integer> entry : myMap.entrySet()) {
             EqCharacters characters = eqCharactersMapper.listById(token.getUserId(), entry.getKey());
-            characters.setIsDelete("1");
+            if (characters.getStackCount() - entry.getValue() >= 0) {
+                characters.setStackCount(characters.getStackCount() - entry.getValue());
+                characters.setLv(1);
+                characters.setExp(5);
+            } else {
+                characters.setIsDelete("1");
+            }
             eqCharactersMapper.updateByPrimaryKey(characters);
         }
         EqCharacters characters = eqCharactersMapper.listById(token.getUserId(), token.getId());
@@ -6818,10 +6823,12 @@ public class GameServiceServiceImpl implements GameServiceService {
             // ================== 优化后 ==================
             BigDecimal addExp = new BigDecimal(50).multiply(new BigDecimal(num));
             BigDecimal exp = user.getExp().add(addExp);
-
+            // 定义 lv 并默认赋值，防止空指针
+            BigDecimal lv = BigDecimal.ZERO;
             if (exp.compareTo(BigDecimal.valueOf(1000)) >= 0) {
                 // 安全取整（不足1=0，不会有小数）
-                BigDecimal lv = exp.divide(BigDecimal.valueOf(1000), 0, RoundingMode.DOWN);
+                // 安全取整
+                lv = exp.divide(BigDecimal.valueOf(1000), 0, RoundingMode.DOWN);
                 // 计算剩余经验
                 user.setExp(exp.subtract(BigDecimal.valueOf(1000).multiply(lv)));
 
@@ -7373,14 +7380,26 @@ public class GameServiceServiceImpl implements GameServiceService {
                             charactersMapper.insert(characters);
                         }
                     } else if ("7".equals(content.getRewardType() + "")) {
-                        //装备
-                        EqCharacters characters = new EqCharacters();
-                        characters.setStackCount(0);
-                        characters.setId(content.getItemId()+"");
-                        characters.setLv(1);
-                        characters.setUserId(Integer.parseInt(userId));
-                        characters.setMaxLv(1);
-                        eqCharactersMapper.insert(characters);
+                        EqCharacters characters1 = eqCharactersMapper.listById2(userId, content.getItemId() + "");
+                        if (characters1 != null) {
+                            characters1.setStackCount(characters1.getStackCount() + content.getRewardAmount());
+                            eqCharactersMapper.updateByPrimaryKey(characters1);
+                        } else {
+                            EqCard card = eqCardMapper.selectByid(content.getItemId() + "");
+                            if (card == null) {
+                                baseResp.setErrorMsg("服务器异常联想管理员");
+                                baseResp.setSuccess(0);
+                                return baseResp;
+                            }
+                            EqCharacters characters = new EqCharacters();
+                            characters.setStackCount(content.getRewardAmount() - 1);
+                            characters.setId(content.getItemId() + "");
+                            characters.setLv(1);
+                            characters.setUserId(Integer.parseInt(userId));
+                            characters.setStar(new BigDecimal(1));
+                            characters.setMaxLv(1);
+                            eqCharactersMapper.insert(characters);
+                        }
                     } else  if ("5".equals(content.getRewardType() + "") || "6".equals(content.getRewardType() + "")) {
                         //物品
                         Map itemMap = new HashMap();

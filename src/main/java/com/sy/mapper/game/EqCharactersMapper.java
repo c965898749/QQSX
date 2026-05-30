@@ -11,6 +11,7 @@ import java.util.List;
 @Mapper
 public interface EqCharactersMapper extends BaseMapper<EqCharacters> {
     EqCharacters listById(@Param("userId") String userId, @Param("id") String id);
+    EqCharacters listById2(@Param("userId") String userId, @Param("id") String id);
 
     List<EqCharacters> listByGoOn(@Param("userId") String userId, @Param("id") String id);
 
