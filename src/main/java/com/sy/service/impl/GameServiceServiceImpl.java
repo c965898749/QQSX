@@ -2744,7 +2744,7 @@ public class GameServiceServiceImpl implements GameServiceService {
 
     @Override
     @Transactional
-    @NoRepeatSubmit(limitSeconds = 5)
+    @NoRepeatSubmit(limitSeconds = 1)
     public BaseResp getStore(TokenDto token, HttpServletRequest request) throws Exception {
         BaseResp baseResp = new BaseResp();
         if (token == null || Xtool.isNull(token.getToken())) {
