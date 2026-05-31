@@ -156,6 +156,8 @@ public class GameServiceServiceImpl implements GameServiceService {
     private DailyViewContentMapper dailyViewContentMapper;
     @Autowired
     private DailyViewRecordMapper dailyViewRecordMapper;
+    @Autowired
+    private CraftMapper craftMapper;
     // 最大体力值
     private static final int MAX_STAMINA = 720;
     // 每10分钟恢复1点体力
@@ -2761,7 +2763,165 @@ public class GameServiceServiceImpl implements GameServiceService {
             baseResp.setErrorMsg("登录过期");
             return baseResp;
         }
-        return null;
+        List<Craft> craftList=craftMapper.selectList(new LambdaQueryWrapper<>());
+        String itemIds=craftList.stream().map(Craft::getItemIdId).map(String::valueOf).collect(Collectors.joining(","));
+        List<GamePlayerBag> itemBaseList = gamePlayerBagMapper.goIntoListByIdAndItemIds(userId, itemIds);
+        baseResp.setSuccess(1);
+        baseResp.setData(itemBaseList);
+        baseResp.setErrorMsg("成功");
+        return baseResp;
+    }
+
+    @Override
+    @Transactional
+    @NoRepeatSubmit(limitSeconds = 1)
+    public BaseResp hechenCailiao(TokenDto token, HttpServletRequest request) throws Exception {
+        BaseResp baseResp = new BaseResp();
+        if (token == null || Xtool.isNull(token.getToken())) {
+            baseResp.setSuccess(0);
+            baseResp.setErrorMsg("登录过期");
+            return baseResp;
+        }
+        String userId = token.getUserId();
+//        String userId = (String) redisTemplate.opsForValue().get(token.getToken());
+        if (Xtool.isNull(userId)) {
+            baseResp.setSuccess(0);
+            baseResp.setErrorMsg("登录过期");
+            return baseResp;
+        }
+        if (Xtool.isNull(token.getId())) {
+            baseResp.setSuccess(0);
+            baseResp.setErrorMsg("请选择合成素材");
+            return baseResp;
+        }
+        List<Craft> craftList=craftMapper.selectList(new LambdaQueryWrapper<Craft>()
+                .eq(Craft::getItemIdId, token.getId()));
+        if (Xtool.isNull(craftList)) {
+            baseResp.setSuccess(0);
+            baseResp.setErrorMsg("素材暂无开发合成");
+            return baseResp;
+        }
+        Craft craft=craftList.get(0);
+        GamePlayerBag playerBag=gamePlayerBagMapper.goIntoListByIdAndItemId(userId, craft.getItemIdId());
+        if (playerBag==null){
+            baseResp.setSuccess(0);
+            baseResp.setErrorMsg("合成素材不足");
+            return baseResp;
+        }
+        if (playerBag.getItemCount()<craft.getMaterialCount()){
+            baseResp.setSuccess(0);
+            baseResp.setErrorMsg("合成素材不足");
+            return baseResp;
+        }
+
+        
+        if (playerBag.getItemCount() - craft.getMaterialCount() > 0) {
+            playerBag.setItemCount(playerBag.getItemCount() - craft.getMaterialCount());
+            baseResp.setData(playerBag.getItemCount());
+        } else {
+            playerBag.setIsDelete("1");
+            baseResp.setData(0);
+        }
+        gamePlayerBagMapper.updateById(playerBag);
+        
+        // 获得 multiple 个目标物品
+        List<GamePlayerBag> playerBagList = gamePlayerBagMapper.selectList(new LambdaQueryWrapper<GamePlayerBag>()
+                .eq(GamePlayerBag::getItemId, craft.getTargetId())
+                .eq(GamePlayerBag::getUserId, userId)
+                .eq(GamePlayerBag::getIsDelete, "0"));
+        if (Xtool.isNotNull(playerBagList)) {
+            GamePlayerBag bag = playerBagList.get(0);
+            bag.setItemCount(bag.getItemCount() + 1);
+            gamePlayerBagMapper.updateById(bag);
+        } else {
+            GamePlayerBag bag = new GamePlayerBag();
+            bag.setUserId(Integer.parseInt(userId));
+            bag.setItemCount(1);
+            bag.setGridIndex(1);
+            bag.setItemId(craft.getTargetId());
+            gamePlayerBagMapper.insert(bag);
+        }
+        baseResp.setSuccess(1);
+        baseResp.setData(playerBag.getItemCount());
+        baseResp.setErrorMsg("成功");
+        return baseResp;
+    }
+
+    @Override
+    @Transactional
+    @NoRepeatSubmit(limitSeconds = 1)
+    public BaseResp yhechenCailiao(TokenDto token, HttpServletRequest request) throws Exception {
+        BaseResp baseResp = new BaseResp();
+        if (token == null || Xtool.isNull(token.getToken())) {
+            baseResp.setSuccess(0);
+            baseResp.setErrorMsg("登录过期");
+            return baseResp;
+        }
+        String userId = token.getUserId();
+//        String userId = (String) redisTemplate.opsForValue().get(token.getToken());
+        if (Xtool.isNull(userId)) {
+            baseResp.setSuccess(0);
+            baseResp.setErrorMsg("登录过期");
+            return baseResp;
+        }
+        if (Xtool.isNull(token.getId())) {
+            baseResp.setSuccess(0);
+            baseResp.setErrorMsg("请选择合成素材");
+            return baseResp;
+        }
+        List<Craft> craftList=craftMapper.selectList(new LambdaQueryWrapper<Craft>()
+                .eq(Craft::getItemIdId, token.getId()));
+        if (Xtool.isNull(craftList)) {
+            baseResp.setSuccess(0);
+            baseResp.setErrorMsg("素材暂无开发合成");
+            return baseResp;
+        }
+        Craft craft=craftList.get(0);
+        GamePlayerBag playerBag=gamePlayerBagMapper.goIntoListByIdAndItemId(userId, craft.getItemIdId());
+        if (playerBag==null){
+            baseResp.setSuccess(0);
+            baseResp.setErrorMsg("合成素材不足");
+            return baseResp;
+        }
+        if (playerBag.getItemCount()<craft.getMaterialCount()){
+            baseResp.setSuccess(0);
+            baseResp.setErrorMsg("合成素材不足");
+            return baseResp;
+        }
+        // 计算playerBag.getItemCount()被craft.getMaterialCount()整除的倍数
+        int multiple = playerBag.getItemCount() / craft.getMaterialCount();
+        int totalMaterialUsed = multiple * craft.getMaterialCount();
+        
+        if (playerBag.getItemCount() - totalMaterialUsed > 0) {
+            playerBag.setItemCount(playerBag.getItemCount() - totalMaterialUsed);
+            baseResp.setData(playerBag.getItemCount());
+        } else {
+            playerBag.setIsDelete("1");
+            baseResp.setData(0);
+        }
+        gamePlayerBagMapper.updateById(playerBag);
+        
+        // 获得 multiple 个目标物品
+        List<GamePlayerBag> playerBagList = gamePlayerBagMapper.selectList(new LambdaQueryWrapper<GamePlayerBag>()
+                .eq(GamePlayerBag::getItemId, craft.getTargetId())
+                .eq(GamePlayerBag::getUserId, userId)
+                .eq(GamePlayerBag::getIsDelete, "0"));
+        if (Xtool.isNotNull(playerBagList)) {
+            GamePlayerBag bag = playerBagList.get(0);
+            bag.setItemCount(bag.getItemCount() + multiple);
+            gamePlayerBagMapper.updateById(bag);
+        } else {
+            GamePlayerBag bag = new GamePlayerBag();
+            bag.setUserId(Integer.parseInt(userId));
+            bag.setItemCount(multiple);
+            bag.setGridIndex(1);
+            bag.setItemId(craft.getTargetId());
+            gamePlayerBagMapper.insert(bag);
+        }
+        baseResp.setSuccess(1);
+        baseResp.setData(playerBag.getItemCount());
+        baseResp.setErrorMsg("成功");
+        return baseResp;
     }
 
     @Override

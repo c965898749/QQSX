@@ -1664,4 +1664,32 @@ public class GameContoller {
             return baseResp;
         }
     }
+
+    @PostMapping("hechenCailiao")
+    @CrossOrigin
+    public BaseResp hechenCailiao(@RequestBody TokenDto token, HttpServletRequest request) {
+        BaseResp baseResp = new BaseResp();
+        try {
+            baseResp = gameServiceService.hechenCailiao(token, request);
+            return baseResp;
+        } catch (Exception e) {
+            e.printStackTrace();
+            baseResp.setSuccess(0);
+            return baseResp;
+        }
+    }
+
+    @PostMapping("yhechenCailiao")
+    @CrossOrigin
+    public BaseResp yhechenCailiao(@RequestBody TokenDto token, HttpServletRequest request) {
+        BaseResp baseResp = new BaseResp();
+        try {
+            baseResp = gameServiceService.yhechenCailiao(token, request);
+            return baseResp;
+        } catch (Exception e) {
+            e.printStackTrace();
+            baseResp.setSuccess(0);
+            return baseResp;
+        }
+    }
 }

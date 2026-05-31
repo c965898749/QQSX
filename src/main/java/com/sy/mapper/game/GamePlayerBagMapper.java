@@ -13,5 +13,6 @@ import java.util.List;
 public interface GamePlayerBagMapper extends BaseMapper<GamePlayerBag> {
     List<GamePlayerBag> goIntoListById(@Param("userId")String userId);
     GamePlayerBag goIntoListByIdAndItemId(@Param("userId")String userId,@Param("itemId")Integer itemId);
+    List<GamePlayerBag> goIntoListByIdAndItemIds(@Param("userId")String userId,@Param("itemIds")String itemIds);
 
 }

@@ -4,11 +4,8 @@
         "http://mybatis.org/dtd/mybatis-generator-config_1_0.dtd">
 
 <generatorConfiguration>
-    <!--导入属性配置-->
-    <properties resource="db.properties"></properties>
-
     <!--指定特定数据库的jdbc驱动jar包的位置-->
-    <classPathEntry location="${db.driverLocation}"/>
+    <classPathEntry location="E:\Maven\repository\com\mysql\mysql-connector-j\8.0.33\mysql-connector-j-8.0.33.jar"/>
 
     <context id="default" targetRuntime="MyBatis3">
 
@@ -20,10 +17,10 @@
 
         <!--jdbc的数据库连接 -->
         <jdbcConnection
-                driverClass="${db_driver}"
-                connectionURL="${db_url}"
-                userId="${db_username}"
-                password="${db_password}">
+                driverClass="com.mysql.cj.jdbc.Driver"
+                connectionURL="jdbc:mysql://192.168.0.104:3307/yimem?useUnicode=true&amp;characterEncoding=utf8&amp;allowMultiQueries=true&amp;serverTimezone=Asia/Shanghai"
+                userId="root"
+                password="c866971331@C">
         </jdbcConnection>
 
 
@@ -66,7 +63,7 @@
         <!--<table tableName="bns_ce_change_yanshou_info" domainObjectName="BnsCeChangeYanshouInfo" enableCountByExample="false" enableUpdateByExample="false" enableDeleteByExample="false" enableSelectByExample="false" selectByExampleQueryId="false"></table>-->
         <!--<table tableName="bns_ce_data_change_info" domainObjectName="BnsCeDataChangeInfo" enableCountByExample="false" enableUpdateByExample="false" enableDeleteByExample="false" enableSelectByExample="false" selectByExampleQueryId="false"></table>-->
 <!--        <table tableName="user" domainObjectName="cUser" enableCountByExample="false" enableUpdateByExample="false" enableDeleteByExample="false" enableSelectByExample="false" selectByExampleQueryId="false"></table>-->
-        <table tableName="daily_view_finsh" domainObjectName="DailyViewFinsh" enableCountByExample="false" enableUpdateByExample="false" enableDeleteByExample="false" enableSelectByExample="false" selectByExampleQueryId="false"></table>
+        <table tableName="craft" domainObjectName="Craft" enableCountByExample="false" enableUpdateByExample="false" enableDeleteByExample="false" enableSelectByExample="false" selectByExampleQueryId="false"></table>
 
         <!-- <table tableName="proc_business" domainObjectName="ProcBusiness" enableCountByExample="false" enableUpdateByExample="false" enableDeleteByExample="false" enableSelectByExample="false" selectByExampleQueryId="false"></table>
         <table tableName="proc_business_transinnew" domainObjectName="ProcBusinessTransInNew" enableCountByExample="false" enableUpdateByExample="false" enableDeleteByExample="false" enableSelectByExample="false" selectByExampleQueryId="false"></table>
