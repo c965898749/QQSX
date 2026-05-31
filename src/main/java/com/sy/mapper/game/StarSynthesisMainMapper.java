@@ -9,9 +9,7 @@ import org.apache.ibatis.annotations.Param;
 import java.util.List;
 @Mapper
 public interface StarSynthesisMainMapper extends BaseMapper<StarSynthesisMain> {
-//    int insert(StarSynthesisMain record);
-//
-//    int insertSelective(StarSynthesisMain record);
+
 
     List<StarSynthesisMain> selectAll();
 }

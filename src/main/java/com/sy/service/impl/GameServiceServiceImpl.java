@@ -9,7 +9,6 @@ import com.sy.mapper.game.*;
 import com.sy.mapper.UserMapper;
 import com.sy.model.DailyContentVO;
 import com.sy.model.DailyListItemVO;
-import com.sy.model.PaymentRecord;
 import com.sy.model.User;
 import com.sy.model.game.*;
 import com.sy.model.game.Character;
@@ -2745,6 +2744,24 @@ public class GameServiceServiceImpl implements GameServiceService {
         baseResp.setSuccess(1);
         baseResp.setErrorMsg("领取成功");
         return baseResp;
+    }
+
+    @Override
+    public BaseResp cailiao(TokenDto token, HttpServletRequest request) throws Exception {
+        BaseResp baseResp = new BaseResp();
+        if (token == null || Xtool.isNull(token.getToken())) {
+            baseResp.setSuccess(0);
+            baseResp.setErrorMsg("登录过期");
+            return baseResp;
+        }
+        String userId = token.getUserId();
+//        String userId = (String) redisTemplate.opsForValue().get(token.getToken());
+        if (Xtool.isNull(userId)) {
+            baseResp.setSuccess(0);
+            baseResp.setErrorMsg("登录过期");
+            return baseResp;
+        }
+        return null;
     }
 
     @Override

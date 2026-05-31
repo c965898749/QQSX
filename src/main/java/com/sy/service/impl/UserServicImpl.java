@@ -1,40 +1,26 @@
 package com.sy.service.impl;
 
-import cn.hutool.core.util.IdUtil;
-import cn.hutool.json.JSONUtil;
-import com.github.pagehelper.Page;
-import com.github.pagehelper.PageHelper;
-import com.sy.expection.CsdnExpection;
+
 import com.sy.mapper.*;
 import com.sy.model.*;
 import com.sy.model.resp.BaseResp;
 import com.sy.service.UserServic;
 import com.sy.tool.*;
-import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.RedisTemplate;
-import org.springframework.data.redis.core.ValueOperations;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.DigestUtils;
-import org.springframework.web.bind.annotation.RequestMapping;
-
-import javax.servlet.http.HttpServletRequest;
-import java.text.SimpleDateFormat;
 import java.util.ArrayList;
-import java.util.Date;
 import java.util.List;
-import java.util.concurrent.TimeUnit;
 
 @Service
 @Transactional(readOnly = true)
 public class UserServicImpl implements UserServic {
     @Autowired
     private UserMapper userMapper;
-    @Autowired
-    private InformationMapper informationMapper;
+
     @Autowired
     public RedisTemplate redisTemplate;
 
