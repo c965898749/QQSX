@@ -9,6 +9,8 @@ public interface GameFightMapper {
 
     int deleteByTime();
 
+    int deleteByTimeBatch();
+
     int insert(GameFight record);
 
     int insertSelective(GameFight record);

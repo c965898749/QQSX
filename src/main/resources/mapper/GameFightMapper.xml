@@ -35,6 +35,16 @@
         DELETE FROM game_fight
         WHERE createtime &lt; DATE_SUB(NOW(), INTERVAL 1 WEEK);
     </delete>
+    <delete id="deleteByTimeBatch">
+        DELETE FROM game_fight
+        WHERE id IN (
+            SELECT id FROM (
+                SELECT id FROM game_fight
+                WHERE createtime &lt; DATE_SUB(NOW(), INTERVAL 1 WEEK)
+                LIMIT 1000
+            ) AS tmp
+        )
+    </delete>
     <delete id="deleteByPrimaryKey" parameterType="java.lang.Integer">
     delete from game_fight
     where id = #{id,jdbcType=INTEGER}
