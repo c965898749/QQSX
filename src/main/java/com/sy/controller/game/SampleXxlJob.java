@@ -53,8 +53,7 @@ public class SampleXxlJob {
     /**
      * 每天定时清除游戏过多消息
      */
-//    @Scheduled(cron = "0 0 1 * * ?")
-    @Scheduled(cron = "0 0/2 * * * ?")
+    @Scheduled(cron = "0 0 1 * * ?")
     public  void pushsite() {
         userMapper.updateBronze1();
         userMapper.updateBronze2();
