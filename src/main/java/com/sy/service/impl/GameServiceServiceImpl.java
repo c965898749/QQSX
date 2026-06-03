@@ -6119,7 +6119,14 @@ public class GameServiceServiceImpl implements GameServiceService {
             pveReward.setRewardType("1");
             pveRewards.add(pveReward);
         }
-
+        int count = 0;
+        // 循环 100 层
+        for (int i = 0; i < 100; i++) {
+            // 每层判断是否触发 20% 概率
+            if (ProbabilityBooleanUtils.randomByProbability(0.2)) {
+                count++;
+            }
+        }
         if ("bronzetower".equals(token.getStr())) {
             user.setBronze1(101);
             PveReward pveReward = new PveReward();
@@ -6130,6 +6137,14 @@ public class GameServiceServiceImpl implements GameServiceService {
             pveReward.setRewardAmount(2000);
             pveReward.setRewardType("6");
             pveRewards.add(pveReward);
+            if (count > 0){
+                PveReward pveReward2 = new PveReward();
+                pveReward2.setItemId(17000107);
+                pveReward2.setRewardAmount(count);
+                pveReward2.setRewardType("7");
+                pveReward2.setItemName("下级铸魂石");
+                pveRewards.add(pveReward2);
+            }
             dailyViewFinsh(userId,"qingtong_code");
         }
         if ("silvertower".equals(token.getStr())) {
@@ -6142,6 +6157,14 @@ public class GameServiceServiceImpl implements GameServiceService {
             pveReward.setRewardAmount(1000);
             pveReward.setRewardType("6");
             pveRewards.add(pveReward);
+            if (count > 0){
+                PveReward pveReward2 = new PveReward();
+                pveReward2.setItemId(17000108);
+                pveReward2.setRewardAmount(count);
+                pveReward2.setItemName("中级铸魂石");
+                pveReward2.setRewardType("7");
+                pveRewards.add(pveReward2);
+            }
             dailyViewFinsh(userId,"baiying_code");
         }
         if ("goldentower".equals(token.getStr())) {
@@ -6154,6 +6177,14 @@ public class GameServiceServiceImpl implements GameServiceService {
             pveReward.setRewardAmount(500);
             pveReward.setRewardType("6");
             pveRewards.add(pveReward);
+            if (count > 0){
+                PveReward pveReward2 = new PveReward();
+                pveReward2.setItemId(17000109);
+                pveReward2.setRewardAmount(count);
+                pveReward2.setItemName("高级铸魂石");
+                pveReward2.setRewardType("7");
+                pveRewards.add(pveReward2);
+            }
             dailyViewFinsh(userId,"huanjing_code");
         }
         for (PveReward content : pveRewards) {
@@ -6202,6 +6233,27 @@ public class GameServiceServiceImpl implements GameServiceService {
                     playerBag.setGridIndex(1);
                     playerBag.setItemId(content.getItemId());
                     gamePlayerBagMapper.insert(playerBag);
+                }
+            }else if ("7".equals(content.getRewardType() + "")) {
+                EqCharacters characters1 = eqCharactersMapper.listById2(userId, content.getItemId() + "");
+                if (characters1 != null) {
+                    characters1.setStackCount(characters1.getStackCount() + content.getRewardAmount());
+                    eqCharactersMapper.updateByPrimaryKey(characters1);
+                } else {
+                    EqCard card = eqCardMapper.selectByid(content.getItemId() + "");
+                    if (card == null) {
+                        baseResp.setErrorMsg("服务器异常联想管理员");
+                        baseResp.setSuccess(0);
+                        return baseResp;
+                    }
+                    EqCharacters characters = new EqCharacters();
+                    characters.setStackCount(content.getRewardAmount() - 1);
+                    characters.setId(content.getItemId() + "");
+                    characters.setLv(1);
+                    characters.setUserId(Integer.parseInt(userId));
+                    characters.setStar(new BigDecimal(1));
+                    characters.setMaxLv(1);
+                    eqCharactersMapper.insert(characters);
                 }
             }
         }
