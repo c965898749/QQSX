@@ -10,9 +10,8 @@ import com.sy.model.game.CeremonialGiftRecord;
 import com.sy.model.game.DailyViewFinsh;
 import com.sy.model.game.GameNotice;
 import com.sy.service.GameServiceService;
-import com.xxl.job.core.context.XxlJobHelper;
-import com.xxl.job.core.handler.annotation.XxlJob;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 
@@ -48,54 +47,15 @@ public class SampleXxlJob {
     @Autowired
     private CeremonialGiftRecordMapper giftRecordMapper;
 
-    /**
-     * 1、简单任务示例（Bean模式）
-     */
-    @XxlJob("demoJobHandler")
-    public void demoJobHandler() throws Exception {
-        System.out.println("XXL-JOB, Hello World.");
-        for (int i = 0; i < 5; i++) {
-            XxlJobHelper.log("beat at:" + i);
-            TimeUnit.SECONDS.sleep(2);
-        }
-        // default success
-    }
+
+
 
     /**
      * 每天定时清除游戏过多消息
      */
-    @XxlJob("ClearExcessiveGameMessagesDaily")
+//    @Scheduled(cron = "0 0 1 * * ?")
+    @Scheduled(cron = "0 0/2 * * * ?")
     public  void pushsite() {
-        // 分批删除游戏战斗记录，避免超时
-        int totalDeleted = 0;
-        int deletedCount;
-        do {
-            deletedCount = gameFightMapper.deleteByTimeBatch();
-            totalDeleted += deletedCount;
-            XxlJobHelper.log("本次删除游戏战斗记录: " + deletedCount + " 条，累计删除: " + totalDeleted + " 条");
-        } while (deletedCount > 0);
-        
-        // 清理7天前的游戏公告
-        Calendar calendar = Calendar.getInstance();
-        calendar.add(Calendar.DAY_OF_MONTH, -7);
-        Date sevenDaysAgo = calendar.getTime();
-        QueryWrapper<GameNotice> noticeWrapper = new QueryWrapper<>();
-        noticeWrapper.lt("create_time", sevenDaysAgo);
-        int noticeDeleted = gameNoticeMapper.delete(noticeWrapper);
-        XxlJobHelper.log("删除7天前的游戏公告: " + noticeDeleted + " 条");
-        
-        // 清理7天前的每日视图完成记录
-        QueryWrapper<DailyViewFinsh> dailyViewWrapper = new QueryWrapper<>();
-        dailyViewWrapper.lt("get_time", sevenDaysAgo);
-        int dailyViewDeleted = dailyViewFinshMapper.delete(dailyViewWrapper);
-        XxlJobHelper.log("删除7天前的每日视图完成记录: " + dailyViewDeleted + " 条");
-        
-        // 清理7天前的礼仪礼品记录
-        QueryWrapper<CeremonialGiftRecord> giftRecordWrapper = new QueryWrapper<>();
-        giftRecordWrapper.lt("get_time", sevenDaysAgo);
-        int giftRecordDeleted = giftRecordMapper.delete(giftRecordWrapper);
-        XxlJobHelper.log("删除7天前的礼仪礼品记录: " + giftRecordDeleted + " 条");
-        
         userMapper.updateBronze1();
         userMapper.updateBronze2();
         userMapper.updateBronze3();
@@ -103,14 +63,31 @@ public class SampleXxlJob {
         userMapper.updatechongzhiTower();
         userMapper.updatechongzhiQiangduo();
         userMapper.updatebaoCount();
-        XxlJobHelper.log("清理任务完成，共删除游戏战斗记录: " + totalDeleted + " 条");
+        QueryWrapper<GameNotice> noticeWrapper = new QueryWrapper<>();
+        gameNoticeMapper.delete(noticeWrapper);
+
+        // 清理7天前的每日视图完成记录
+        QueryWrapper<DailyViewFinsh> dailyViewWrapper = new QueryWrapper<>();
+        dailyViewFinshMapper.delete(dailyViewWrapper);
+
+        // 清理7天前的礼仪礼品记录
+        QueryWrapper<CeremonialGiftRecord> giftRecordWrapper = new QueryWrapper<>();
+        giftRecordMapper.delete(giftRecordWrapper);
+        // 分批删除游戏战斗记录，避免超时
+        int totalDeleted = 0;
+        int deletedCount;
+        do {
+            deletedCount = gameFightMapper.deleteByTimeBatch();
+            totalDeleted += deletedCount;
+        } while (deletedCount > 0);
+        System.out.println("删除完成，共删除: " + totalDeleted + " 条");
     }
-    @XxlJob("DeleteAllCraftingRecords")
+    @Scheduled(cron = "0 0 0/4 * * ?")
     public void deleteAll(){
         gameServiceService.deleteAll();
     }
 
-    @XxlJob("Reward Distribution")
+    @Scheduled(cron = "0 0 22 ? * 7")
     public void executeWeeklyTask() {
         // 任务逻辑
         System.out.println("奖励发放");
@@ -118,13 +95,13 @@ public class SampleXxlJob {
 
     }
 
-    @XxlJob("SyncLastWeekRankings")
+    @Scheduled(cron = "0 0 1 1 * ?")
     public void executeMothlyTask() {
         gameServiceService.executeMothlyTask();
     }
 
 
-    @XxlJob("AutoReleaseAgentRewards")
+    @Scheduled(cron = "0 0 0 ? * 2")
     public void executeTaskAtMondayMidnight() {
         // 任务逻辑
         System.out.println("游戏托自动释放奖励");
