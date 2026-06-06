@@ -1692,4 +1692,19 @@ public class GameContoller {
             return baseResp;
         }
     }
+
+    //发送邮箱验证码
+    @PostMapping("sendVerificationCode")
+    @CrossOrigin
+    public BaseResp emilcode(@RequestBody TokenDto token, HttpServletRequest request) {
+        BaseResp baseResp = new BaseResp();
+        try {
+            baseResp = gameServiceService.emailManage(token, request);
+            return baseResp;
+        } catch (Exception e) {
+            e.printStackTrace();
+            baseResp.setSuccess(0);
+            return baseResp;
+        }
+    }
 }

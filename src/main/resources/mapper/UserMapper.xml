@@ -40,7 +40,7 @@
             );
     </select>
     <!--新增所有列-->
-    <insert id="insertUser" keyProperty="userid" useGeneratedKeys="true">
+    <insert id="insertUser" keyProperty="userId" useGeneratedKeys="true">
         insert into yimem.user(username, userpassword, sex, nickname, birthday, provinces, city, county, description,
                                industry, job, askSuminter, headImg, blogCount, attentionCount, fansCount, resourceCount,
                                forumCount, askCount, collectCount, downloadmoney, commentCount, likeCount, level,
