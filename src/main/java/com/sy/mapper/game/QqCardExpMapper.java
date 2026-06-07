@@ -18,4 +18,6 @@ public interface QqCardExpMapper {
     int updateByPrimaryKey(QqCardExp record);
 
     List<QqCardExp> findbyStar(String star);
+
+    List<QqCardExp> findAll();
 }

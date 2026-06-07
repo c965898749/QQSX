@@ -110,4 +110,7 @@
     WHERE upgrade_type=#{star}
      ORDER BY `level`
   </select>
+    <select id="findAll" resultType="com.sy.model.game.QqCardExp">
+        SELECT * FROM qq_card_exp
+    </select>
 </mapper>

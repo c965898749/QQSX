@@ -3994,15 +3994,65 @@ public class GameServiceServiceImpl implements GameServiceService {
                 charactersList.add(characters);
             }
         }
-
+        List<QqCardExp> qqCardExpList = qqCardExpMapper.findAll();
         for (Characters characters : charactersList) {
             Characters characters1 = charactersMapper.listById(token.getUserId(), characters.getId());
+            int cadExp = characters1.getExp();
             if (characters1.getStackCount() - 1 >= 0) {
                 characters1.setStackCount(characters1.getStackCount() - 1);
                 characters1.setLv(1);
                 characters1.setExp(5);
             } else {
                 characters1.setIsDelete("1");
+            }
+            //TODO 判断卡牌是否飞升
+            Card card = cardMapper.selectByid(Integer.parseInt(characters1.getId()));
+
+            int xhiaohaoExp = 0;
+            int maxLv= CardMaxLevelUtils.getMaxLevel(card.getName(), card.getStar().doubleValue());
+            // 累加从 currentLevel 到 targetLevel - 1 的每一级经验
+            for (int level = 1; level <= maxLv; level++) {
+                int finalLevel = level;
+                QqCardExp expConfig = qqCardExpList.stream()
+                        .filter(c -> (card.getStar().toString()).equals(c.getUpgradeType()) && c.getLevel() == finalLevel)
+                        .findFirst()
+                        .orElse(null);
+
+                if (expConfig != null) {
+                    xhiaohaoExp += expConfig.getUpgradeExp();
+                }
+            }
+            int totalExp=cadExp-xhiaohaoExp;
+            if (totalExp>1000){
+                BigDecimal num = new BigDecimal(totalExp).divide(BigDecimal.valueOf(1000), 0, RoundingMode.DOWN);
+                // 计算剩余经验
+                // 满级奖励：魂力宝珠（ID:105）
+                Characters characters2 = charactersMapper.listById(userId, "105");
+
+                if (characters2 != null) {
+                    // 已有卡牌 → 叠加
+                    characters1.setStackCount(characters1.getStackCount() + num.intValue());
+                    charactersMapper.updateByPrimaryKey(characters1);
+                } else {
+                    // 没有卡牌 → 新建（这里原来的代码严重错误！已修复）
+                    Card card2 = cardMapper.selectByid(105);
+                    if (card2 == null) {
+                        baseResp.setErrorMsg("服务器异常，请联系管理员");
+                        baseResp.setSuccess(0);
+                        return baseResp;
+                    }
+                    Characters newChar = new Characters();
+                    newChar.setId("105");
+                    newChar.setLv(1);
+                    newChar.setUserId(Integer.parseInt(userId));
+                    newChar.setStar(BigDecimal.ONE);
+                    newChar.setMaxLv(CardMaxLevelUtils.getMaxLevel(card2.getName(), card2.getStar().doubleValue()));
+
+                    // 计算数量（修复null指针核心）
+                    newChar.setStackCount(num.intValue()-1); // 用newChar 不是 characters1！
+
+                    charactersMapper.insert(newChar);
+                }
             }
             charactersMapper.updateByPrimaryKey(characters1);
         }
