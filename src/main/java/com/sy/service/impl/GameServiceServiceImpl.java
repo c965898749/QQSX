@@ -6979,6 +6979,7 @@ public class GameServiceServiceImpl implements GameServiceService {
                     if (Xtool.isNotNull(pveRewardsAll3)){
                         PveRewardRecord pveRewardRecord=new PveRewardRecord();
                         BeanUtils.copyProperties(pveRewardsAll3.get(0),pveRewardRecord);
+                        pveRewardRecord.setId(null);
                         pveRewardRecord.setUserId(Integer.parseInt(userId));
                         pveRewardRecordMapper.insert(pveRewardRecord);
                     }
@@ -7319,6 +7320,7 @@ public class GameServiceServiceImpl implements GameServiceService {
                     pveRewardsAll.add(pveRewardsAll3.get(0));
                     PveRewardRecord pveRewardRecord=new PveRewardRecord();
                     BeanUtils.copyProperties(pveRewardsAll3.get(0),pveRewardRecord);
+                    pveRewardRecord.setId(null);
                     pveRewardRecord.setUserId(Integer.parseInt(userId));
                     pveRewardRecordMapper.insert(pveRewardRecord);
                 }
