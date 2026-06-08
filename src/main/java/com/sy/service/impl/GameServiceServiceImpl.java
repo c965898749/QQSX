@@ -471,6 +471,7 @@ public class GameServiceServiceImpl implements GameServiceService {
             User emp = userMapper.selectUserByusername(user.getUsername());
             Characters characters = new Characters();
             BeanUtils.copyProperties(card, characters);
+            characters.setUuid(null);
             characters.setId("1002");
             characters.setLv(1);
             characters.setGoIntoNum(1);
@@ -9326,6 +9327,7 @@ public class GameServiceServiceImpl implements GameServiceService {
         for (Characters characters : leftCharacter) {
             GameArenaBattlecharacters battlecharacters = new GameArenaBattlecharacters();
             BeanUtils.copyProperties(characters, battlecharacters);
+            battlecharacters.setUuid(null);
             battlecharacters.setWeekNum(arenaWeek);
             battlecharacters.setArenaLevel(token.getFinalLevel() + "");
             battlecharacters.setCreateTime(new Date());
@@ -9335,6 +9337,7 @@ public class GameServiceServiceImpl implements GameServiceService {
             Characters characters = charactersMapper.listById(userId, token.getStr());
             GameArenaBattlecharacters battlecharacters = new GameArenaBattlecharacters();
             BeanUtils.copyProperties(characters, battlecharacters);
+            battlecharacters.setUuid(null);
             battlecharacters.setWeekNum(arenaWeek);
             battlecharacters.setGoIntoNum(6);
             battlecharacters.setArenaLevel(token.getFinalLevel() + "");
@@ -9346,6 +9349,7 @@ public class GameServiceServiceImpl implements GameServiceService {
             Characters characters = charactersMapper.listById(userId, token.getId());
             GameArenaBattlecharacters battlecharacters = new GameArenaBattlecharacters();
             BeanUtils.copyProperties(characters, battlecharacters);
+            battlecharacters.setUuid(null);
             battlecharacters.setWeekNum(arenaWeek);
             battlecharacters.setGoIntoNum(7);
             battlecharacters.setArenaLevel(token.getFinalLevel() + "");
