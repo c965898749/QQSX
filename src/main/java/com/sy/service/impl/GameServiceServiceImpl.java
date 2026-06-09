@@ -169,7 +169,8 @@ public class GameServiceServiceImpl implements GameServiceService {
     private CraftMapper craftMapper;
     @Resource
     private JavaMailSender javaMailSender;
-
+    @Resource
+    private UserMineMapper userMineMapper;
     @Resource
     private SimpleMailMessage simpleMailMessage;
 
@@ -2996,6 +2997,27 @@ public class GameServiceServiceImpl implements GameServiceService {
         mail.setToEmails(to);
         mail.setSubject("YIMEM网站账号激活");
         baseResp = sendEmail(mail, idcode);
+        return baseResp;
+    }
+
+    @Override
+    public BaseResp getUserMine(TokenDto token, HttpServletRequest request) throws Exception {
+        BaseResp baseResp = new BaseResp();
+        if (token == null || Xtool.isNull(token.getToken())) {
+            baseResp.setSuccess(0);
+            baseResp.setErrorMsg("登录过期");
+            return baseResp;
+        }
+        String userId = token.getUserId();
+//        String userId = (String) redisTemplate.opsForValue().get(token.getToken());
+        if (Xtool.isNull(userId)) {
+            baseResp.setSuccess(0);
+            baseResp.setErrorMsg("登录过期");
+            return baseResp;
+        }
+        UserMine userMine = userMineMapper.selectOne(new LambdaQueryWrapper<UserMine>().eq(UserMine::getUserId, userId));
+        baseResp.setSuccess(1);
+        baseResp.setData(userMine);
         return baseResp;
     }
 
@@ -8846,10 +8868,10 @@ public class GameServiceServiceImpl implements GameServiceService {
 
                         }
                         if (Xtool.isNotNull(characters.getCollAttack())) {
-                            character.setAttack(attack.intValue() + skillLevel[3] * characters.getCollAttack());
+                            character.setAttack(character.getAttack() + skillLevel[3] * characters.getCollAttack());
                         }
                         if (Xtool.isNotNull(characters.getCollSpeed())) {
-                            character.setSpeed(speed.intValue() + skillLevel[3] * characters.getCollSpeed());
+                            character.setSpeed(character.getSpeed() + skillLevel[3] * characters.getCollSpeed());
                         }
                         //TODO 协同属性加成
                         character.setWlAtk(character.getWlAtk() + characters.getWlAtk() * skillLevel[3]);
@@ -8878,10 +8900,10 @@ public class GameServiceServiceImpl implements GameServiceService {
 
                 }
                 if (Xtool.isNotNull(characters.getCollAttack())) {
-                    character.setAttack(attack.intValue() + skillLevel[1] * characters.getCollAttack());
+                    character.setAttack(character.getAttack() + skillLevel[1] * characters.getCollAttack());
                 }
                 if (Xtool.isNotNull(characters.getCollSpeed())) {
-                    character.setSpeed(speed.intValue() + skillLevel[1] * characters.getCollSpeed());
+                    character.setSpeed(character.getSpeed() + skillLevel[1] * characters.getCollSpeed());
                 }
             }
 
@@ -8896,10 +8918,10 @@ public class GameServiceServiceImpl implements GameServiceService {
 
                 }
                 if (Xtool.isNotNull(characters.getCollAttack())) {
-                    character.setAttack(attack.intValue() + skillLevel[1] * characters.getCollAttack());
+                    character.setAttack(character.getAttack() + skillLevel[1] * characters.getCollAttack());
                 }
                 if (Xtool.isNotNull(characters.getCollSpeed())) {
-                    character.setSpeed(speed.intValue() + skillLevel[1] * characters.getCollSpeed());
+                    character.setSpeed(character.getSpeed() + skillLevel[1] * characters.getCollSpeed());
                 }
                 //瑶池仙女物理抗性
                 if (characters.getName().equals("瑶池仙女")) {
@@ -8917,10 +8939,10 @@ public class GameServiceServiceImpl implements GameServiceService {
 
                 }
                 if (Xtool.isNotNull(characters.getCollAttack())) {
-                    character.setAttack(attack.intValue() + skillLevel[1] * characters.getCollAttack());
+                    character.setAttack(character.getAttack() + skillLevel[1] * characters.getCollAttack());
                 }
                 if (Xtool.isNotNull(characters.getCollSpeed())) {
-                    character.setSpeed(speed.intValue() + skillLevel[1] * characters.getCollSpeed());
+                    character.setSpeed(character.getSpeed() + skillLevel[1] * characters.getCollSpeed());
                 }
             }
         }
@@ -8934,10 +8956,10 @@ public class GameServiceServiceImpl implements GameServiceService {
 
                 }
                 if (Xtool.isNotNull(characters.getCollAttack())) {
-                    character.setAttack(attack.intValue() + skillLevel[1] * characters.getCollAttack());
+                    character.setAttack(character.getAttack() + skillLevel[1] * characters.getCollAttack());
                 }
                 if (Xtool.isNotNull(characters.getCollSpeed())) {
-                    character.setSpeed(speed.intValue() + skillLevel[1] * characters.getCollSpeed());
+                    character.setSpeed(character.getSpeed() + skillLevel[1] * characters.getCollSpeed());
                 }
             }
 
@@ -8952,10 +8974,10 @@ public class GameServiceServiceImpl implements GameServiceService {
 
                 }
                 if (Xtool.isNotNull(characters.getCollAttack())) {
-                    character.setAttack(attack.intValue() + skillLevel[1] * characters.getCollAttack());
+                    character.setAttack(character.getAttack() + skillLevel[1] * characters.getCollAttack());
                 }
                 if (Xtool.isNotNull(characters.getCollSpeed())) {
-                    character.setSpeed(speed.intValue() + skillLevel[1] * characters.getCollSpeed());
+                    character.setSpeed(character.getSpeed() + skillLevel[1] * characters.getCollSpeed());
                 }
             }
 

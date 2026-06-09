@@ -1707,4 +1707,18 @@ public class GameContoller {
             return baseResp;
         }
     }
+
+    @PostMapping("getUserMine")
+    @CrossOrigin
+    public BaseResp getUserMine(@RequestBody TokenDto token, HttpServletRequest request) {
+        BaseResp baseResp = new BaseResp();
+        try {
+            baseResp = gameServiceService.getUserMine(token, request);
+            return baseResp;
+        } catch (Exception e) {
+            e.printStackTrace();
+            baseResp.setSuccess(0);
+            return baseResp;
+        }
+    }
 }

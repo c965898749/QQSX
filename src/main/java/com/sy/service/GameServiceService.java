@@ -50,6 +50,7 @@ public interface GameServiceService {
     BaseResp hechenCailiao(TokenDto token, HttpServletRequest request) throws Exception;
     BaseResp yhechenCailiao(TokenDto token, HttpServletRequest request) throws Exception;
     BaseResp emailManage(TokenDto token, HttpServletRequest request) throws Exception;
+    BaseResp getUserMine(TokenDto token, HttpServletRequest request) throws Exception;
     BaseResp getStore(TokenDto token, HttpServletRequest request) throws Exception;
     BaseResp getEqChares(TokenDto token, HttpServletRequest request) throws Exception;
     BaseResp chongzhi(TokenDto token, HttpServletRequest request) throws Exception;
