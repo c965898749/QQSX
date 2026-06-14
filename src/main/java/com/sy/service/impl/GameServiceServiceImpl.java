@@ -35,6 +35,7 @@ import javax.mail.MessagingException;
 import javax.mail.internet.InternetAddress;
 import javax.mail.internet.MimeMessage;
 import javax.servlet.http.HttpServletRequest;
+import java.io.*;
 import java.io.UnsupportedEncodingException;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -5380,6 +5381,8 @@ public class GameServiceServiceImpl implements GameServiceService {
                 userMapper.updateuser(user1);
             }
         }
+        //保证离线玩家
+        saveBattleLogToFile(battle.getId(),  JsonUtils.toJson(battle.getJson()));
         user.setHuoliCount(user.getHuoliCount() - 10);
         userMapper.updateuser(user);
         baseResp.setData(battle);
@@ -5587,6 +5590,8 @@ public class GameServiceServiceImpl implements GameServiceService {
         }
         baseResp.setSuccess(1);
         Battle battle = this.battle(leftCharacter, user.getUserId(), user.getNickname(), rightCharacter, user1.getUserId(), user1.getNickname(), user.getGameImg(), "3");
+        //保证离线玩家
+        saveBattleLogToFile(battle.getId(),  JsonUtils.toJson(battle.getJson()));
         baseResp.setData(battle);
         dailyViewFinsh(user.getUserId()+"","qiecuo_code");
         return baseResp;
@@ -8099,6 +8104,8 @@ public class GameServiceServiceImpl implements GameServiceService {
                 gameArenaSignup.setArenaScore(0);
             }
         }
+        //保证离线玩家
+        saveBattleLogToFile(battle.getId(), JsonUtils.toJson(battle.getJson()));
         gameArenaSignupMapper.updateById(gameArenaSignup);
         user.setGold(user.getGold().add(new BigDecimal(5460)));
         GameArenaBattle gameArenaBattle1 = new GameArenaBattle();
@@ -8298,6 +8305,8 @@ public class GameServiceServiceImpl implements GameServiceService {
                 }
             }
         }
+        //抢夺保证离线玩家
+        saveBattleLogToFile(battle.getId(), JsonUtils.toJson(battle.getJson()));
 
         Map map = new HashMap();
         map.put("rewards", pveRewards);
@@ -8721,21 +8730,61 @@ public class GameServiceServiceImpl implements GameServiceService {
 
     @Override
     public BaseResp playBattle(TokenDto token, HttpServletRequest request) throws Exception {
-        GameFight gameFight = gameFightMapper.selectByPrimaryKey(token.getId());
         BaseResp baseResp = new BaseResp();
-        baseResp.setData(JsonUtils.fromJsonToObjList(gameFight.getFightter()));
+        String battleId = token.getId();
+        
+        // 从本地文件读取完整战斗过程JSON
+        String json = readBattleLogFromFile(battleId);
+        if (Xtool.isNull(json)) {
+            baseResp.setSuccess(0);
+            baseResp.setErrorMsg("战斗记录不存在或已过期");
+            return baseResp;
+        }
+        
+        baseResp.setData(JsonUtils.fromJsonToObjList(json));
         baseResp.setSuccess(1);
         return baseResp;
     }
 
     public BaseResp warReport(TokenDto token, HttpServletRequest request) throws Exception {
-        List<GameFight> list = gameFightMapper.selectAll(token.getUserId());
-        list.stream().map(x -> {
-            x.setTimeStr(formatTime(x.getCreatetime()));
-            return x;
-        }).collect(Collectors.toList());
         BaseResp baseResp = new BaseResp();
-        baseResp.setData(list);
+        String userId = token.getUserId();
+        
+        // 从Redis扫描获取该用户的所有战斗摘要
+        Set<String> keys = redisTemplate.keys("battle:summary:*");
+        List<Map<String, Object>> warReportList = new ArrayList<>();
+        
+        if (!CollectionUtils.isEmpty(keys)) {
+            for (String key : keys) {
+                String summaryJson = (String) redisTemplate.opsForValue().get(key);
+                if (Xtool.isNotNull(summaryJson)) {
+                    Object obj = JsonUtils.fromJsonToObjList(summaryJson);
+                    if (obj instanceof Map) {
+                        Map<String, Object> summary = (Map<String, Object>) obj;
+                        // 只返回当前用户的战斗记录
+                        if (userId.equals(String.valueOf(summary.get("userId"))) || 
+                            userId.equals(String.valueOf(summary.get("toUserId")))) {
+                            // 添加格式化时间
+                            Long timestamp = (Long) summary.get("timestamp");
+                            if (timestamp != null) {
+                                Date createTime = new Date(timestamp);
+                                summary.put("timeStr", formatTime(createTime));
+                            }
+                            warReportList.add(summary);
+                        }
+                    }
+                }
+            }
+        }
+        
+        // 按时间戳降序排序（最新的在前）
+        warReportList.sort((a, b) -> {
+            Long timeA = (Long) a.get("timestamp");
+            Long timeB = (Long) b.get("timestamp");
+            return timeB.compareTo(timeA);
+        });
+        
+        baseResp.setData(warReportList);
         baseResp.setSuccess(1);
         return baseResp;
     }
@@ -9221,22 +9270,31 @@ public class GameServiceServiceImpl implements GameServiceService {
         map.put("name0", name0);
         map.put("name1", name1);
         map.put("isWin", isWin);
-        GameFight fight = new GameFight();
-        fight.setId(battleId);
-        fight.setToUserId(toUserId);
-        fight.setUserId(userId);
-        fight.setToUserName(name1);
-        fight.setUserName(name0);
-        fight.setIsWin(isWin);
-        fight.setType(type);
-        fight.setImg(img);
-        //将map转json存储
-        String json = JsonUtils.toJson(map);
-        fight.setFightter(json);
-        gameFightMapper.insert(fight);
+        
+        // 将完整战斗过程JSON存储到本地磁盘文件
+//        String json = JsonUtils.toJson(map);
+//        saveBattleLogToFile(battleId, json);
+        
+        // 提取战斗摘要信息存储到Redis
+        Map<String, Object> battleSummary = new HashMap<>();
+        battleSummary.put("battleId", battleId);
+        battleSummary.put("userId", userId);
+        battleSummary.put("toUserId", toUserId);
+        battleSummary.put("userName", name0);
+        battleSummary.put("toUserName", name1);
+        battleSummary.put("isWin", isWin);
+        battleSummary.put("type", type);
+        battleSummary.put("img", img);
+        battleSummary.put("timestamp", System.currentTimeMillis());
+        
+        String summaryJson = JsonUtils.toJson(battleSummary);
+        redisTemplate.opsForValue().set("battle:summary:" + battleId, summaryJson, 7, TimeUnit.DAYS);
+        
+        // 战斗数据不再存储到数据库，仅存储到Redis和本地文件
         Battle bt = new Battle();
         bt.setIsWin(isWin);
-        bt.setId(fight.getId());
+        bt.setId(battleId);
+        bt.setJson(map);
         return bt;
     }
 
@@ -10634,6 +10692,71 @@ public class GameServiceServiceImpl implements GameServiceService {
     @Override
     public void syncLastWeekRank() {
 
+    }
+
+    /**
+     * 将战斗日志JSON保存到本地磁盘文件
+     * @param battleId 战斗ID
+     * @param json 战斗过程JSON数据
+     */
+    private void saveBattleLogToFile(String battleId, String json) {
+        try {
+            // 定义日志文件存储目录
+            String logDir = "logs/battle/";
+            File dir = new File(logDir);
+            if (!dir.exists()) {
+                dir.mkdirs();
+            }
+            
+            // 以battleId为文件名，生成JSON文件
+            String fileName = logDir + battleId + ".json";
+            File file = new File(fileName);
+            
+            // 写入JSON数据到文件
+            try (FileWriter writer = new FileWriter(file)) {
+                writer.write(json);
+                writer.flush();
+            }
+            
+            log.info("战斗日志已保存到文件: {}", fileName);
+        } catch (IOException e) {
+            log.error("保存战斗日志文件失败，battleId: {}", battleId, e);
+        }
+    }
+
+    /**
+     * 从本地磁盘文件读取战斗日志JSON
+     * @param battleId 战斗ID
+     * @return 战斗过程JSON数据，如果文件不存在则返回null
+     */
+    private String readBattleLogFromFile(String battleId) {
+        try {
+            // 定义日志文件存储目录
+            String logDir = "logs/battle/";
+            String fileName = logDir + battleId + ".json";
+            File file = new File(fileName);
+            
+            // 检查文件是否存在
+            if (!file.exists()) {
+                log.warn("战斗日志文件不存在: {}", fileName);
+                return null;
+            }
+            
+            // 读取文件内容
+            StringBuilder content = new StringBuilder();
+            try (BufferedReader reader = new BufferedReader(new FileReader(file))) {
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    content.append(line);
+                }
+            }
+            
+            log.debug("成功读取战斗日志文件: {}", fileName);
+            return content.toString();
+        } catch (IOException e) {
+            log.error("读取战斗日志文件失败，battleId: {}", battleId, e);
+            return null;
+        }
     }
 
 }
