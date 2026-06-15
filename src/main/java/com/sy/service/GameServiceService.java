@@ -13,9 +13,9 @@ public interface GameServiceService {
     BaseResp gameVersion(TokenDto token, HttpServletRequest request) throws Exception;
     BaseResp registerGame(User user, HttpServletRequest request) throws Exception;
     BaseResp updateGame(TokenDto token, HttpServletRequest request) throws Exception;
-    BaseResp updateTli(TokenDto token, HttpServletRequest request) throws Exception;
-    BaseResp updateTli3(TokenDto token, HttpServletRequest request) throws Exception;
-    BaseResp updateTli2(TokenDto token, HttpServletRequest request) throws Exception;
+//    BaseResp updateTli(TokenDto token, HttpServletRequest request) throws Exception;
+//    BaseResp updateTli3(TokenDto token, HttpServletRequest request) throws Exception;
+//    BaseResp updateTli2(TokenDto token, HttpServletRequest request) throws Exception;
     BaseResp changeState(TokenDto token, HttpServletRequest request) throws Exception;
     BaseResp changeEqState(TokenDto token, HttpServletRequest request) throws Exception;
     BaseResp changeEqState2(TokenDto token, HttpServletRequest request) throws Exception;

@@ -532,11 +532,19 @@ public class GameServiceServiceImpl implements GameServiceService {
         baseResp.setSuccess(1);
         UserInfo info = new UserInfo();
         BeanUtils.copyProperties(user, info);
+        //计算体力和活力
+        StaminaUtil.StaminaResult refresh = StaminaUtil.calcStamina(
+                info.getTiliCount(),
+                info.getTiliCountTime(),
+                info.getHuoliCount(),
+                info.getHuoliCountTime()
+        );
+        info.setTiliCount(refresh.getTiliCount());
+        info.setTiliCountTime(refresh.getTiliCountTime());
+        info.setHuoliCount(refresh.getHuoliCount());
+        info.setHuoliCountTime(refresh.getHuoliCountTime());
+
         //获取卡牌数据
-//        private Integer bronze;
-//        private Integer darkSteel;
-//        private Integer purpleGold;
-//        private Integer crystal;
         List<Characters> characterList = charactersMapper.selectByUserId(user.getUserId());
         List<EqCharacters> characterEqList = eqCharactersMapper.selectByUserId(user.getUserId());
         info.setBronze(0);
@@ -570,84 +578,6 @@ public class GameServiceServiceImpl implements GameServiceService {
         return baseResp;
     }
 
-    @Override
-    public BaseResp updateTli(TokenDto token, HttpServletRequest request) throws Exception {
-        BaseResp baseResp = new BaseResp();
-        if (token == null || Xtool.isNull(token.getToken())) {
-            baseResp.setSuccess(0);
-            baseResp.setErrorMsg("登录过期");
-            return baseResp;
-        }
-        String userId = token.getUserId();
-        if (Xtool.isNull(userId)) {
-            baseResp.setSuccess(0);
-            baseResp.setErrorMsg("登录过期");
-            return baseResp;
-        }
-        if (Xtool.isNull(token.getTiLi())) {
-            baseResp.setSuccess(0);
-            baseResp.setErrorMsg("游戏异常，请注销重新登录");
-            return baseResp;
-        }
-        User user = userMapper.selectUserByUserId(Integer.parseInt(userId));
-        user.setTiliCount(token.getTiLi());
-        user.setTiliCountTime(new Date(Long.parseLong(token.getStr())));
-        userMapper.updateuserTili(user);
-        baseResp.setSuccess(1);
-        baseResp.setErrorMsg("同步成攻");
-        return baseResp;
-    }
-
-    @Override
-    public BaseResp updateTli3(TokenDto token, HttpServletRequest request) throws Exception {
-        BaseResp baseResp = new BaseResp();
-        if (token == null || Xtool.isNull(token.getToken())) {
-            baseResp.setSuccess(0);
-            baseResp.setErrorMsg("登录过期");
-            return baseResp;
-        }
-        String userId = token.getUserId();
-        if (Xtool.isNull(userId)) {
-            baseResp.setSuccess(0);
-            baseResp.setErrorMsg("登录过期");
-            return baseResp;
-        }
-        if (Xtool.isNull(token.getHuoLi())) {
-            baseResp.setSuccess(0);
-            baseResp.setErrorMsg("游戏异常，请注销重新登录");
-            return baseResp;
-        }
-        User user = userMapper.selectUserByUserId(Integer.parseInt(userId));
-        user.setHuoliCount(token.getHuoLi());
-        user.setHuoliCountTime(new Date(Long.parseLong(token.getStr())));
-        userMapper.updateuserHuoli(user);
-        baseResp.setSuccess(1);
-        baseResp.setErrorMsg("同步成攻");
-        return baseResp;
-    }
-
-    @Override
-    public BaseResp updateTli2(TokenDto token, HttpServletRequest request) throws Exception {
-        BaseResp baseResp = new BaseResp();
-        if (token == null || Xtool.isNull(token.getToken())) {
-            baseResp.setSuccess(0);
-            baseResp.setErrorMsg("登录过期");
-            return baseResp;
-        }
-        String userId = token.getUserId();
-        if (Xtool.isNull(userId)) {
-            baseResp.setSuccess(0);
-            baseResp.setErrorMsg("登录过期");
-            return baseResp;
-        }
-        User user = userMapper.selectUserByUserId(Integer.parseInt(userId));
-        UserInfo userInfo = new UserInfo();
-        BeanUtils.copyProperties(user, userInfo);
-        baseResp.setSuccess(1);
-        baseResp.setErrorMsg("同步成攻");
-        baseResp.setData(userInfo);
-        return baseResp;
-    }
 
     @Override
     @Transactional
@@ -5323,6 +5253,17 @@ public class GameServiceServiceImpl implements GameServiceService {
             return baseResp;
         }
         User user = userMapper.selectUserByUserId(Integer.parseInt(userId));
+        // 1. 先自然恢复
+        StaminaUtil.StaminaResult refresh = StaminaUtil.calcStamina(
+                user.getTiliCount(),
+                user.getTiliCountTime(),
+                user.getHuoliCount(),
+                user.getHuoliCountTime()
+        );
+        user.setTiliCount(refresh.getTiliCount());
+        user.setTiliCountTime(refresh.getTiliCountTime());
+        user.setHuoliCount(refresh.getHuoliCount());
+        user.setHuoliCountTime(refresh.getHuoliCountTime());
         if (user.getHuoliCount() - 10 < 0) {
             baseResp.setSuccess(0);
             baseResp.setErrorMsg("活力不足");
@@ -5383,8 +5324,13 @@ public class GameServiceServiceImpl implements GameServiceService {
         }
         //保证离线玩家
         saveBattleLogToFile(battle.getId(),  JsonUtils.toJson(battle.getJson()));
-        user.setHuoliCount(user.getHuoliCount() - 10);
+        StaminaUtil.StaminaItem huoliRes = StaminaUtil.useHuoliPotion(user.getHuoliCount(), user.getHuoliCountTime(), -10);
+        user.setHuoliCount(huoliRes.getCount());
+        user.setHuoliCountTime(huoliRes.getCountTime());
         userMapper.updateuser(user);
+        Map map = new HashMap();
+        map.put("user", user);
+        map.put("battle", battle);
         baseResp.setData(battle);
         dailyViewFinsh(userId,"jinjichang_code");
         return baseResp;
@@ -5436,8 +5382,33 @@ public class GameServiceServiceImpl implements GameServiceService {
             return baseResp;
         }
         User user = userMapper.selectUserByUserId(Integer.parseInt(userId));
-        user.setHuoliCount(user.getHuoliCount() + 10);
-        user.setTiliCount(user.getTiliCount() + 10);
+        // 打开面板，先把所有离线/挂机恢复一次性算完
+        StaminaUtil.StaminaResult refresh = StaminaUtil.calcStamina(
+                user.getTiliCount(),
+                user.getTiliCountTime(),
+                user.getHuoliCount(),
+                user.getHuoliCountTime()
+        );
+        user.setTiliCount(refresh.getTiliCount());
+        user.setTiliCountTime(refresh.getTiliCountTime());
+        user.setHuoliCount(refresh.getHuoliCount());
+        user.setHuoliCountTime(refresh.getHuoliCountTime());
+// 之后展示面板数值
+        // 直接扣体力，不碰时间戳
+        StaminaUtil.StaminaItem tiliRes = StaminaUtil.useTiliPotion(
+                user.getTiliCount(),
+                user.getTiliCountTime(),
+                +10 //
+        );
+        user.setTiliCount(tiliRes.getCount());
+        user.setTiliCountTime(tiliRes.getCountTime());
+        StaminaUtil.StaminaItem huoliRes = StaminaUtil.useHuoliPotion(
+                user.getHuoliCount(),
+                user.getHuoliCountTime(),
+                +10 //
+        );
+        user.setHuoliCount(huoliRes.getCount());
+        user.setHuoliCountTime(huoliRes.getCountTime());
         userMapper.updateuser(user);
         FriendBlessing friendBlessing = new FriendBlessing();
         friendBlessing.setIsRead(0);
@@ -5946,7 +5917,18 @@ public class GameServiceServiceImpl implements GameServiceService {
             baseResp.setErrorMsg("用户不存在");
             return baseResp;
         }
-
+// 打开面板，先把所有离线/挂机恢复一次性算完
+        StaminaUtil.StaminaResult refresh = StaminaUtil.calcStamina(
+                user.getTiliCount(),
+                user.getTiliCountTime(),
+                user.getHuoliCount(),
+                user.getHuoliCountTime()
+        );
+        user.setTiliCount(refresh.getTiliCount());
+        user.setTiliCountTime(refresh.getTiliCountTime());
+        user.setHuoliCount(refresh.getHuoliCount());
+        user.setHuoliCountTime(refresh.getHuoliCountTime());
+// 之后展示面板数值
         // 3. 分布式锁实现（适配基础版setIfAbsent）
         String lockKey = "USE_BAG_ITEM_" + userId + "_" + itemId;
 //        Boolean lockSuccess = false;
@@ -6120,10 +6102,24 @@ public class GameServiceServiceImpl implements GameServiceService {
                 user.setGoldentower(1);
                 break;
             case 2: // 活力药水
-                user.setHuoliCount(user.getHuoliCount() + 100);
+                StaminaUtil.StaminaItem huoliRes = StaminaUtil.useHuoliPotion(
+                        user.getHuoliCount(),
+                        user.getHuoliCountTime(),
+                        +100 //
+                );
+                user.setHuoliCount(huoliRes.getCount());
+                user.setHuoliCountTime(huoliRes.getCountTime());
                 break;
             case 3: // 体力药水
-                user.setTiliCount(user.getTiliCount() + 100);
+                // 直接扣体力，不碰时间戳
+                StaminaUtil.StaminaItem tiliRes = StaminaUtil.useTiliPotion(
+                        user.getTiliCount(),
+                        user.getTiliCountTime(),
+                        +100 //
+                );
+                user.setTiliCount(tiliRes.getCount());
+                user.setTiliCountTime(tiliRes.getCountTime());
+                // 直接存库，不用算恢复
                 break;
             case 4: // 体活力补给包
                 addBagItem(userId, 1, 2); // 刷新券+2
@@ -6785,6 +6781,17 @@ public class GameServiceServiceImpl implements GameServiceService {
             return baseResp;
         }
         User user = userMapper.selectUserByUserId(Integer.parseInt(userId));
+        // 1. 先自然恢复
+        StaminaUtil.StaminaResult refresh = StaminaUtil.calcStamina(
+                user.getTiliCount(),
+                user.getTiliCountTime(),
+                user.getHuoliCount(),
+                user.getHuoliCountTime()
+        );
+        user.setTiliCount(refresh.getTiliCount());
+        user.setTiliCountTime(refresh.getTiliCountTime());
+        user.setHuoliCount(refresh.getHuoliCount());
+        user.setHuoliCountTime(refresh.getHuoliCountTime());
         if (user.getTiliCount() - 2 < 0) {
             baseResp.setSuccess(0);
             baseResp.setErrorMsg("体力不足");
@@ -7074,7 +7081,15 @@ public class GameServiceServiceImpl implements GameServiceService {
         } else {
             battle.setChapter(token.getStr());
         }
-        user.setTiliCount(user.getTiliCount() - 2);
+        // 直接扣体力，不碰时间戳
+        StaminaUtil.StaminaItem tiliRes = StaminaUtil.useTiliPotion(
+                user.getTiliCount(),
+                user.getTiliCountTime(),
+                -2 // 消耗10点
+        );
+        user.setTiliCount(tiliRes.getCount());
+        user.setTiliCountTime(tiliRes.getCountTime());
+// 直接存库，不用算恢复
         PveDetail pveDetail2 = pveDetailMapper.selectById(battle.getChapter());
         Map map2 = new HashMap();
         map2.put("detail_code", battle.getChapter());
@@ -8031,6 +8046,18 @@ public class GameServiceServiceImpl implements GameServiceService {
             return baseResp;
         }
         User user = userMapper.selectUserByUserId(Integer.parseInt(userId));
+        // 打开面板，先把所有离线/挂机恢复一次性算完
+        StaminaUtil.StaminaResult refresh = StaminaUtil.calcStamina(
+                user.getTiliCount(),
+                user.getTiliCountTime(),
+                user.getHuoliCount(),
+                user.getHuoliCountTime()
+        );
+        user.setTiliCount(refresh.getTiliCount());
+        user.setTiliCountTime(refresh.getTiliCountTime());
+        user.setHuoliCount(refresh.getHuoliCount());
+        user.setHuoliCountTime(refresh.getHuoliCountTime());
+// 之后展示面板数值
         if (user.getHuoliCount() - 30 < 0) {
             baseResp.setSuccess(0);
             baseResp.setErrorMsg("活力不足");
@@ -8122,7 +8149,13 @@ public class GameServiceServiceImpl implements GameServiceService {
         gameArenaBattle1.setToUserName(gameArenaSignup2.getUserName());
         gameArenaBattleMapper.insert(gameArenaBattle1);
         gameArenaSignup.setCount(gameArenaSignup.getCount() - 1);
-        user.setHuoliCount(user.getHuoliCount() - 30);
+        StaminaUtil.StaminaItem huoliRes = StaminaUtil.useHuoliPotion(
+                user.getHuoliCount(),
+                user.getHuoliCountTime(),
+                -30
+        );
+        user.setHuoliCount(huoliRes.getCount());
+        user.setHuoliCountTime(huoliRes.getCountTime());
         user.setArenaCount(user.getArenaCount() - 1);
         userMapper.updateuser(user);
         UserInfo userInfo = new UserInfo();
@@ -8171,6 +8204,18 @@ public class GameServiceServiceImpl implements GameServiceService {
             return baseResp;
         }
         User user = userMapper.selectUserByUserId(Integer.parseInt(userId));
+        // 打开面板，先把所有离线/挂机恢复一次性算完
+        StaminaUtil.StaminaResult refresh = StaminaUtil.calcStamina(
+                user.getTiliCount(),
+                user.getTiliCountTime(),
+                user.getHuoliCount(),
+                user.getHuoliCountTime()
+        );
+        user.setTiliCount(refresh.getTiliCount());
+        user.setTiliCountTime(refresh.getTiliCountTime());
+        user.setHuoliCount(refresh.getHuoliCount());
+        user.setHuoliCountTime(refresh.getHuoliCountTime());
+// 之后展示面板数值
         if (user.getHuoliCount() - 10 < 0) {
             baseResp.setSuccess(0);
             baseResp.setErrorMsg("活力不足");
@@ -8311,7 +8356,13 @@ public class GameServiceServiceImpl implements GameServiceService {
         Map map = new HashMap();
         map.put("rewards", pveRewards);
         user.setDuoCount(user.getDuoCount() - 1);
-        user.setHuoliCount(user.getHuoliCount() - 10);
+        StaminaUtil.StaminaItem huoliRes = StaminaUtil.useHuoliPotion(
+                user.getHuoliCount(),
+                user.getHuoliCountTime(),
+                -10 //
+        );
+        user.setHuoliCount(huoliRes.getCount());
+        user.setHuoliCountTime(huoliRes.getCountTime());
         userMapper.updateuser(user);
         UserInfo userInfo = new UserInfo();
         BeanUtils.copyProperties(user, userInfo);

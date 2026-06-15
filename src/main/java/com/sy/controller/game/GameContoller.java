@@ -212,48 +212,7 @@ public class GameContoller {
         }
     }
 
-    @RequestMapping(value = "updateTli", method = RequestMethod.POST)
-    @CrossOrigin
-    public BaseResp updateTli(@RequestBody TokenDto token, HttpServletRequest request) {
-        BaseResp baseResp = new BaseResp();
-        try {
-            baseResp = gameServiceService.updateTli(token, request);
-            return baseResp;
-        } catch (Exception e) {
-            e.printStackTrace();
-            baseResp.setSuccess(0);
-            return baseResp;
-        }
-    }
 
-    @RequestMapping(value = "updateTli3", method = RequestMethod.POST)
-    @CrossOrigin
-    public BaseResp updateTli3(@RequestBody TokenDto token, HttpServletRequest request) {
-        BaseResp baseResp = new BaseResp();
-        try {
-            baseResp = gameServiceService.updateTli3(token, request);
-            return baseResp;
-        } catch (Exception e) {
-            e.printStackTrace();
-            baseResp.setSuccess(0);
-            return baseResp;
-        }
-    }
-
-
-    @RequestMapping(value = "updateTli2", method = RequestMethod.POST)
-    @CrossOrigin
-    public BaseResp updateTli2(@RequestBody TokenDto token, HttpServletRequest request) {
-        BaseResp baseResp = new BaseResp();
-        try {
-            baseResp = gameServiceService.updateTli2(token, request);
-            return baseResp;
-        } catch (Exception e) {
-            e.printStackTrace();
-            baseResp.setSuccess(0);
-            return baseResp;
-        }
-    }
     /**
      * 卡牌飞升
      */
