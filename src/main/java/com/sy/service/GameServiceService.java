@@ -95,6 +95,7 @@ public interface GameServiceService {
     BaseResp feiShenhechen(TokenDto token, HttpServletRequest request) throws Exception;
     BaseResp jingji(TokenDto token, HttpServletRequest request) throws Exception;
     BaseResp duoquJingji(TokenDto token, HttpServletRequest request) throws Exception;
+    BaseResp kuanList(TokenDto token, HttpServletRequest request) throws Exception;
     BaseResp friendAllList(TokenDto token, HttpServletRequest request) throws Exception;
     BaseResp invitationSend(TokenDto token, HttpServletRequest request) throws Exception;
     BaseResp invitationHandle(TokenDto token, HttpServletRequest request) throws Exception;
@@ -107,6 +108,10 @@ public interface GameServiceService {
     BaseResp arenaTem(TokenDto token, HttpServletRequest request) throws Exception;
     BaseResp allCardList(TokenDto token, HttpServletRequest request) throws Exception;
     BaseResp geremonialGiftList(TokenDto token, HttpServletRequest request) throws Exception;
+    BaseResp upgradeMine(TokenDto token, HttpServletRequest request) throws Exception;
+    BaseResp collectAllSilver(TokenDto token, HttpServletRequest request) throws Exception;
+    BaseResp robMine(TokenDto token, HttpServletRequest request) throws Exception;
+    BaseResp queryBeRobLog(TokenDto token, HttpServletRequest request) throws Exception;
     void sendRawrd();
     void executeMothlyTask();
     void deleteAll();

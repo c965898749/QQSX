@@ -1680,4 +1680,104 @@ public class GameContoller {
             return baseResp;
         }
     }
+
+    /**
+     * 升级矿机
+     * @param token
+     * @param request
+     * @return
+     */
+    @PostMapping("upgradeMine")
+    @CrossOrigin
+    public BaseResp upgradeMine(@RequestBody TokenDto token, HttpServletRequest request) {
+        BaseResp baseResp = new BaseResp();
+        try {
+            baseResp = gameServiceService.upgradeMine(token, request);
+            return baseResp;
+        } catch (Exception e) {
+            e.printStackTrace();
+            baseResp.setSuccess(0);
+            return baseResp;
+        }
+    }
+    /**
+     * 收集所有银币
+     * @param token
+     * @param request
+     * @return
+     */
+    @PostMapping("collectAllSilver")
+    @CrossOrigin
+    public BaseResp collectAllSilver(@RequestBody TokenDto token, HttpServletRequest request) {
+        BaseResp baseResp = new BaseResp();
+        try {
+            baseResp = gameServiceService.collectAllSilver(token, request);
+            return baseResp;
+        } catch (Exception e) {
+            e.printStackTrace();
+            baseResp.setSuccess(0);
+            return baseResp;
+        }
+    }
+    /**
+     * 抢矿机
+     * @param token
+     * @param request
+     * @return
+     */
+    @PostMapping("battle7")
+    @CrossOrigin
+    public BaseResp robMine(@RequestBody TokenDto token, HttpServletRequest request) {
+        BaseResp baseResp = new BaseResp();
+        try {
+            baseResp = gameServiceService.robMine(token, request);
+            return baseResp;
+        } catch (Exception e) {
+            e.printStackTrace();
+            baseResp.setSuccess(0);
+            return baseResp;
+        }
+    }
+
+
+    /**
+     * 抢矿机日志
+     * @param token
+     * @param request
+     * @return
+     */
+    @PostMapping("queryBeRobLog")
+    @CrossOrigin
+    public BaseResp queryBeRobLog(@RequestBody TokenDto token, HttpServletRequest request) {
+        BaseResp baseResp = new BaseResp();
+        try {
+            baseResp = gameServiceService.queryBeRobLog(token, request);
+            return baseResp;
+        } catch (Exception e) {
+            e.printStackTrace();
+            baseResp.setSuccess(0);
+            return baseResp;
+        }
+    }
+
+
+    /**
+     * 矿场列表
+     * @param token
+     * @param request
+     * @return
+     */
+    @PostMapping("kuanList")
+    @CrossOrigin
+    public BaseResp kuanList(@RequestBody TokenDto token, HttpServletRequest request) {
+        BaseResp baseResp = new BaseResp();
+        try {
+            baseResp = gameServiceService.kuanList(token, request);
+            return baseResp;
+        } catch (Exception e) {
+            e.printStackTrace();
+            baseResp.setSuccess(0);
+            return baseResp;
+        }
+    }
 }

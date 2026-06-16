@@ -175,6 +175,10 @@ public class GameServiceServiceImpl implements GameServiceService {
     @Resource
     private SimpleMailMessage simpleMailMessage;
 
+    @Resource
+    private MineLevelConfigMapper mineLevelConfigMapper;
+    @Resource
+    private MineRobLogMapper mineRobLogMapper;
     // 最大体力值
     private static final int MAX_STAMINA = 720;
     // 每10分钟恢复1点体力
@@ -2947,6 +2951,18 @@ public class GameServiceServiceImpl implements GameServiceService {
             return baseResp;
         }
         UserMine userMine = userMineMapper.selectOne(new LambdaQueryWrapper<UserMine>().eq(UserMine::getUserId, userId));
+        if (userMine == null) {
+            userMine = new UserMine();
+            userMine.setUserId(Integer.parseInt(userId));
+            userMine.setMineLevel(1);
+            userMine.setHourOutput(1000);
+            userMine.setMaxCapacity(100000);
+            userMine.setCurrentSilver(0);
+            userMine.setLastCollectTime(new Date());
+            userMine.setMineStatus(0);
+            userMine.setCreateTime(new Date());
+            userMineMapper.insert(userMine);
+        }
         baseResp.setSuccess(1);
         baseResp.setData(userMine);
         return baseResp;
@@ -5331,7 +5347,7 @@ public class GameServiceServiceImpl implements GameServiceService {
         Map map = new HashMap();
         map.put("user", user);
         map.put("battle", battle);
-        baseResp.setData(battle);
+        baseResp.setData(map);
         dailyViewFinsh(userId,"jinjichang_code");
         return baseResp;
     }
@@ -8641,6 +8657,39 @@ public class GameServiceServiceImpl implements GameServiceService {
     }
 
     @Override
+    public BaseResp kuanList(TokenDto token, HttpServletRequest request) throws Exception {
+        //先获取当前用户战队
+        BaseResp baseResp = new BaseResp();
+        if (token == null || Xtool.isNull(token.getToken())) {
+            baseResp.setSuccess(0);
+            baseResp.setErrorMsg("登录过期");
+            return baseResp;
+        }
+//        String userId = (String) redisTemplate.opsForValue().get(token.getToken());
+        String userId = token.getUserId();
+        if (Xtool.isNull(userId)) {
+            baseResp.setSuccess(0);
+            baseResp.setErrorMsg("登录过期");
+            return baseResp;
+        }
+        User user=userMapper.selectUserByUserId(Integer.parseInt(userId));
+        //随机获取有队伍的5个人
+        List<User> users = userMapper.SelectUserKuanItemId(token.getId(), userId);
+        List<UserInfo> infos = new ArrayList<>();
+        for (User user1 : users) {
+            UserInfo info = new UserInfo();
+            BeanUtils.copyProperties(user1, info);
+            infos.add(info);
+        }
+        baseResp.setSuccess(1);
+        Map map = new HashMap();
+        map.put("user", infos);
+        map.put("duoCount",user.getDuoCount());
+        baseResp.setData(map);
+        return baseResp;
+    }
+
+    @Override
     public BaseResp friendAllList(TokenDto token, HttpServletRequest request) throws Exception {
         //先获取当前用户战队
         BaseResp baseResp = new BaseResp();
@@ -10809,5 +10858,252 @@ public class GameServiceServiceImpl implements GameServiceService {
             return null;
         }
     }
+    // 玩家登录刷新在线保护时间
+    public void refreshMineLogin(Integer userId) {
+        UserMine mine = userMineMapper.selectOne(
+                new LambdaQueryWrapper<UserMine>().eq(UserMine::getUserId, userId)
+        );
+        if (mine != null) {
+            MineUtil.refreshLoginTime(mine);
+            userMineMapper.updateById(mine);
+        }
+    }
 
+    // 矿场升级
+    @Transactional(rollbackFor = Exception.class)
+    public BaseResp upgradeMine(TokenDto token, HttpServletRequest request) {
+        BaseResp baseResp = new BaseResp();
+        if (token == null || Xtool.isNull(token.getToken())) {
+            baseResp.setSuccess(0);
+            baseResp.setErrorMsg("登录过期");
+            return baseResp;
+        }
+
+        if (token == null || Xtool.isNull(token.getUserId())) {
+            baseResp.setSuccess(0);
+            baseResp.setErrorMsg("登录过期");
+            return baseResp;
+        }
+        String userId = token.getUserId();
+        UserMine mine = userMineMapper.selectOne(
+                new LambdaQueryWrapper<UserMine>().eq(UserMine::getUserId, userId)
+        );
+        if (mine == null) {
+            baseResp.setSuccess(0);
+            baseResp.setErrorMsg("矿场未创建");
+            return baseResp;
+        }
+        int curLevel = mine.getMineLevel() == null ? 1 : mine.getMineLevel();
+        // 查询下一级配置
+        MineLevelConfig nextConfig = mineLevelConfigMapper.selectOne(
+                new LambdaQueryWrapper<MineLevelConfig>().eq(MineLevelConfig::getMineLevel, curLevel + 1)
+        );
+        if (nextConfig == null) {
+            baseResp.setSuccess(0);
+            baseResp.setErrorMsg("已达最大等级，无法升级");
+            return baseResp;
+        }
+        int silver = mine.getCurrentSilver() == null ? 0 : mine.getCurrentSilver();
+        if (silver < nextConfig.getUpgradeCost()) {
+            baseResp.setSuccess(0);
+            baseResp.setErrorMsg("银两不足");
+            return baseResp;
+        }
+        // 扣银两
+        mine.setCurrentSilver(silver - nextConfig.getUpgradeCost());
+        MineUtil.upgradeMine(mine, nextConfig);
+        userMineMapper.updateById(mine);
+        baseResp.setData(mine);
+        baseResp.setSuccess(1);
+        return baseResp;
+    }
+
+    // 收取仓库全部银两
+    @Transactional(rollbackFor = Exception.class)
+    public BaseResp collectAllSilver(TokenDto token, HttpServletRequest request) {
+        BaseResp baseResp = new BaseResp();
+        if (token == null || Xtool.isNull(token.getToken())) {
+            baseResp.setSuccess(0);
+            baseResp.setErrorMsg("登录过期");
+            return baseResp;
+        }
+
+        if (token == null || Xtool.isNull(token.getUserId())) {
+            baseResp.setSuccess(0);
+            baseResp.setErrorMsg("登录过期");
+            return baseResp;
+        }
+        String userId = token.getUserId();
+        User user = userMapper.selectUserByUserId(Integer.parseInt(userId));
+        UserMine mine = userMineMapper.selectOne(
+                new LambdaQueryWrapper<UserMine>().eq(UserMine::getUserId, userId)
+        );
+        int gain = mine.getCurrentSilver() == null ? 0 : mine.getCurrentSilver();
+        user.setGold(user.getGold().add(BigDecimal.valueOf(gain)));
+        userMapper.updateuser(user);
+        UserInfo userInfo = new UserInfo();
+        BeanUtils.copyProperties(user, userInfo);
+        MineUtil.collectSilver(mine);
+        userMineMapper.updateById(mine);
+        Map map = new HashMap();
+        map.put("gain", gain);
+        map.put("user", userInfo);
+        baseResp.setData(map);
+        baseResp.setSuccess(1);
+        return baseResp;
+    }
+
+    // 抢夺矿场
+    @Transactional(rollbackFor = Exception.class)
+    public BaseResp robMine(TokenDto token, HttpServletRequest request) throws Exception {
+        BaseResp baseResp = new BaseResp();
+        if (token == null || Xtool.isNull(token.getToken())) {
+            baseResp.setSuccess(0);
+            baseResp.setErrorMsg("登录过期");
+            return baseResp;
+        }
+
+        if (token == null || Xtool.isNull(token.getUserId())) {
+            baseResp.setSuccess(0);
+            baseResp.setErrorMsg("登录过期");
+            return baseResp;
+        }
+        String userId = token.getUserId();
+        User user = userMapper.selectUserByUserId(Integer.parseInt(userId));
+
+        // 1. 先自然恢复
+        StaminaUtil.StaminaResult refresh = StaminaUtil.calcStamina(
+                user.getTiliCount(),
+                user.getTiliCountTime(),
+                user.getHuoliCount(),
+                user.getHuoliCountTime()
+        );
+        user.setTiliCount(refresh.getTiliCount());
+        user.setTiliCountTime(refresh.getTiliCountTime());
+        user.setHuoliCount(refresh.getHuoliCount());
+        user.setHuoliCountTime(refresh.getHuoliCountTime());
+        if (user.getHuoliCount() - 10 < 0) {
+            baseResp.setSuccess(0);
+            baseResp.setErrorMsg("活力不足");
+            return baseResp;
+        }
+        //自己的战队
+        List<Characters> leftCharacter = charactersMapper.goIntoListById(user.getUserId() + "");
+        if (Xtool.isNull(leftCharacter)) {
+            baseResp.setSuccess(0);
+            baseResp.setErrorMsg("你没有配置战队无法战斗");
+            return baseResp;
+        }
+        for (Characters characters : leftCharacter) {
+            List<EqCharacters> eqCharacters = eqCharactersMapper.listByGoOn(user.getUserId() + "", characters.getId());
+            if (Xtool.isNotNull(eqCharacters)) {
+                characters.setEqCharactersList(formateEqCharacter(eqCharacters));
+            }
+        }
+        Collections.sort(leftCharacter, Comparator.comparing(Characters::getGoIntoNum));
+        //对手战队
+        User user1 = userMapper.selectUserByUserId(Integer.parseInt(token.getId()));
+        List<Characters> rightCharacter = charactersMapper.goIntoListById(user1.getUserId() + "");
+        if (Xtool.isNull(rightCharacter)) {
+            rightCharacter = new ArrayList<>(); // 必须先创建对象，才能add
+            Card card = cardMapper.selectByid(3);
+            if (card == null) {
+                baseResp.setErrorMsg("服务器异常联想管理员");
+                baseResp.setSuccess(0);
+                return baseResp;
+            }
+            Characters characters = new Characters();
+            BeanUtils.copyProperties(card, characters);
+            characters.setId("1002");
+            characters.setGoIntoNum(1);
+            characters.setLv(1);
+            characters.setUserId(user1.getUserId());
+            characters.setStar(new BigDecimal(1));
+            characters.setMaxLv(CardMaxLevelUtils.getMaxLevel(card.getName(), card.getStar().doubleValue()));
+            rightCharacter.add(characters);
+        }
+        for (Characters characters : rightCharacter) {
+            List<EqCharacters> eqCharacters = eqCharactersMapper.listByGoOn(user1.getUserId() + "", characters.getId());
+            if (Xtool.isNotNull(eqCharacters)) {
+                characters.setEqCharactersList(formateEqCharacter(eqCharacters));
+            }
+        }
+        UserMine targetMine = userMineMapper.selectById(token.getId());
+        Integer targetUserId = targetMine.getUserId();
+        MineUtil.MineRobResult robResult = MineUtil.checkAndCalcRob(targetMine);
+        if (!robResult.isCanRob()) {
+            baseResp.setErrorMsg(robResult.getRobMsg());
+            baseResp.setSuccess(0);
+            return baseResp;
+        }
+        Battle battle = this.battle(leftCharacter, Integer.parseInt(userId), user.getNickname(), rightCharacter, Integer.parseInt(token.getUserId()), user1.getNickname(), user.getGameImg(), "7");
+
+        //保证离线玩家
+        saveBattleLogToFile(battle.getId(),  JsonUtils.toJson(battle.getJson()));
+        StaminaUtil.StaminaItem huoliRes = StaminaUtil.useHuoliPotion(user.getHuoliCount(), user.getHuoliCountTime(), -10);
+        user.setHuoliCount(huoliRes.getCount());
+        user.setHuoliCountTime(huoliRes.getCountTime());
+        userMapper.updateuser(user);
+
+
+        if (battle.getIsWin() == 0) {
+            // 更新目标矿场
+            MineUtil.doRobMine(targetMine, robResult);
+            userMineMapper.updateById(targetMine);
+            // 插入抢夺日志
+            MineRobLog log = MineUtil.buildRobLog(Integer.parseInt(userId), targetUserId, robResult);
+            log.setFightId(battle.getId());
+            mineRobLogMapper.insert(log);
+            // 此处自行扩展：给attackerId发放robResult.getRobSilver()银两
+            user.setGold(user.getGold().add(BigDecimal.valueOf(robResult.getRobSilver())));
+            userMapper.updateuser(user);
+        }
+        UserInfo userInfo = new UserInfo();
+        BeanUtils.copyProperties(user, userInfo);
+        Map map = new HashMap();
+        map.put("robResult", robResult);
+        map.put("user", userInfo);
+        map.put("battle", battle);
+        baseResp.setData(map);
+        baseResp.setSuccess(1);
+        return baseResp;
+    }
+
+    // 查询自己被抢记录分页
+    public BaseResp queryBeRobLog(TokenDto token, HttpServletRequest request) {
+        BaseResp baseResp = new BaseResp();
+        if (token == null || Xtool.isNull(token.getToken())) {
+            baseResp.setSuccess(0);
+            baseResp.setErrorMsg("登录过期");
+            return baseResp;
+        }
+
+        if (token == null || Xtool.isNull(token.getUserId())) {
+            baseResp.setSuccess(0);
+            baseResp.setErrorMsg("登录过期");
+            return baseResp;
+        }
+        String userId = token.getUserId();
+        LambdaQueryWrapper<MineRobLog> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(MineRobLog::getTargetUserId, userId);
+        wrapper.orderByDesc(MineRobLog::getCreateTime);
+        baseResp.setData(mineRobLogMapper.selectList(wrapper));
+        baseResp.setSuccess(1);
+        return baseResp;
+    }
+
+    // 查询自己抢夺别人记录分页
+    public List<MineRobLog> queryMyRobLog(Integer userId, long pageNum, long pageSize) {
+        LambdaQueryWrapper<MineRobLog> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(MineRobLog::getAttackerUserId, userId);
+        wrapper.orderByDesc(MineRobLog::getCreateTime);
+        return mineRobLogMapper.selectList(wrapper);
+    }
+
+    // 根据用户ID查询矿场信息
+    public UserMine getMineByUserId(Integer userId) {
+        return userMineMapper.selectOne(
+                new LambdaQueryWrapper<UserMine>().eq(UserMine::getUserId, userId)
+        );
+    }
 }

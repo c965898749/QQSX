@@ -1,23 +1,25 @@
 package com.sy.controller.game;
 
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.sy.mapper.UserMapper;
-import com.sy.mapper.game.CeremonialGiftRecordMapper;
-import com.sy.mapper.game.DailyViewFinshMapper;
-import com.sy.mapper.game.GameFightMapper;
-import com.sy.mapper.game.GameNoticeMapper;
+import com.sy.mapper.game.*;
 import com.sy.model.game.CeremonialGiftRecord;
 import com.sy.model.game.DailyViewFinsh;
 import com.sy.model.game.GameNotice;
+import com.sy.model.game.UserMine;
 import com.sy.service.GameServiceService;
+import com.sy.tool.MineUtil;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 
+import javax.annotation.Resource;
 import java.util.Calendar;
 import java.util.Date;
 import java.util.HashMap;
+import java.util.List;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -46,7 +48,8 @@ public class SampleXxlJob {
     private DailyViewFinshMapper dailyViewFinshMapper;
     @Autowired
     private CeremonialGiftRecordMapper giftRecordMapper;
-
+    @Resource
+    private UserMineMapper userMineMapper;
 
 
 
@@ -100,12 +103,17 @@ public class SampleXxlJob {
     }
 
 
-//    @Scheduled(cron = "0 0 0 ? * 2")
-//    public void executeTaskAtMondayMidnight() {
-//        // 任务逻辑
-//        System.out.println("游戏托自动释放奖励");
-//        gameServiceService.sendTuoRawrd();
-//
-//    }
+    // 每5分钟批量结算所有生产矿场
+    @Scheduled(fixedRate = 5 * 60 * 1000)
+    public void mineSilverCalcTask() {
+        LambdaQueryWrapper<UserMine> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(UserMine::getMineStatus, 1);
+        List<UserMine> mineList = userMineMapper.selectList(wrapper);
+
+        for (UserMine mine : mineList) {
+            MineUtil.batchCalcMineSilver(mine);
+            userMineMapper.updateById(mine);
+        }
+    }
 
 }

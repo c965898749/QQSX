@@ -39,6 +39,32 @@
                 ) AS temp
             );
     </select>
+
+    <select id="SelectUserKuanItemId" resultType="com.sy.model.User">
+        SELECT DISTINCT u.*, m.*
+        FROM `user` u
+        LEFT JOIN `user_mine` m ON m.user_id = u.userId
+        WHERE u.userId IN (
+            SELECT temp.userId FROM (
+                SELECT ur.userId
+                FROM `user` ur
+                    LEFT JOIN `user_mine` mine ON mine.user_id = ur.userId
+                        WHERE
+                        -- 排除自己
+                        ur.userId &lt;&gt; #{userId}
+                        -- 矿场正常开启生产
+                        mine.mine_status = 1
+                        -- 仓库银两满足最低抢夺门槛100
+                        mine.current_silver >= 100
+                        -- 离线满30分钟才可抢夺
+                        (mine.last_login_time IS NULL OR mine.last_login_time &lt; DATE_SUB(NOW(), INTERVAL 30 MINUTE))
+                        -- 不在被抢夺1小时保护冷却
+                        (mine.last_rob_time IS NULL OR mine.last_rob_time &lt; DATE_SUB(NOW(), INTERVAL 1 HOUR))
+                        ORDER BY RAND()
+                        LIMIT 7
+                    ) AS temp
+        );
+    </select>
     <!--新增所有列-->
     <insert id="insertUser" keyProperty="userId" useGeneratedKeys="true">
         insert into yimem.user(username, userpassword, sex, nickname, birthday, provinces, city, county, description,
