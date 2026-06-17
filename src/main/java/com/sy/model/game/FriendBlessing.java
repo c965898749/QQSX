@@ -6,6 +6,7 @@ import com.baomidou.mybatisplus.annotation.TableName;
 import com.baomidou.mybatisplus.annotation.IdType;
 import lombok.Data;
 
+import java.time.LocalDate;
 import java.util.Date;
 @Data
 @TableName("friend_blessing")

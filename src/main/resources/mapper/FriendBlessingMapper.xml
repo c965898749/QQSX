@@ -1,5 +1,15 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="com.sy.mapper.game.FriendBlessingMapper">
+    <select id="countTodayReceive" resultType="long">
+        SELECT COUNT(1)
+        FROM friend_blessing
+        WHERE receiver_id = #{receiverId} AND  DATE_FORMAT(send_time,'%Y-%m-%d') = DATE_FORMAT(#{today},'%Y-%m-%d')
+    </select>
 
+    <!-- 悲观锁行锁，事务内执行会锁住数据，其他请求阻塞，防止并发击穿上限 -->
+    <select id="listTodaySendLock" resultType="com.sy.model.game.FriendBlessing">
+        SELECT * FROM friend_blessing
+        WHERE sender_id = #{senderId} AND  DATE_FORMAT(send_time,'%Y-%m-%d') = DATE_FORMAT(#{today},'%Y-%m-%d')
+    </select>
 </mapper>
