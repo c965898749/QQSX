@@ -3983,10 +3983,11 @@ public class GameServiceServiceImpl implements GameServiceService {
             //TODO 判断卡牌是否飞升
             Card card = cardMapper.selectByid(Integer.parseInt(characters1.getId()));
 
+            int currentLevelExp = 0;
             int xhiaohaoExp = 0;
             int maxLv = CardMaxLevelUtils.getMaxLevel(card.getName(), card.getStar().doubleValue());
             // 累加从 currentLevel 到 targetLevel - 1 的每一级经验
-            for (int level = 1; level <= maxLv; level++) {
+            for (int level = 1; level <= characters.getLv(); level++) {
                 int finalLevel = level;
                 QqCardExp expConfig = qqCardExpList.stream()
                         .filter(c -> (card.getStar().toString()).equals(c.getUpgradeType()) && c.getLevel() == finalLevel)
@@ -3994,10 +3995,17 @@ public class GameServiceServiceImpl implements GameServiceService {
                         .orElse(null);
 
                 if (expConfig != null) {
-                    xhiaohaoExp += expConfig.getUpgradeExp();
+                    if (level < maxLv) {
+                        xhiaohaoExp += expConfig.getUpgradeExp();
+                    }
+                    // 计算当前等级已获得的经验（从1级到当前等级）
+                    if (level < characters1.getLv()) {
+                        currentLevelExp += expConfig.getUpgradeExp();
+                    }
                 }
             }
-            int totalExp = cadExp - xhiaohaoExp;
+            // 总经验 = 当前等级已获得经验 + 剩余经验 - 满级所需总经验
+            int totalExp = currentLevelExp + cadExp - xhiaohaoExp;
             if (totalExp > 1000) {
                 BigDecimal num = new BigDecimal(totalExp).divide(BigDecimal.valueOf(1000), 0, RoundingMode.DOWN);
                 // 计算剩余经验
@@ -5567,11 +5575,12 @@ public class GameServiceServiceImpl implements GameServiceService {
             return baseResp;
         }
 //        String userId = (String) redisTemplate.opsForValue().get(token.getToken());
-//        if (Xtool.isNull(userId)) {
-//            baseResp.setSuccess(0);
-//            baseResp.setErrorMsg("登录过期");
-//            return baseResp;
-//        }
+        String userId = token.getUserId();
+        if (Xtool.isNull(userId)) {
+            baseResp.setSuccess(0);
+            baseResp.setErrorMsg("登录过期");
+            return baseResp;
+        }
         User user = userMapper.selectUserByUserId(Integer.parseInt(token.getUserId()));
         //自己的战队
         List<Characters> leftCharacter = charactersMapper.goIntoListById(user.getUserId() + "");
