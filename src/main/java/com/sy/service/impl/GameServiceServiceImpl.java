@@ -5403,6 +5403,12 @@ public class GameServiceServiceImpl implements GameServiceService {
             baseResp.setErrorMsg("今日15次祝福已送完");
             return baseResp;
         }
+        List<FriendBlessing> blessingList=todaySendList.stream().filter(x -> x.getReceiverId().equals(receiverId)).collect(Collectors.toList());
+        if (Xtool.isNotNull(blessingList)) {
+            baseResp.setSuccess(0);
+            baseResp.setErrorMsg("今日已送祝福");
+            return baseResp;
+        }
 
         // 校验接收方50条上限（无锁，读不影响，上限击穿有唯一索引兜底）
         long receiveCount = friendBlessingMapper.countTodayReceive(receiverId, today);

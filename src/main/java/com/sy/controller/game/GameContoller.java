@@ -847,6 +847,13 @@ public class GameContoller {
             return baseResp;
         }
     }
+    /**
+     * 获取好友列表
+     *
+     * @param token
+     * @param request
+     * @return
+     */
 
     @PostMapping("friendAllList")
     @CrossOrigin
