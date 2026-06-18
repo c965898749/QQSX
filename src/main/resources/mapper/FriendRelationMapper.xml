@@ -14,8 +14,8 @@
     <select id="findByid"  resultType="com.sy.model.User">
              SELECT u.*,fr.id,fb.id as fbId,fb2.is_read as nj FROM `user` u
             LEFT JOIN friend_relation fr on fr.friend_id=u.userId
-            left join friend_blessing fb on fb.sender_id=fr.user_id and fb.receiver_id=fr.friend_id and fb.send_time= CURDATE()
-            left join friend_blessing fb2 on fb2.sender_id=fr.friend_id and fb2.receiver_id=fr.user_id and fb2.send_time= CURDATE()
+            left join friend_blessing fb on fb.sender_id=fr.user_id and fb.receiver_id=fr.friend_id and DATE_FORMAT(fb.send_time,'%Y-%m-%d') = DATE_FORMAT(now(),'%Y-%m-%d')
+            left join friend_blessing fb2 on fb2.sender_id=fr.friend_id and fb2.receiver_id=fr.user_id and DATE_FORMAT(fb2.send_time,'%Y-%m-%d') = DATE_FORMAT(now(),'%Y-%m-%d')
             where fr.user_id=#{userId} and fr.status=#{status}
             <if test="fb!=null  and fb!=''">
                and  fb2.id is not null
