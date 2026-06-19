@@ -686,7 +686,7 @@ public class BattleManager {
 
                     Map<String, TargetBattleData> targetStatus = new HashMap<>();
                     for (Guardian g : offFieldEnemies) {
-                        int totalPoisonDamage = 40 * skillLevel[0];
+                        int totalPoisonDamage = 20 * skillLevel[0];
                         // 1. 计算所有中毒效果的总伤害（累加 POISON 类型的 value）
                         // 2. 计算毒抗相关（直接基于你现有 EffectInstance 计算，不新增 Guardian 方法）
                         // 中毒增益：所有 POISON_RESIST 类型效果的 value 总和
@@ -1778,9 +1778,16 @@ public class BattleManager {
                             Map<String, TargetBattleData> targetStatus = new HashMap<>();
 
                             immortalAllies.forEach(g -> {
-
-                                g.setCurrentHp(g.getCurrentHp() + heal);
-                                TargetBattleData data = new TargetBattleData(g.getMaxHp(), g.getCurrentHp(), heal, g.isOnField());
+                                int healDow = calculateTotalVaule(g, EffectType.HEAL_DOWN);
+                                double healDowPret = calculateTotalDownPretVaule(g, EffectType.HEAL_DOWNT_PRET);
+                                int healBoost = calculateTotalVaule(g, EffectType.HEAL_BOOST);
+                                double healBoostPret = calculateTotalUpPretVaule(g, EffectType.HEAL_BOOST_PRET);
+                                int hel = (int) (heal * healDowPret * healBoostPret + defender.getZlDef() - healDow + healBoost);
+                                if (hel < 0) {
+                                    hel = 0;
+                                }
+                                g.setCurrentHp(g.getCurrentHp() + hel);
+                                TargetBattleData data = new TargetBattleData(g.getMaxHp(), g.getCurrentHp(), hel, g.isOnField());
                                 targetStatus.put(g.getId(), data);
                             });
                             addMultiTargetLog("瑶池仙露",
@@ -3056,22 +3063,21 @@ public class BattleManager {
                             campA.stream().filter(g -> !g.isDead() && !g.isOnField()).collect(Collectors.toList()) :
                             campB.stream().filter(g -> !g.isDead() && !g.isOnField()).collect(Collectors.toList());
                     if (!enemies.isEmpty()) {
-                        Guardian guardian = enemies.get(0);
-                        if (guardian.getBuffTianLuos()<=0){
-                            guardian.addEffect(EffectType.POISON_RESIST_BOOST_PRET, 50, 99, attacker.getId());
-                            guardian.setBuffTianLuos(guardian.getBuffTianLuos() + 1);
-                        }
-                        addLog("田螺歌声",
+                        Map<String, TargetBattleData> targetStatus = new HashMap<>();
+                        enemies.forEach(g -> {
+                            if (g.getBuffTianLuos()<=0){
+                                g.addEffect(EffectType.POISON_RESIST_BOOST_PRET, 50, 99, attacker.getId());
+                                g.setBuffTianLuos(g.getBuffTianLuos() + 1);
+                            }
+                            TargetBattleData data = new TargetBattleData(g.getMaxHp(), g.getCurrentHp(), 50, g.isOnField());
+                            targetStatus.put(g.getId(), data);
+                        });
+                        addMultiTargetLog("田螺歌声",
                                 attacker.getId(),
                                 attacker.getMaxHp(),
                                 attacker.getCurrentHp(),
-                                0,
                                 attacker.isOnField(),
-                                guardian.getId(),
-                                guardian.getMaxHp(),
-                                guardian.getCurrentHp(),
-                                0,
-                                guardian.isOnField(),
+                                targetStatus,
                                 EffectType.POISON_RESIST_BOOST_PRET,
                                 DamageType.BUFF,
                                 "减少50%中毒伤害");
@@ -5074,9 +5080,16 @@ public class BattleManager {
                     Map<String, TargetBattleData> targetStatus = new HashMap<>();
 
                     immortalAllies.forEach(g -> {
-
-                        g.setCurrentHp(g.getCurrentHp() + heal);
-                        TargetBattleData data = new TargetBattleData(g.getMaxHp(), g.getCurrentHp(), heal, g.isOnField());
+                        int healDow = calculateTotalVaule(g, EffectType.HEAL_DOWN);
+                        double healDowPret = calculateTotalDownPretVaule(g, EffectType.HEAL_DOWNT_PRET);
+                        int healBoost = calculateTotalVaule(g, EffectType.HEAL_BOOST);
+                        double healBoostPret = calculateTotalUpPretVaule(g, EffectType.HEAL_BOOST_PRET);
+                        int hel = (int) (heal * healDowPret * healBoostPret + v.getZlDef() - healDow + healBoost);
+                        if (hel < 0) {
+                            hel = 0;
+                        }
+                        g.setCurrentHp(g.getCurrentHp() + hel);
+                        TargetBattleData data = new TargetBattleData(g.getMaxHp(), g.getCurrentHp(), hel, g.isOnField());
                         targetStatus.put(g.getId(), data);
                     });
 
@@ -5721,9 +5734,16 @@ public class BattleManager {
                 Map<String, TargetBattleData> targetStatus = new HashMap<>();
 
                 immortalAllies.forEach(g -> {
-
-                    g.setCurrentHp(g.getCurrentHp() + heal);
-                    TargetBattleData data = new TargetBattleData(g.getMaxHp(), g.getCurrentHp(), heal, g.isOnField());
+                    int healDow = calculateTotalVaule(g, EffectType.HEAL_DOWN);
+                    double healDowPret = calculateTotalDownPretVaule(g, EffectType.HEAL_DOWNT_PRET);
+                    int healBoost = calculateTotalVaule(g, EffectType.HEAL_BOOST);
+                    double healBoostPret = calculateTotalUpPretVaule(g, EffectType.HEAL_BOOST_PRET);
+                    int hel = (int) (heal * healDowPret * healBoostPret + changsheng.getZlDef() - healDow + healBoost);
+                    if (hel < 0) {
+                        hel = 0;
+                    }
+                    g.setCurrentHp(g.getCurrentHp() + hel);
+                    TargetBattleData data = new TargetBattleData(g.getMaxHp(), g.getCurrentHp(), hel, g.isOnField());
                     targetStatus.put(g.getId(), data);
                 });
 
@@ -5759,9 +5779,16 @@ public class BattleManager {
                 Map<String, TargetBattleData> targetStatus = new HashMap<>();
 
                 immortalAllies.forEach(g -> {
-
-                    g.setCurrentHp(g.getCurrentHp() + heal);
-                    TargetBattleData data = new TargetBattleData(g.getMaxHp(), g.getCurrentHp(), heal, g.isOnField());
+                    int healDow = calculateTotalVaule(g, EffectType.HEAL_DOWN);
+                    double healDowPret = calculateTotalDownPretVaule(g, EffectType.HEAL_DOWNT_PRET);
+                    int healBoost = calculateTotalVaule(g, EffectType.HEAL_BOOST);
+                    double healBoostPret = calculateTotalUpPretVaule(g, EffectType.HEAL_BOOST_PRET);
+                    int hel = (int) (heal * healDowPret * healBoostPret + changsheng.getZlDef() - healDow + healBoost);
+                    if (hel < 0) {
+                        hel = 0;
+                    }
+                    g.setCurrentHp(g.getCurrentHp() + hel);
+                    TargetBattleData data = new TargetBattleData(g.getMaxHp(), g.getCurrentHp(), hel, g.isOnField());
                     targetStatus.put(g.getId(), data);
                 });
 
