@@ -59,6 +59,13 @@ public class GameContoller {
         }
     }
 
+    /**
+     * 注册
+     *
+     * @param user
+     * @param request
+     * @return
+     */
     @RequestMapping(value = "registerGame", method = RequestMethod.POST)
     @CrossOrigin
     public BaseResp registerGame(@RequestBody User user, HttpServletRequest request) {
@@ -1609,6 +1616,26 @@ public class GameContoller {
         BaseResp baseResp = new BaseResp();
         try {
             baseResp = gameServiceService.dailyReceive(token, request);
+            return baseResp;
+        } catch (Exception e) {
+            e.printStackTrace();
+            baseResp.setSuccess(0);
+            return baseResp;
+        }
+    }
+
+    /**
+     * 活跃领取
+     * @param token
+     * @param request
+     * @return
+     */
+    @PostMapping("livelyReceive")
+    @CrossOrigin
+    public BaseResp livelyReceive(@RequestBody TokenDto token, HttpServletRequest request) {
+        BaseResp baseResp = new BaseResp();
+        try {
+            baseResp = gameServiceService.livelyReceive(token, request);
             return baseResp;
         } catch (Exception e) {
             e.printStackTrace();

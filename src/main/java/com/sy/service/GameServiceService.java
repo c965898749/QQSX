@@ -46,6 +46,7 @@ public interface GameServiceService {
     BaseResp arenaMessageList(TokenDto token, HttpServletRequest request) throws Exception;
     BaseResp receive(TokenDto token, HttpServletRequest request) throws Exception;
     BaseResp dailyReceive(TokenDto token, HttpServletRequest request) throws Exception;
+    BaseResp livelyReceive(TokenDto token, HttpServletRequest request) throws Exception;
     BaseResp cailiao(TokenDto token, HttpServletRequest request) throws Exception;
     BaseResp hechenCailiao(TokenDto token, HttpServletRequest request) throws Exception;
     BaseResp yhechenCailiao(TokenDto token, HttpServletRequest request) throws Exception;
