@@ -4,7 +4,7 @@ import java.util.Date;
 
 public class StaminaUtil {
     // 体力、活力统一上限
-    public static final int MAX_STAMINA = 720;
+    public static final int MAX_STAMINA = 1500;
     // 每5分钟恢复1点（毫秒）
     public static final long RECOVER_MS = 5 * 60 * 1000L;
 
@@ -27,7 +27,7 @@ public class StaminaUtil {
     }
 
     /**
-     * 使用体力药水：增加/减少体力，上限720，不改动恢复计时时间
+     * 使用体力药水：增加/减少体力，上限1500，不改动恢复计时时间
      * @param curTili 当前体力
      * @param tiliTime 体力恢复基准时间（允许null，原样带回，不修改）
      * @param changeNum 变化值，正数加药水，负数扣体力
@@ -41,7 +41,7 @@ public class StaminaUtil {
     }
 
     /**
-     * 使用活力药水：增加/减少活力，上限720，不改动恢复计时时间
+     * 使用活力药水：增加/减少活力，上限1500，不改动恢复计时时间
      * @param curHuoli 当前活力
      * @param huoliTime 活力恢复基准时间（允许null，原样带回，不修改）
      * @param changeNum 变化值，正数加药水，负数扣活力

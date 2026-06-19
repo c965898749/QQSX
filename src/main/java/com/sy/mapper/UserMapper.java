@@ -1,6 +1,7 @@
 package com.sy.mapper;
 
 import com.sy.model.*;
+import com.sy.model.game.UserMine;
 import org.apache.ibatis.annotations.Param;
 
 import java.util.List;
@@ -16,7 +17,7 @@ public interface UserMapper {
     List<User> SelectRandUser();
 
     List<User> SelectUserItemId(@Param("itemId")String itemId,@Param("userId")String userId);
-    List<User> SelectUserKuanItemId(@Param("itemId")String itemId,@Param("userId")String userId);
+    List<UserMine> SelectUserKuanItemId(@Param("itemId")String itemId, @Param("userId")String userId);
     //新增用户
     int insertUser(User user);
     //修改头像

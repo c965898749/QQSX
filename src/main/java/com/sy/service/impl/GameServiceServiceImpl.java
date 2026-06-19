@@ -181,7 +181,7 @@ public class GameServiceServiceImpl implements GameServiceService {
     @Resource
     private MineRobLogMapper mineRobLogMapper;
     // 最大体力值
-    private static final int MAX_STAMINA = 720;
+    private static final int MAX_STAMINA = 1500;
     // 每10分钟恢复1点体力
     private static final long RECOVER_INTERVAL_MINUTES = 10;
 
@@ -2784,22 +2784,45 @@ public class GameServiceServiceImpl implements GameServiceService {
         }
         gamePlayerBagMapper.updateById(playerBag);
 
-        // 获得 multiple 个目标物品
-        List<GamePlayerBag> playerBagList = gamePlayerBagMapper.selectList(new LambdaQueryWrapper<GamePlayerBag>()
-                .eq(GamePlayerBag::getItemId, craft.getTargetId())
-                .eq(GamePlayerBag::getUserId, userId)
-                .eq(GamePlayerBag::getIsDelete, "0"));
-        if (Xtool.isNotNull(playerBagList)) {
-            GamePlayerBag bag = playerBagList.get(0);
-            bag.setItemCount(bag.getItemCount() + 1);
-            gamePlayerBagMapper.updateById(bag);
-        } else {
-            GamePlayerBag bag = new GamePlayerBag();
-            bag.setUserId(Integer.parseInt(userId));
-            bag.setItemCount(1);
-            bag.setGridIndex(1);
-            bag.setItemId(craft.getTargetId());
-            gamePlayerBagMapper.insert(bag);
+        if ("4".equals(craft.getTargetType())){
+            Characters characters1 = charactersMapper.listById(userId, craft.getTargetId() + "");
+            if (characters1 != null) {
+                characters1.setStackCount(characters1.getStackCount() + 1);
+                charactersMapper.updateByPrimaryKey(characters1);
+            } else {
+                Card card1 = cardMapper.selectByid(Integer.parseInt(craft.getTargetId() + ""));
+                if (card1 == null) {
+                    baseResp.setErrorMsg("服务器异常联想管理员");
+                    baseResp.setSuccess(0);
+                    return baseResp;
+                }
+                Characters characters = new Characters();
+                characters.setStackCount(0);
+                characters.setId(craft.getTargetId() + "");
+                characters.setLv(1);
+                characters.setUserId(Integer.parseInt(userId));
+                characters.setStar(new BigDecimal(1));
+                characters.setMaxLv(CardMaxLevelUtils.getMaxLevel(card1.getName(), card1.getStar().doubleValue()));
+                charactersMapper.insert(characters);
+            }
+        }else {
+            // 获得 multiple 个目标物品
+            List<GamePlayerBag> playerBagList = gamePlayerBagMapper.selectList(new LambdaQueryWrapper<GamePlayerBag>()
+                    .eq(GamePlayerBag::getItemId, craft.getTargetId())
+                    .eq(GamePlayerBag::getUserId, userId)
+                    .eq(GamePlayerBag::getIsDelete, "0"));
+            if (Xtool.isNotNull(playerBagList)) {
+                GamePlayerBag bag = playerBagList.get(0);
+                bag.setItemCount(bag.getItemCount() + 1);
+                gamePlayerBagMapper.updateById(bag);
+            } else {
+                GamePlayerBag bag = new GamePlayerBag();
+                bag.setUserId(Integer.parseInt(userId));
+                bag.setItemCount(1);
+                bag.setGridIndex(1);
+                bag.setItemId(craft.getTargetId());
+                gamePlayerBagMapper.insert(bag);
+            }
         }
         baseResp.setSuccess(1);
         baseResp.setData(playerBag.getItemCount());
@@ -2861,23 +2884,47 @@ public class GameServiceServiceImpl implements GameServiceService {
         }
         gamePlayerBagMapper.updateById(playerBag);
 
-        // 获得 multiple 个目标物品
-        List<GamePlayerBag> playerBagList = gamePlayerBagMapper.selectList(new LambdaQueryWrapper<GamePlayerBag>()
-                .eq(GamePlayerBag::getItemId, craft.getTargetId())
-                .eq(GamePlayerBag::getUserId, userId)
-                .eq(GamePlayerBag::getIsDelete, "0"));
-        if (Xtool.isNotNull(playerBagList)) {
-            GamePlayerBag bag = playerBagList.get(0);
-            bag.setItemCount(bag.getItemCount() + multiple);
-            gamePlayerBagMapper.updateById(bag);
-        } else {
-            GamePlayerBag bag = new GamePlayerBag();
-            bag.setUserId(Integer.parseInt(userId));
-            bag.setItemCount(multiple);
-            bag.setGridIndex(1);
-            bag.setItemId(craft.getTargetId());
-            gamePlayerBagMapper.insert(bag);
+        if ("4".equals(craft.getTargetType())){
+            Characters characters1 = charactersMapper.listById(userId, craft.getTargetId() + "");
+            if (characters1 != null) {
+                characters1.setStackCount(characters1.getStackCount() + multiple);
+                charactersMapper.updateByPrimaryKey(characters1);
+            } else {
+                Card card1 = cardMapper.selectByid(Integer.parseInt(craft.getTargetId() + ""));
+                if (card1 == null) {
+                    baseResp.setErrorMsg("服务器异常联想管理员");
+                    baseResp.setSuccess(0);
+                    return baseResp;
+                }
+                Characters characters = new Characters();
+                characters.setStackCount(multiple-1);
+                characters.setId(craft.getTargetId() + "");
+                characters.setLv(1);
+                characters.setUserId(Integer.parseInt(userId));
+                characters.setStar(new BigDecimal(1));
+                characters.setMaxLv(CardMaxLevelUtils.getMaxLevel(card1.getName(), card1.getStar().doubleValue()));
+                charactersMapper.insert(characters);
+            }
+        }else {
+            // 获得 multiple 个目标物品
+            List<GamePlayerBag> playerBagList = gamePlayerBagMapper.selectList(new LambdaQueryWrapper<GamePlayerBag>()
+                    .eq(GamePlayerBag::getItemId, craft.getTargetId())
+                    .eq(GamePlayerBag::getUserId, userId)
+                    .eq(GamePlayerBag::getIsDelete, "0"));
+            if (Xtool.isNotNull(playerBagList)) {
+                GamePlayerBag bag = playerBagList.get(0);
+                bag.setItemCount(bag.getItemCount() + multiple);
+                gamePlayerBagMapper.updateById(bag);
+            } else {
+                GamePlayerBag bag = new GamePlayerBag();
+                bag.setUserId(Integer.parseInt(userId));
+                bag.setItemCount(multiple);
+                bag.setGridIndex(1);
+                bag.setItemId(craft.getTargetId());
+                gamePlayerBagMapper.insert(bag);
+            }
         }
+
         baseResp.setSuccess(1);
         baseResp.setData(playerBag.getItemCount());
         baseResp.setErrorMsg("成功");
@@ -2957,11 +3004,13 @@ public class GameServiceServiceImpl implements GameServiceService {
         }
         UserMine userMine = userMineMapper.selectOne(new LambdaQueryWrapper<UserMine>().eq(UserMine::getUserId, userId));
         if (userMine == null) {
+            List<MineLevelConfig> mineLevelConfigList = mineLevelConfigMapper.selectList(new LambdaQueryWrapper<MineLevelConfig>().eq(MineLevelConfig::getMineLevel, 1));
+            MineLevelConfig mineLevelConfig = mineLevelConfigList.get(0);
             userMine = new UserMine();
             userMine.setUserId(Integer.parseInt(userId));
-            userMine.setMineLevel(1);
-            userMine.setHourOutput(1000);
-            userMine.setMaxCapacity(100000);
+            userMine.setMineLevel(mineLevelConfig.getMineLevel());
+            userMine.setHourOutput(mineLevelConfig.getHourOutput());
+            userMine.setMaxCapacity(mineLevelConfig.getMaxCapacity());
             userMine.setCurrentSilver(0);
             userMine.setLastCollectTime(new Date());
             userMine.setMineStatus(0);
@@ -5403,7 +5452,7 @@ public class GameServiceServiceImpl implements GameServiceService {
             baseResp.setErrorMsg("今日15次祝福已送完");
             return baseResp;
         }
-        List<FriendBlessing> blessingList=todaySendList.stream().filter(x -> x.getReceiverId().equals(receiverId)).collect(Collectors.toList());
+        List<FriendBlessing> blessingList = todaySendList.stream().filter(x -> x.getReceiverId().equals(receiverId)).collect(Collectors.toList());
         if (Xtool.isNotNull(blessingList)) {
             baseResp.setSuccess(0);
             baseResp.setErrorMsg("今日已送祝福");
@@ -8717,13 +8766,7 @@ public class GameServiceServiceImpl implements GameServiceService {
         }
         User user = userMapper.selectUserByUserId(Integer.parseInt(userId));
         //随机获取有队伍的5个人
-        List<User> users = userMapper.SelectUserKuanItemId(token.getId(), userId);
-        List<UserInfo> infos = new ArrayList<>();
-        for (User user1 : users) {
-            UserInfo info = new UserInfo();
-            BeanUtils.copyProperties(user1, info);
-            infos.add(info);
-        }
+        List<UserMine> infos = userMapper.SelectUserKuanItemId(token.getId(), userId);
         baseResp.setSuccess(1);
         Map map = new HashMap();
         map.put("user", infos);
@@ -11033,6 +11076,11 @@ public class GameServiceServiceImpl implements GameServiceService {
             baseResp.setErrorMsg("活力不足");
             return baseResp;
         }
+        if (user.getDuoCount() <= 0) {
+            baseResp.setSuccess(0);
+            baseResp.setErrorMsg("挑战次数不足");
+            return baseResp;
+        }
         //自己的战队
         List<Characters> leftCharacter = charactersMapper.goIntoListById(user.getUserId() + "");
         if (Xtool.isNull(leftCharacter)) {
@@ -11049,6 +11097,11 @@ public class GameServiceServiceImpl implements GameServiceService {
         Collections.sort(leftCharacter, Comparator.comparing(Characters::getGoIntoNum));
         //对手战队
         User user1 = userMapper.selectUserByUserId(Integer.parseInt(token.getId()));
+        if (user1.getDuoTime() != null && user1.getDuoTime().compareTo(new Date()) >= 0) {
+            baseResp.setSuccess(0);
+            baseResp.setErrorMsg("对面还处于抢夺保护期");
+            return baseResp;
+        }
         List<Characters> rightCharacter = charactersMapper.goIntoListById(user1.getUserId() + "");
         if (Xtool.isNull(rightCharacter)) {
             rightCharacter = new ArrayList<>(); // 必须先创建对象，才能add
@@ -11074,7 +11127,13 @@ public class GameServiceServiceImpl implements GameServiceService {
                 characters.setEqCharactersList(formateEqCharacter(eqCharacters));
             }
         }
-        UserMine targetMine = userMineMapper.selectById(token.getId());
+        List<UserMine> targetMines = userMineMapper.selectList(new LambdaQueryWrapper<UserMine>().eq(UserMine::getUserId, user1.getUserId()));
+        if (Xtool.isNull(targetMines)) {
+            baseResp.setSuccess(0);
+            baseResp.setErrorMsg("对方矿场还未建设");
+            return baseResp;
+        }
+        UserMine targetMine = targetMines.get(0);
         Integer targetUserId = targetMine.getUserId();
         MineUtil.MineRobResult robResult = MineUtil.checkAndCalcRob(targetMine);
         if (!robResult.isCanRob()) {
@@ -11089,9 +11148,10 @@ public class GameServiceServiceImpl implements GameServiceService {
         StaminaUtil.StaminaItem huoliRes = StaminaUtil.useHuoliPotion(user.getHuoliCount(), user.getHuoliCountTime(), -10);
         user.setHuoliCount(huoliRes.getCount());
         user.setHuoliCountTime(huoliRes.getCountTime());
+        user.setDuoCount(user.getDuoCount() - 1);
         userMapper.updateuser(user);
 
-
+        List<PveReward> rewards = new ArrayList<>();
         if (battle.getIsWin() == 0) {
             // 更新目标矿场
             MineUtil.doRobMine(targetMine, robResult);
@@ -11103,11 +11163,19 @@ public class GameServiceServiceImpl implements GameServiceService {
             // 此处自行扩展：给attackerId发放robResult.getRobSilver()银两
             user.setGold(user.getGold().add(BigDecimal.valueOf(robResult.getRobSilver())));
             userMapper.updateuser(user);
+            PveReward pveReward = new PveReward();
+            pveReward.setItemId(0);
+            pveReward.setItemName("金币");
+            pveReward.setRewardAmount(robResult.getRobSilver());
+            pveReward.setRewardType("2");
+            pveReward.setIndex(0);
+            rewards.add(pveReward);
         }
         UserInfo userInfo = new UserInfo();
         BeanUtils.copyProperties(user, userInfo);
         Map map = new HashMap();
-        map.put("robResult", robResult);
+        map.put("rewards", rewards);
+        map.put("duoCount", userInfo.getDuoCount());
         map.put("user", userInfo);
         map.put("battle", battle);
         baseResp.setData(map);
@@ -11130,10 +11198,11 @@ public class GameServiceServiceImpl implements GameServiceService {
             return baseResp;
         }
         String userId = token.getUserId();
-        LambdaQueryWrapper<MineRobLog> wrapper = new LambdaQueryWrapper<>();
-        wrapper.eq(MineRobLog::getTargetUserId, userId);
-        wrapper.orderByDesc(MineRobLog::getCreateTime);
-        baseResp.setData(mineRobLogMapper.selectList(wrapper));
+        List<MineRobLog> mineRobLogs = mineRobLogMapper.selectAll(userId);
+        for (MineRobLog mineRobLog : mineRobLogs) {
+            mineRobLog.setTimeStr(formatTime(mineRobLog.getCreateTime()));
+        }
+        baseResp.setData(mineRobLogs);
         baseResp.setSuccess(1);
         return baseResp;
     }

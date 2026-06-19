@@ -75,14 +75,6 @@ public class SampleXxlJob {
         // 清理7天前的礼仪礼品记录
         QueryWrapper<CeremonialGiftRecord> giftRecordWrapper = new QueryWrapper<>();
         giftRecordMapper.delete(giftRecordWrapper);
-        // 分批删除游戏战斗记录，避免超时
-        int totalDeleted = 0;
-        int deletedCount;
-        do {
-            deletedCount = gameFightMapper.deleteByTimeBatch();
-            totalDeleted += deletedCount;
-        } while (deletedCount > 0);
-        System.out.println("删除完成，共删除: " + totalDeleted + " 条");
     }
     @Scheduled(cron = "0 0 0/4 * * ?")
     public void deleteAll(){
@@ -104,10 +96,10 @@ public class SampleXxlJob {
 
 
     // 每5分钟批量结算所有生产矿场
-    @Scheduled(fixedRate = 5 * 60 * 1000)
+    @Scheduled(fixedRate = 10 * 60 * 1000)
     public void mineSilverCalcTask() {
         LambdaQueryWrapper<UserMine> wrapper = new LambdaQueryWrapper<>();
-        wrapper.eq(UserMine::getMineStatus, 1);
+        wrapper.eq(UserMine::getMineStatus, 0);
         List<UserMine> mineList = userMineMapper.selectList(wrapper);
 
         for (UserMine mine : mineList) {

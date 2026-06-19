@@ -30,4 +30,11 @@ public class MineRobLog {
 
     @TableField("fight_id")
     private String fightId;
+
+    @TableField(exist = false)
+    private String nickname;
+    @TableField(exist = false)
+    private String gameImg;
+    @TableField(exist = false)
+    private String timeStr;
 }

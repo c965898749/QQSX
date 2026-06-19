@@ -35,7 +35,12 @@ public class UserMine {
     private Date createTime;
     @TableField("create_time")
     private Date updateTime;
-
-
-
+    @TableField(exist = false)
+    private String nickname;
+    @TableField(exist = false)
+    private String gameImg;
+    @TableField(exist = false)
+    private String lv;
+    @TableField(exist = false)
+    private String winCount;
 }

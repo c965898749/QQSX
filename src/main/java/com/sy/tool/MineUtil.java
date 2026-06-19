@@ -8,8 +8,7 @@ import java.util.Date;
 
 public class MineUtil {
     // 抢夺全局配置
-    public static final long ROB_OFFLINE_MS = 30L * 60 * 1000;   // 离线30分钟可抢夺
-    public static final long ROB_PROTECT_MS = 60L * 60 * 1000;  // 被抢后1小时保护
+
     public static final double ROB_RATE = 0.3;                  // 抢夺比例30%
     public static final int ROB_MIN_SILVER = 100;               // 最低抢夺银两
 
@@ -17,7 +16,7 @@ public class MineUtil {
      * 定时任务单条矿场产出结算
      */
     public static void batchCalcMineSilver(UserMine mine) {
-        if (mine.getMineStatus() == null || mine.getMineStatus() != 1) {
+        if (mine.getMineStatus() == null || mine.getMineStatus() != 0) {
             return;
         }
         Date lastCollect = mine.getLastCollectTime();
@@ -97,7 +96,7 @@ public class MineUtil {
         int curSilver = mine.getCurrentSilver() == null ? 0 : mine.getCurrentSilver();
 
         // 矿场未开启
-        if (mine.getMineStatus() == null || mine.getMineStatus() != 1) {
+        if (mine.getMineStatus() == null || mine.getMineStatus() != 0) {
             res.setCanRob(false);
             res.setRobMsg("对方矿场未开启");
             return res;
@@ -108,29 +107,29 @@ public class MineUtil {
             res.setRobMsg("对方银两过少，无法抢夺");
             return res;
         }
-        // 离线不足
-        Date lastLogin = mine.getLastLoginTime();
-        if (lastLogin == null) {
-            res.setCanRob(false);
-            res.setRobMsg("对方新矿场保护中");
-            return res;
-        }
-        long offlineDiff = nowMs - lastLogin.getTime();
-        if (offlineDiff < ROB_OFFLINE_MS) {
-            res.setCanRob(false);
-            res.setRobMsg("对方在线/离线时间较短，不可抢夺");
-            return res;
-        }
-        // 被抢冷却
-        Date lastRob = mine.getLastRobTime();
-        if (lastRob != null) {
-            long robDiff = nowMs - lastRob.getTime();
-            if (robDiff < ROB_PROTECT_MS) {
-                res.setCanRob(false);
-                res.setRobMsg("对方刚被抢夺，处于保护期");
-                return res;
-            }
-        }
+//        // 离线不足
+//        Date lastLogin = mine.getLastLoginTime();
+//        if (lastLogin == null) {
+//            res.setCanRob(false);
+//            res.setRobMsg("对方新矿场保护中");
+//            return res;
+//        }
+//        long offlineDiff = nowMs - lastLogin.getTime();
+//        if (offlineDiff < ROB_OFFLINE_MS) {
+//            res.setCanRob(false);
+//            res.setRobMsg("对方在线/离线时间较短，不可抢夺");
+//            return res;
+//        }
+//        // 被抢冷却
+//        Date lastRob = mine.getLastRobTime();
+//        if (lastRob != null) {
+//            long robDiff = nowMs - lastRob.getTime();
+//            if (robDiff < ROB_PROTECT_MS) {
+//                res.setCanRob(false);
+//                res.setRobMsg("对方刚被抢夺，处于保护期");
+//                return res;
+//            }
+//        }
         // 可抢夺
         int robNum = (int) (curSilver * ROB_RATE);
         int left = curSilver - robNum;

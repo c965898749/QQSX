@@ -1630,7 +1630,12 @@ public class GameContoller {
             return baseResp;
         }
     }
-
+    /**
+     * 材料合成
+     * @param token
+     * @param request
+     * @return
+     */
     @PostMapping("hechenCailiao")
     @CrossOrigin
     public BaseResp hechenCailiao(@RequestBody TokenDto token, HttpServletRequest request) {
@@ -1645,6 +1650,12 @@ public class GameContoller {
         }
     }
 
+    /**
+     * 材料合成
+     * @param token
+     * @param request
+     * @return
+     */
     @PostMapping("yhechenCailiao")
     @CrossOrigin
     public BaseResp yhechenCailiao(@RequestBody TokenDto token, HttpServletRequest request) {
