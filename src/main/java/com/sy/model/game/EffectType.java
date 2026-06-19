@@ -1,7 +1,7 @@
 package com.sy.model.game;
 
 public enum EffectType {
-   
+    DISPEL("驱散"),
     SILENCE("沉默"),
     SILENCE_IMMUNE("沉默免疫"),
     STUN("眩晕"),
@@ -22,8 +22,8 @@ public enum EffectType {
     HEAL_DOWNT_PRET("受到治疗下降"),
     XU_HEAL_BOOST("续命治疗提升"),
     XU_HEAL_BOOST_PRET("续命治疗提升"),
-    XU_HEAL_DOWN("续命治疗提升"),
-    XU_HEAL_DOWN_PRET("续命治疗提升"),
+    XU_HEAL_DOWN("续命治疗下降"),
+    XU_HEAL_DOWN_PRET("续命治疗下降"),
     
     //物理攻击
     DAMAGE("伤害"),

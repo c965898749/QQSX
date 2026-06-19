@@ -1242,6 +1242,56 @@ public class BattleManager {
                             }
                         }
                         break;
+                    case "太上老君":
+                        // 每当有新单位登场时，有40%几率驱散敌方全体的增益效果
+                        if (skillLevel[1] > 0) {
+                            if (guardian1 != null) {
+                                List<Guardian> enemies = guardian1.getCamp() == Camp.A ?
+                                        campA.stream().filter(g -> !g.isDead()).collect(Collectors.toList()) :
+                                        campB.stream().filter(g -> !g.isDead()).collect(Collectors.toList());
+                                Map<String, TargetBattleData> targetStatus = new HashMap<>();
+                                if (ProbabilityBooleanUtils.randomByProbability(0.4) && Xtool.isNotNull(enemies)) {
+                                    enemies.forEach(g -> {
+                                        g.remove(EffectType.HP_RECOVER);
+                                        g.remove(EffectType.HEAL_BOOST);
+                                        g.remove(EffectType.HEAL_BOOST_PRET);
+                                        g.remove(EffectType.XU_HEAL_BOOST);
+                                        g.remove(EffectType.XU_HEAL_BOOST_PRET);
+                                        g.remove(EffectType.ATTACK_UP);
+                                        g.remove(EffectType.ATTACK_UP_PRET);
+                                        g.remove(EffectType.ATTACK_RESIST_BOOST);
+                                        g.remove(EffectType.ATTACK_RESIST_BOOST_PRET);
+                                        g.remove(EffectType.FIRE_DOWN);
+                                        g.remove(EffectType.FIRE_DOWN_PRET);
+                                        g.remove(EffectType.FIRE_RESIST_BOOST);
+                                        g.remove(EffectType.FIRE_RESIST_BOOST_PRET);
+                                        g.remove(EffectType.POISON_DOWN);
+                                        g.remove(EffectType.POISON_RESIST_BOOST);
+                                        g.remove(EffectType.POISON_RESIST_BOOST_PRET);
+                                        g.remove(EffectType.MISSILE_DOWN);
+                                        g.remove(EffectType.MISSILE_DOWN_PRET);
+                                        g.remove(EffectType.MISSILE_RESIST_BOOST);
+                                        g.remove(EffectType.MISSILE_RESIST_BOOST_PRET);
+                                        g.remove(EffectType.HP_UP);
+                                        g.remove(EffectType.HP_UP_PRET);
+                                        g.remove(EffectType.SPEED_UP);
+                                        g.remove(EffectType.SPEED_UP_PRET);
+                                        TargetBattleData data = new TargetBattleData(g.getMaxHp(), g.getCurrentHp(), 50, g.isOnField());
+                                        targetStatus.put(g.getId(), data);
+                                    });
+                                    addMultiTargetLog("元气消散",
+                                            enemy.getId(),
+                                            enemy.getMaxHp(),
+                                            enemy.getCurrentHp(),
+                                            enemy.isOnField(),
+                                            targetStatus,
+                                            EffectType.DISPEL,
+                                            DamageType.BUFF,
+                                            "驱散增益");
+                                }
+                            }
+                        }
+                        break;
                 }
             }
         }
@@ -1409,6 +1459,56 @@ public class BattleManager {
                                         EffectType.ATTACK_DOWN_PRET,
                                         DamageType.BUFF,
                                         "攻击降低" + skillLevel2[1] + "0%");
+                            }
+                        }
+                        break;
+                    case "太上老君":
+                        // 致命衰竭：登场目标攻击减少10%
+                        if (skillLevel2[1] > 0) {
+                            if (guardian2 != null) {
+                                List<Guardian> enemies = guardian2.getCamp() == Camp.A ?
+                                        campA.stream().filter(g -> !g.isDead()).collect(Collectors.toList()) :
+                                        campB.stream().filter(g -> !g.isDead()).collect(Collectors.toList());
+                                Map<String, TargetBattleData> targetStatus = new HashMap<>();
+                                if (ProbabilityBooleanUtils.randomByProbability(0.4) && Xtool.isNotNull(enemies)) {
+                                    enemies.forEach(g -> {
+                                        g.remove(EffectType.HP_RECOVER);
+                                        g.remove(EffectType.HEAL_BOOST);
+                                        g.remove(EffectType.HEAL_BOOST_PRET);
+                                        g.remove(EffectType.XU_HEAL_BOOST);
+                                        g.remove(EffectType.XU_HEAL_BOOST_PRET);
+                                        g.remove(EffectType.ATTACK_UP);
+                                        g.remove(EffectType.ATTACK_UP_PRET);
+                                        g.remove(EffectType.ATTACK_RESIST_BOOST);
+                                        g.remove(EffectType.ATTACK_RESIST_BOOST_PRET);
+                                        g.remove(EffectType.FIRE_DOWN);
+                                        g.remove(EffectType.FIRE_DOWN_PRET);
+                                        g.remove(EffectType.FIRE_RESIST_BOOST);
+                                        g.remove(EffectType.FIRE_RESIST_BOOST_PRET);
+                                        g.remove(EffectType.POISON_DOWN);
+                                        g.remove(EffectType.POISON_RESIST_BOOST);
+                                        g.remove(EffectType.POISON_RESIST_BOOST_PRET);
+                                        g.remove(EffectType.MISSILE_DOWN);
+                                        g.remove(EffectType.MISSILE_DOWN_PRET);
+                                        g.remove(EffectType.MISSILE_RESIST_BOOST);
+                                        g.remove(EffectType.MISSILE_RESIST_BOOST_PRET);
+                                        g.remove(EffectType.HP_UP);
+                                        g.remove(EffectType.HP_UP_PRET);
+                                        g.remove(EffectType.SPEED_UP);
+                                        g.remove(EffectType.SPEED_UP_PRET);
+                                        TargetBattleData data = new TargetBattleData(g.getMaxHp(), g.getCurrentHp(), 50, g.isOnField());
+                                        targetStatus.put(g.getId(), data);
+                                    });
+                                    addMultiTargetLog("元气消散",
+                                            enemy.getId(),
+                                            enemy.getMaxHp(),
+                                            enemy.getCurrentHp(),
+                                            enemy.isOnField(),
+                                            targetStatus,
+                                            EffectType.DISPEL,
+                                            DamageType.BUFF,
+                                            "驱散增益");
+                                }
                             }
                         }
                         break;
@@ -2385,6 +2485,29 @@ public class BattleManager {
 
                 }
                 break;
+            case "太上老君":
+                // 绝地反击：造成敌方攻击10%的伤害
+                if (!defender.isDead()) {
+                    // 任意位置，每当受到伤害时有20%几率令场上敌方晕眩2回合。
+                    if (ProbabilityBooleanUtils.randomByProbability(0.20) && attacker != null && !attacker.isDead()&& skillLevel[1] > 0) {
+                        attacker.addEffect(EffectType.STUN, 0, 2, defender.getId());
+                        addLog("无为而治",
+                                defender.getId(),
+                                defender.getMaxHp(),
+                                defender.getCurrentHp(),
+                                0,
+                                defender.isOnField(),
+                                attacker.getId(),
+                                attacker.getMaxHp(),
+                                attacker.getCurrentHp(),
+                                0,
+                                attacker.isOnField(),
+                                EffectType.STUN,
+                                DamageType.BUFF,
+                                "眩晕2回合");
+                    }
+                }
+                break;
         }
     }
 
@@ -2989,6 +3112,31 @@ public class BattleManager {
                             DamageType.MAGIC,
                             "生命上限+" + hel);
 
+                }
+                break;
+            case "太上老君":
+                // 绝地反击：造成敌方攻击10%的伤害
+                if (!defender.isDead()) {
+                    // 任意位置，每当受到伤害时有20%几率令场上敌方晕眩2回合。
+                    Guardian enemie = defender.getCamp() == Camp.A ?
+                            fieldB : fieldA;
+                    if (ProbabilityBooleanUtils.randomByProbability(0.20) && enemie != null && !enemie.isDead()&& skillLevel[1] > 0) {
+                        enemie.addEffect(EffectType.STUN, 0, 2, defender.getId());
+                        addLog("无为而治",
+                                defender.getId(),
+                                defender.getMaxHp(),
+                                defender.getCurrentHp(),
+                                0,
+                                defender.isOnField(),
+                                enemie.getId(),
+                                enemie.getMaxHp(),
+                                enemie.getCurrentHp(),
+                                0,
+                                enemie.isOnField(),
+                                EffectType.STUN,
+                                DamageType.BUFF,
+                                "眩晕2回合");
+                    }
                 }
                 break;
         }
@@ -5806,6 +5954,186 @@ public class BattleManager {
                 });
             }
         }
+
+        //我方单位死亡时，对场上敌方造成1305点飞弹伤害[
+        if (v.getCamp() == Camp.A && campA.stream().anyMatch(g -> g.getName().equals("太上老君")&& !g.isDead())) {
+            Guardian changsheng = campA.stream()
+                    .filter(g -> g.getName().equals("太上老君")&& !g.isDead())
+                    .findFirst().get();
+            if (!changsheng.isSilence()) {
+                int[] skillLevel = CardSkillLevelUtil.calculateSkillLevels(changsheng.getLevel(), changsheng.getStar().doubleValue());
+                if (skillLevel[2] > 0) {
+                    if (fieldB != null && !fieldB.isDead()) {
+                        // 1. 计算所有中毒效果的总伤害（累加 POISON 类型的 value）
+                        int totalPoisonDamage = 430 * skillLevel[2];
+                        // 2. 计算毒抗相关（直接基于你现有 EffectInstance 计算，不新增 Guardian 方法）
+                        // 飞弹增益：所有 POISON_RESIST 类型效果的 value 总和
+                        int resistUp = calculateTotalVaule(changsheng, EffectType.MISSILE_BOOST);
+                        // 飞弹增益百分比：所有 POISON_RESIST 类型效果的 value 乘积
+                        double resistUpPret = calculateTotalUpPretVaule(changsheng, EffectType.MISSILE_BOOST_PRET);
+                        // 飞弹降低：所有 POISON_RESIST_DOWN 类型效果的 value 总和
+                        int resistDown = calculateTotalVaule(changsheng, EffectType.MISSILE_DOWN);
+                        // 飞弹降低百分比：所有 POISON_RESIST 类型效果的 value 乘积
+                        double resistDownPret = calculateTotalDownPretVaule(changsheng, EffectType.MISSILE_DOWN_PRET);
+
+
+                        // 2. 计算毒抗相关（直接基于你现有 EffectInstance 计算，不新增 Guardian 方法）
+                        // 弹抗增益：所有 POISON_RESIST 类型效果的 value 总和
+                        int targetUp = calculateTotalVaule(fieldB, EffectType.MISSILE_RESIST_BOOST);
+                        // 弹抗增益百分比：所有 POISON_RESIST 类型效果的 value 乘积
+                        double targetUpPret = calculateTotalDownPretVaule(fieldB, EffectType.MISSILE_RESIST_BOOST_PRET);
+                        // 弹抗降低：所有 POISON_RESIST_DOWN 类型效果的 value 总和
+                        int targetDown = calculateTotalVaule(fieldB, EffectType.MISSILE_RESIST_DOWN);
+                        // 弹抗降低百分比：所有 POISON_RESIST 类型效果的 value fieldA
+                        double targetDownPret = calculateTotalUpPretVaule(fieldB, EffectType.MISSILE_RESIST_DOWN_PRET);
+                        // 最终（仅基于 buff 计算，无新增方法）
+
+                        int burnDamage = (int) (totalPoisonDamage * resistUpPret * resistDownPret * targetUpPret * targetDownPret
+                                + (resistUp - resistDown + changsheng.getFdAtk() - fieldB.getFdDef() - targetUp + targetDown));
+
+                        if (burnDamage < 0) {
+                            burnDamage = 0;
+                        }
+                        Integer logIndex=battleLogs.size();
+                        burnDamage=triggerOnAttackedSkills(fieldB,burnDamage,EffectType.MISSILE_DAMAGE);
+
+                        // 4. 扣除伤害
+                        fieldB.setCurrentHp(fieldB.getCurrentHp() - burnDamage);
+                        Map<String, TargetBattleData> deadUnits = new HashMap<>();
+
+                        if (fieldB.getCurrentHp() <= 0) {
+                            fieldB.setDead(true);
+                            fieldB.setOnField(false);
+                            TargetBattleData data = new TargetBattleData(fieldB.getMaxHp(), fieldB.getCurrentHp(), burnDamage, fieldB.isOnField());
+                            deadUnits.put(fieldB.getId(), data);
+                        }
+                        addLog("复仇飞弹",
+                                changsheng.getId(),
+                                changsheng.getMaxHp(),
+                                changsheng.getCurrentHp(),
+                                0,
+                                changsheng.isOnField(),
+                                fieldB.getId(),
+                                fieldB.getMaxHp(),
+                                fieldB.getCurrentHp(),
+                                burnDamage,
+                                fieldB.isOnField(),
+                                EffectType.MISSILE_DAMAGE,
+                                DamageType.MISSILE,
+                                "-" + burnDamage,logIndex);
+                        // 死亡日志
+                        if (!deadUnits.isEmpty()) {
+                            addMultiTargetLog("UNIT_DEATH",
+                                    null,
+                                    0,
+                                    0,
+                                    false,
+                                    deadUnits,
+                                    null,
+                                    null,
+                                    "死亡");
+                            //触发死亡技能
+                            triggerOnDeathSkills(fieldB);
+
+                        } else {
+                            //触发受击技能
+                            triggerOnAttackedSkills(fieldB, EffectType.MISSILE_DAMAGE);
+                        }
+                    }
+                }
+
+            }
+
+        }
+
+        if (v.getCamp() == Camp.B && campB.stream().anyMatch(g -> g.getName().equals("太上老君") && !g.isDead())) {
+            Guardian changsheng = campB.stream()
+                    .filter(g -> g.getName().equals("太上老君") && !g.isDead())
+                    .findFirst().get();
+            if (!changsheng.isSilence()) {
+                int[] skillLevel = CardSkillLevelUtil.calculateSkillLevels(changsheng.getLevel(), changsheng.getStar().doubleValue());
+                if (fieldA != null && !fieldA.isDead()) {
+                    // 1. 计算所有中毒效果的总伤害（累加 POISON 类型的 value）
+                    int totalPoisonDamage = 430 * skillLevel[0];
+                    // 2. 计算毒抗相关（直接基于你现有 EffectInstance 计算，不新增 Guardian 方法）
+                    // 飞弹增益：所有 POISON_RESIST 类型效果的 value 总和
+                    int resistUp = calculateTotalVaule(changsheng, EffectType.MISSILE_BOOST);
+                    // 飞弹增益百分比：所有 POISON_RESIST 类型效果的 value 乘积
+                    double resistUpPret = calculateTotalUpPretVaule(changsheng, EffectType.MISSILE_BOOST_PRET);
+                    // 飞弹降低：所有 POISON_RESIST_DOWN 类型效果的 value 总和
+                    int resistDown = calculateTotalVaule(changsheng, EffectType.MISSILE_DOWN);
+                    // 飞弹降低百分比：所有 POISON_RESIST 类型效果的 value 乘积
+                    double resistDownPret = calculateTotalDownPretVaule(changsheng, EffectType.MISSILE_DOWN_PRET);
+
+
+                    // 2. 计算毒抗相关（直接基于你现有 EffectInstance 计算，不新增 Guardian 方法）
+                    // 弹抗增益：所有 POISON_RESIST 类型效果的 value 总和
+                    int targetUp = calculateTotalVaule(fieldA, EffectType.MISSILE_RESIST_BOOST);
+                    // 弹抗增益百分比：所有 POISON_RESIST 类型效果的 value 乘积
+                    double targetUpPret = calculateTotalDownPretVaule(fieldA, EffectType.MISSILE_RESIST_BOOST_PRET);
+                    // 弹抗降低：所有 POISON_RESIST_DOWN 类型效果的 value 总和
+                    int targetDown = calculateTotalVaule(fieldA, EffectType.MISSILE_RESIST_DOWN);
+                    // 弹抗降低百分比：所有 POISON_RESIST 类型效果的 value fieldA
+                    double targetDownPret = calculateTotalUpPretVaule(fieldA, EffectType.MISSILE_RESIST_DOWN_PRET);
+                    // 最终（仅基于 buff 计算，无新增方法）
+
+                    int burnDamage = (int) (totalPoisonDamage * resistUpPret * resistDownPret * targetUpPret * targetDownPret
+                            + (resistUp - resistDown + changsheng.getFdAtk() - fieldA.getFdDef() - targetUp + targetDown));
+
+                    if (burnDamage < 0) {
+                        burnDamage = 0;
+                    }
+                    Integer logIndex=battleLogs.size();
+                    burnDamage=triggerOnAttackedSkills(fieldA,burnDamage,EffectType.MISSILE_DAMAGE);
+
+                    // 4. 扣除伤害
+                    fieldA.setCurrentHp(fieldA.getCurrentHp() - burnDamage);
+                    Map<String, TargetBattleData> deadUnits = new HashMap<>();
+
+                    if (fieldA.getCurrentHp() <= 0) {
+                        fieldA.setDead(true);
+                        fieldA.setOnField(false);
+                        TargetBattleData data = new TargetBattleData(fieldA.getMaxHp(), fieldA.getCurrentHp(), burnDamage, fieldA.isOnField());
+                        deadUnits.put(fieldA.getId(), data);
+                    }
+                    addLog("复仇飞弹",
+                            changsheng.getId(),
+                            changsheng.getMaxHp(),
+                            changsheng.getCurrentHp(),
+                            0,
+                            changsheng.isOnField(),
+                            fieldA.getId(),
+                            fieldA.getMaxHp(),
+                            fieldA.getCurrentHp(),
+                            burnDamage,
+                            fieldA.isOnField(),
+                            EffectType.MISSILE_DAMAGE,
+                            DamageType.MISSILE,
+                            "-" + burnDamage,logIndex);
+                    // 死亡日志
+                    if (!deadUnits.isEmpty()) {
+                        addMultiTargetLog("UNIT_DEATH",
+                                null,
+                                0,
+                                0,
+                                false,
+                                deadUnits,
+                                null,
+                                null,
+                                "死亡");
+                        //触发死亡技能
+                        triggerOnDeathSkills(fieldA);
+
+                    } else {
+                        //触发受击技能
+                        triggerOnAttackedSkills(fieldA, EffectType.MISSILE_DAMAGE);
+                    }
+                }
+
+            }
+
+        }
+
     }
 
     // 处理回合开始效果
@@ -10367,6 +10695,193 @@ public class BattleManager {
                             EffectType.STUN,
                             null,
                             "眩晕2回合");
+                }
+            }
+
+            //每当有新单位登场时，有40%几率驱散敌方全体的增益效果；
+            if (defender1.getCamp() == Camp.A && campA.stream().anyMatch(g -> g.getName().equals("太上老君") && g.getPosition() == position && !g.isDead() && !g.isOnField() && !g.isSilence())) {
+                Guardian guardian = campA.stream()
+                        .filter(g -> g.getName().equals("太上老君") && g.getPosition() == position && !g.isDead() && !g.isOnField())
+                        .findFirst().get();
+                List<Guardian> enemies =campB.stream().filter(g -> !g.isDead() && !g.isOnField()).collect(Collectors.toList());
+                Map<String, TargetBattleData> targetStatus = new HashMap<>();
+                if (ProbabilityBooleanUtils.randomByProbability(0.4) && Xtool.isNotNull(enemies)) {
+                    enemies.forEach(g -> {
+                        g.remove(EffectType.HP_RECOVER);
+                        g.remove(EffectType.HEAL_BOOST);
+                        g.remove(EffectType.HEAL_BOOST_PRET);
+                        g.remove(EffectType.XU_HEAL_BOOST);
+                        g.remove(EffectType.XU_HEAL_BOOST_PRET);
+                        g.remove(EffectType.ATTACK_UP);
+                        g.remove(EffectType.ATTACK_UP_PRET);
+                        g.remove(EffectType.ATTACK_RESIST_BOOST);
+                        g.remove(EffectType.ATTACK_RESIST_BOOST_PRET);
+                        g.remove(EffectType.FIRE_DOWN);
+                        g.remove(EffectType.FIRE_DOWN_PRET);
+                        g.remove(EffectType.FIRE_RESIST_BOOST);
+                        g.remove(EffectType.FIRE_RESIST_BOOST_PRET);
+                        g.remove(EffectType.POISON_DOWN);
+                        g.remove(EffectType.POISON_RESIST_BOOST);
+                        g.remove(EffectType.POISON_RESIST_BOOST_PRET);
+                        g.remove(EffectType.MISSILE_DOWN);
+                        g.remove(EffectType.MISSILE_DOWN_PRET);
+                        g.remove(EffectType.MISSILE_RESIST_BOOST);
+                        g.remove(EffectType.MISSILE_RESIST_BOOST_PRET);
+                        g.remove(EffectType.HP_UP);
+                        g.remove(EffectType.HP_UP_PRET);
+                        g.remove(EffectType.SPEED_UP);
+                        g.remove(EffectType.SPEED_UP_PRET);
+                        TargetBattleData data = new TargetBattleData(g.getMaxHp(), g.getCurrentHp(), 50, g.isOnField());
+                        targetStatus.put(g.getId(), data);
+                    });
+                    addMultiTargetLog("元气消散",
+                            guardian.getId(),
+                            guardian.getMaxHp(),
+                            guardian.getCurrentHp(),
+                            guardian.isOnField(),
+                            targetStatus,
+                            EffectType.DISPEL,
+                            DamageType.BUFF,
+                            "驱散增益");
+                }
+            }
+            if (defender2!=null&&defender2.getCamp() == Camp.A && campA.stream().anyMatch(g -> g.getName().equals("太上老君") && g.getPosition() == position && !g.isDead() && !g.isOnField() && !g.isSilence())) {
+                Guardian guardian = campA.stream()
+                        .filter(g -> g.getName().equals("太上老君") && g.getPosition() == position && !g.isDead() && !g.isOnField())
+                        .findFirst().get();
+                List<Guardian> enemies =campB.stream().filter(g -> !g.isDead() && !g.isOnField()).collect(Collectors.toList());
+                Map<String, TargetBattleData> targetStatus = new HashMap<>();
+                if (ProbabilityBooleanUtils.randomByProbability(0.4) && Xtool.isNotNull(enemies)) {
+                    enemies.forEach(g -> {
+                        g.remove(EffectType.HP_RECOVER);
+                        g.remove(EffectType.HEAL_BOOST);
+                        g.remove(EffectType.HEAL_BOOST_PRET);
+                        g.remove(EffectType.XU_HEAL_BOOST);
+                        g.remove(EffectType.XU_HEAL_BOOST_PRET);
+                        g.remove(EffectType.ATTACK_UP);
+                        g.remove(EffectType.ATTACK_UP_PRET);
+                        g.remove(EffectType.ATTACK_RESIST_BOOST);
+                        g.remove(EffectType.ATTACK_RESIST_BOOST_PRET);
+                        g.remove(EffectType.FIRE_DOWN);
+                        g.remove(EffectType.FIRE_DOWN_PRET);
+                        g.remove(EffectType.FIRE_RESIST_BOOST);
+                        g.remove(EffectType.FIRE_RESIST_BOOST_PRET);
+                        g.remove(EffectType.POISON_DOWN);
+                        g.remove(EffectType.POISON_RESIST_BOOST);
+                        g.remove(EffectType.POISON_RESIST_BOOST_PRET);
+                        g.remove(EffectType.MISSILE_DOWN);
+                        g.remove(EffectType.MISSILE_DOWN_PRET);
+                        g.remove(EffectType.MISSILE_RESIST_BOOST);
+                        g.remove(EffectType.MISSILE_RESIST_BOOST_PRET);
+                        g.remove(EffectType.HP_UP);
+                        g.remove(EffectType.HP_UP_PRET);
+                        g.remove(EffectType.SPEED_UP);
+                        g.remove(EffectType.SPEED_UP_PRET);
+                        TargetBattleData data = new TargetBattleData(g.getMaxHp(), g.getCurrentHp(), 50, g.isOnField());
+                        targetStatus.put(g.getId(), data);
+                    });
+                    addMultiTargetLog("元气消散",
+                            guardian.getId(),
+                            guardian.getMaxHp(),
+                            guardian.getCurrentHp(),
+                            guardian.isOnField(),
+                            targetStatus,
+                            EffectType.DISPEL,
+                            DamageType.BUFF,
+                            "驱散增益");
+                }
+            }
+//            每当有新单位登场时，有40%几率驱散敌方全体的增益效果；
+            if (defender1.getCamp() == Camp.B && campB.stream().anyMatch(g -> g.getName().equals("太上老君") && g.getPosition() == position && !g.isDead() && !g.isOnField() && !g.isSilence())) {
+                Guardian guardian = campB.stream()
+                        .filter(g -> g.getName().equals("太上老君") && g.getPosition() == position && !g.isDead() && !g.isOnField())
+                        .findFirst().get();
+                List<Guardian> enemies =campA.stream().filter(g -> !g.isDead() && !g.isOnField()).collect(Collectors.toList());
+                Map<String, TargetBattleData> targetStatus = new HashMap<>();
+                if (ProbabilityBooleanUtils.randomByProbability(0.4) && Xtool.isNotNull(enemies)) {
+                    enemies.forEach(g -> {
+                        g.remove(EffectType.HP_RECOVER);
+                        g.remove(EffectType.HEAL_BOOST);
+                        g.remove(EffectType.HEAL_BOOST_PRET);
+                        g.remove(EffectType.XU_HEAL_BOOST);
+                        g.remove(EffectType.XU_HEAL_BOOST_PRET);
+                        g.remove(EffectType.ATTACK_UP);
+                        g.remove(EffectType.ATTACK_UP_PRET);
+                        g.remove(EffectType.ATTACK_RESIST_BOOST);
+                        g.remove(EffectType.ATTACK_RESIST_BOOST_PRET);
+                        g.remove(EffectType.FIRE_DOWN);
+                        g.remove(EffectType.FIRE_DOWN_PRET);
+                        g.remove(EffectType.FIRE_RESIST_BOOST);
+                        g.remove(EffectType.FIRE_RESIST_BOOST_PRET);
+                        g.remove(EffectType.POISON_DOWN);
+                        g.remove(EffectType.POISON_RESIST_BOOST);
+                        g.remove(EffectType.POISON_RESIST_BOOST_PRET);
+                        g.remove(EffectType.MISSILE_DOWN);
+                        g.remove(EffectType.MISSILE_DOWN_PRET);
+                        g.remove(EffectType.MISSILE_RESIST_BOOST);
+                        g.remove(EffectType.MISSILE_RESIST_BOOST_PRET);
+                        g.remove(EffectType.HP_UP);
+                        g.remove(EffectType.HP_UP_PRET);
+                        g.remove(EffectType.SPEED_UP);
+                        g.remove(EffectType.SPEED_UP_PRET);
+                        TargetBattleData data = new TargetBattleData(g.getMaxHp(), g.getCurrentHp(), 50, g.isOnField());
+                        targetStatus.put(g.getId(), data);
+                    });
+                    addMultiTargetLog("元气消散",
+                            guardian.getId(),
+                            guardian.getMaxHp(),
+                            guardian.getCurrentHp(),
+                            guardian.isOnField(),
+                            targetStatus,
+                            EffectType.DISPEL,
+                            DamageType.BUFF,
+                            "驱散增益");
+                }
+            }
+            if (defender2!=null&&defender2.getCamp() == Camp.B && campB.stream().anyMatch(g -> g.getName().equals("太上老君") && g.getPosition() == position && !g.isDead() && !g.isOnField() && !g.isSilence())) {
+                Guardian guardian = campB.stream()
+                        .filter(g -> g.getName().equals("太上老君") && g.getPosition() == position && !g.isDead() && !g.isOnField())
+                        .findFirst().get();
+                List<Guardian> enemies =campA.stream().filter(g -> !g.isDead() && !g.isOnField()).collect(Collectors.toList());
+                Map<String, TargetBattleData> targetStatus = new HashMap<>();
+                if (ProbabilityBooleanUtils.randomByProbability(0.4) && Xtool.isNotNull(enemies)) {
+                    enemies.forEach(g -> {
+                        g.remove(EffectType.HP_RECOVER);
+                        g.remove(EffectType.HEAL_BOOST);
+                        g.remove(EffectType.HEAL_BOOST_PRET);
+                        g.remove(EffectType.XU_HEAL_BOOST);
+                        g.remove(EffectType.XU_HEAL_BOOST_PRET);
+                        g.remove(EffectType.ATTACK_UP);
+                        g.remove(EffectType.ATTACK_UP_PRET);
+                        g.remove(EffectType.ATTACK_RESIST_BOOST);
+                        g.remove(EffectType.ATTACK_RESIST_BOOST_PRET);
+                        g.remove(EffectType.FIRE_DOWN);
+                        g.remove(EffectType.FIRE_DOWN_PRET);
+                        g.remove(EffectType.FIRE_RESIST_BOOST);
+                        g.remove(EffectType.FIRE_RESIST_BOOST_PRET);
+                        g.remove(EffectType.POISON_DOWN);
+                        g.remove(EffectType.POISON_RESIST_BOOST);
+                        g.remove(EffectType.POISON_RESIST_BOOST_PRET);
+                        g.remove(EffectType.MISSILE_DOWN);
+                        g.remove(EffectType.MISSILE_DOWN_PRET);
+                        g.remove(EffectType.MISSILE_RESIST_BOOST);
+                        g.remove(EffectType.MISSILE_RESIST_BOOST_PRET);
+                        g.remove(EffectType.HP_UP);
+                        g.remove(EffectType.HP_UP_PRET);
+                        g.remove(EffectType.SPEED_UP);
+                        g.remove(EffectType.SPEED_UP_PRET);
+                        TargetBattleData data = new TargetBattleData(g.getMaxHp(), g.getCurrentHp(), 50, g.isOnField());
+                        targetStatus.put(g.getId(), data);
+                    });
+                    addMultiTargetLog("元气消散",
+                            guardian.getId(),
+                            guardian.getMaxHp(),
+                            guardian.getCurrentHp(),
+                            guardian.isOnField(),
+                            targetStatus,
+                            EffectType.DISPEL,
+                            DamageType.BUFF,
+                            "驱散增益");
                 }
             }
         }
