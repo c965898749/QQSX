@@ -700,7 +700,7 @@ public class BattleManager {
 
                         int poisonValue = (int) (totalPoisonDamage * resistUpPret * resistDownPret + (resistUp + guardian.getDsAtk() - resistDown));
                         // 计算本次中毒伤害
-                        g.addEffect(EffectType.POISON, poisonValue + guardian.getDsAtk(), 99, guardian.getId());
+                        g.addEffect(EffectType.POISON, poisonValue, 99, guardian.getId());
                         TargetBattleData data = new TargetBattleData(g.getMaxHp(), g.getCurrentHp(), poisonValue, g.isOnField());
                         targetStatus.put(g.getId(), data);
                     }
@@ -3912,7 +3912,7 @@ public class BattleManager {
                     double resistDownPret = calculateTotalDownPretVaule(attacker, EffectType.POISON_DOWN_PRET);
 
                     int poisonValue = (int) (totalPoisonDamage * resistUpPret * resistDownPret + (resistUp + attacker.getDsAtk() - resistDown));
-                    defender.addEffect(EffectType.POISON, poisonValue + attacker.getDsAtk(), 99, attacker.getId());
+                    defender.addEffect(EffectType.POISON, poisonValue, 99, attacker.getId());
                     addLog("毒素打击",
                             attacker.getId(),
                             attacker.getMaxHp(),
@@ -5080,7 +5080,7 @@ public class BattleManager {
                     double resistDownPret = calculateTotalDownPretVaule(v, EffectType.POISON_DOWN_PRET);
 
                     int poisonValue = (int) (totalPoisonDamage * resistUpPret * resistDownPret + (resistUp + v.getDsAtk() - resistDown));
-                    g.addEffect(EffectType.POISON, poisonValue + v.getDsAtk(), 99, v.getId());
+                    g.addEffect(EffectType.POISON, poisonValue, 99, v.getId());
                     TargetBattleData data = new TargetBattleData(g.getMaxHp(), g.getCurrentHp(), poisonValue, g.isOnField());
 
                     targetStatus.put(g.getId(), data);

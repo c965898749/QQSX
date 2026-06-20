@@ -5832,6 +5832,12 @@ public class GameServiceServiceImpl implements GameServiceService {
             baseResp.setErrorMsg("登录过期");
             return baseResp;
         }
+        StaminaUtil.StaminaResult refresh = StaminaUtil.calcStamina(
+                user1.getTiliCount(),
+                user1.getTiliCountTime(),
+                user1.getHuoliCount(),
+                user1.getHuoliCountTime()
+        );
         Map map2 = new HashMap();
         LocalDate currentDate = LocalDate.now();
         String dateStr = currentDate.format(DateTimeFormatter.ISO_LOCAL_DATE);
@@ -5850,16 +5856,32 @@ public class GameServiceServiceImpl implements GameServiceService {
             friendBlessingMapper.updateById(friendBlessing);
         }
         //判断凝聚点是否正常
-        user1.setTiliCount(token.getTiLi() + f.size() * 2);
-        user1.setTiliCountTime(new Date());
-        user1.setHuoliCount(token.getHuoLi() + f.size() * 2);
-        user1.setHuoliCountTime(new Date());
+        int blessCount = f.size() * 2;
+        
+        // 使用通用方法增加体力
+        StaminaUtil.StaminaItem tiliAdd = StaminaUtil.useTiliPotion(
+                user1.getTiliCount(),
+                user1.getTiliCountTime(),
+                blessCount
+        );
+        user1.setTiliCount(tiliAdd.getCount());
+        user1.setTiliCountTime(tiliAdd.getCountTime());
+        
+        // 使用通用方法增加活力
+        StaminaUtil.StaminaItem huoliAdd = StaminaUtil.useHuoliPotion(
+                user1.getHuoliCount(),
+                user1.getHuoliCountTime(),
+                blessCount
+        );
+        user1.setHuoliCount(huoliAdd.getCount());
+        user1.setTiliCountTime(refresh.getTiliCountTime());
+        user1.setHuoliCountTime(huoliAdd.getCountTime());
+        user1.setHuoliCountTime(refresh.getHuoliCountTime());
         userMapper.updateuser(user1);
-        Map map = new HashMap();
-        map.put("tiLi", token.getTiLi() + f.size() * 2);
-        map.put("huoLi", token.getHuoLi() + f.size() * 2);
+        UserInfo userInfo = new UserInfo();
+        BeanUtils.copyProperties(user1, userInfo);
         baseResp.setSuccess(1);
-        baseResp.setData(map);
+        baseResp.setData(userInfo);
         baseResp.setErrorMsg("凝聚成功");
         return baseResp;
     }
