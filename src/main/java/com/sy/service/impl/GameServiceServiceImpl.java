@@ -3341,9 +3341,28 @@ public class GameServiceServiceImpl implements GameServiceService {
         Map map = new HashMap();
         map.put("chongzhi", user.getChongzhi());
         if (user.getShopUpdate() == null || (user.getShopUpdate().compareTo(date2) < 0 && "1".equals(token.getStr()))) {
-            Date date = new Date();
-            user.setShopUpdate(date);
-            map.put("shopUpdate", date.getTime());
+
+//            // 4. 校验并扣减背包物品
+            List<GamePlayerBag> playerBagList = gamePlayerBagMapper.selectList(new LambdaQueryWrapper<GamePlayerBag>()
+                    .eq(GamePlayerBag::getItemId, 1).eq(GamePlayerBag::getUserId, userId).eq(GamePlayerBag::getIsDelete, "0"));
+            if (Xtool.isNotNull(playerBagList)&&playerBagList.get(0).getItemCount()>0) {
+                GamePlayerBag playerBag = playerBagList.get(0);
+                // 扣减物品数量
+                if (playerBag.getItemCount() - 1 > 0) {
+                    playerBag.setItemCount(playerBag.getItemCount() - 1);
+                } else {
+                    playerBag.setIsDelete("1");
+                }
+                gamePlayerBagMapper.updateById(playerBag);
+
+                // 5. 处理物品使用逻辑（复用之前的封装方法）
+                handleBagItemUse(1, user, userId);
+                map.put("shopUpdate", user.getShopUpdate() != null ? user.getShopUpdate().getTime() : null);
+            }else {
+                Date date = new Date();
+                user.setShopUpdate(date);
+                map.put("shopUpdate", date.getTime());
+            }
             List<GameItemShop> gameItemShopList = gameItemShopMapper.selectAll();
             DynamicItemPicker picker = new DynamicItemPicker();
             for (GameItemShop gameItemShop : gameItemShopList) {
@@ -4241,50 +4260,42 @@ public class GameServiceServiceImpl implements GameServiceService {
         List<QqCardExp> qqCardExpList = qqCardExpMapper.findAll();
         for (Characters characters : charactersList) {
             Characters characters1 = charactersMapper.listById(token.getUserId(), characters.getId());
-            int cadExp = characters1.getExp();
-            if (characters1.getStackCount() - 1 >= 0) {
-                characters1.setStackCount(characters1.getStackCount() - 1);
-                characters1.setLv(1);
-                characters1.setExp(5);
-            } else {
-                characters1.setIsDelete("1");
-            }
+            int cadExp = characters1.getExp(); // 当前溢出经验（超过maxLv的部分）
             //TODO 判断卡牌是否飞升
             Card card = cardMapper.selectByid(Integer.parseInt(characters1.getId()));
 
-            int currentLevelExp = 0;
-            int xhiaohaoExp = 0;
-            int maxLv = CardMaxLevelUtils.getMaxLevel(card.getName(), card.getStar().doubleValue());
-            // 累加从 currentLevel 到 targetLevel - 1 的每一级经验
-            for (int level = 1; level <= characters.getLv(); level++) {
-                int finalLevel = level;
-                QqCardExp expConfig = qqCardExpList.stream()
-                        .filter(c -> (card.getStar().toString()).equals(c.getUpgradeType()) && c.getLevel() == finalLevel)
-                        .findFirst()
-                        .orElse(null);
+            // 获取卡牌的初始星级对应的未飞升最大等级
+            int baseMaxLv = CardMaxLevelUtils.getMaxLevel(card.getName(), card.getStar().doubleValue());
 
-                if (expConfig != null) {
-                    if (level < maxLv) {
-                        xhiaohaoExp += expConfig.getUpgradeExp();
-                    }
-                    // 计算当前等级已获得的经验（从1级到当前等级）
-                    if (level < characters1.getLv()) {
-                        currentLevelExp += expConfig.getUpgradeExp();
+            // 计算从baseMaxLv+1级到当前等级的经验总和（飞升后多投入的经验）
+            int flyupExp = 0;
+            if (characters1.getLv() > baseMaxLv) {
+                for (int level = baseMaxLv; level < characters1.getLv(); level++) {
+                    int finalLevel = level;
+                    QqCardExp expConfig = qqCardExpList.stream()
+                            .filter(c -> card.getStar().compareTo(new BigDecimal(c.getUpgradeType())) == 0 && c.getLevel() == finalLevel)
+                            .findFirst()
+                            .orElse(null);
+                    if (expConfig != null) {
+                        flyupExp += expConfig.getUpgradeExp();
                     }
                 }
             }
-            // 总经验 = 当前等级已获得经验 + 剩余经验 - 满级所需总经验
-            int totalExp = currentLevelExp + cadExp - xhiaohaoExp;
-            if (totalExp > 1000) {
-                BigDecimal num = new BigDecimal(totalExp).divide(BigDecimal.valueOf(1000), 0, RoundingMode.DOWN);
+
+            // 总溢出经验 = 飞升后投入的经验 + 当前溢出经验
+            int totalOverflowExp = flyupExp + cadExp;
+            if (totalOverflowExp > 5000) {
+                BigDecimal num = new BigDecimal(totalOverflowExp)
+                        .multiply(new BigDecimal("0.2"))
+                        .divide(BigDecimal.valueOf(5000), 0, RoundingMode.CEILING);
                 // 计算剩余经验
                 // 满级奖励：魂力宝珠（ID:105）
                 Characters characters2 = charactersMapper.listById(userId, "105");
 
                 if (characters2 != null) {
                     // 已有卡牌 → 叠加
-                    characters1.setStackCount(characters1.getStackCount() + num.intValue());
-                    charactersMapper.updateByPrimaryKey(characters1);
+                    characters2.setStackCount(characters2.getStackCount() + num.intValue());
+                    charactersMapper.updateByPrimaryKey(characters2);
                 } else {
                     // 没有卡牌 → 新建（这里原来的代码严重错误！已修复）
                     Card card2 = cardMapper.selectByid(105);
@@ -4305,6 +4316,13 @@ public class GameServiceServiceImpl implements GameServiceService {
 
                     charactersMapper.insert(newChar);
                 }
+            }
+            if (characters1.getStackCount() - 1 >= 0) {
+                characters1.setStackCount(characters1.getStackCount() - 1);
+                characters1.setLv(1);
+                characters1.setExp(5);
+            } else {
+                characters1.setIsDelete("1");
             }
             charactersMapper.updateByPrimaryKey(characters1);
         }
