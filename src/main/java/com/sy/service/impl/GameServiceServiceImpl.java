@@ -9034,6 +9034,20 @@ public class GameServiceServiceImpl implements GameServiceService {
     }
 
     @Override
+    public BaseResp videoList(TokenDto token, HttpServletRequest request) throws Exception {
+        BaseResp baseResp = new BaseResp();
+        String userId = token.getUserId();
+        List<GameFight> fightList = gameFightMapper.selectList(new LambdaQueryWrapper<GameFight>()
+                .eq(GameFight::getUserId, userId));
+        for (GameFight gameFight : fightList) {
+            gameFight.setTimeStr(this.formatTime(gameFight.getCreatetime()));
+        }
+        baseResp.setSuccess(1);
+        baseResp.setData(fightList);
+        return baseResp;
+    }
+
+    @Override
     public BaseResp friendAllList(TokenDto token, HttpServletRequest request) throws Exception {
         //先获取当前用户战队
         BaseResp baseResp = new BaseResp();
@@ -9746,19 +9760,20 @@ public class GameServiceServiceImpl implements GameServiceService {
 
     /** 限制单个用户最多保留N条战斗记录，删除最早 */
     private void trimMaxBattleCount(HashOperations<String, String, String> hashOps, String hashKey, int maxSave) {
-        Map<String, String> allBattle = hashOps.entries(hashKey);
-        if (allBattle.size() <= maxSave) {
+        Map<String, String> all = hashOps.entries(hashKey);
+        if (all.size() <= maxSave) {
             return;
         }
-        List<String> oldBattleIds = allBattle.keySet().stream()
-                .map(Long::valueOf)
+        // 直接字符串排序，不再转Long，兼容 BATTLE_xxxx 格式
+        List<String> sortedIds = all.keySet().stream()
                 .sorted()
-                .limit(allBattle.size() - maxSave)
-                .map(String::valueOf)
                 .collect(Collectors.toList());
-        hashOps.delete(hashKey, oldBattleIds.toArray(new String[0]));
-    }
 
+        List<String> delIds = sortedIds.subList(0, sortedIds.size() - maxSave);
+        String[] delArr = delIds.toArray(new String[0]);
+        // 第一个参数是hash的key，第二个传数组
+        hashOps.delete(hashKey, delArr);
+    }
     public static boolean isTeamAVictoryAdvanced(String content) {
         if (content == null || content.isEmpty()) {
             return false;

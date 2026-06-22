@@ -1825,4 +1825,24 @@ public class GameContoller {
             return baseResp;
         }
     }
+    /**
+     * 视频列表
+     * @param token
+     * @param request
+     * @return
+     */
+    @PostMapping("videoList")
+    @CrossOrigin
+    public BaseResp videoList(@RequestBody TokenDto token, HttpServletRequest request) {
+        BaseResp baseResp = new BaseResp();
+        try {
+            baseResp = gameServiceService.videoList(token, request);
+            return baseResp;
+        } catch (Exception e) {
+            e.printStackTrace();
+            baseResp.setSuccess(0);
+            return baseResp;
+        }
+    }
+
 }

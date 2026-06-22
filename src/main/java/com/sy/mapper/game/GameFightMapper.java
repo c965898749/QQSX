@@ -1,25 +1,12 @@
 package com.sy.mapper.game;
 
+import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import com.sy.model.game.GameFight;
+import com.sy.model.game.LivelyGift;
+import org.apache.ibatis.annotations.Mapper;
 
 import java.util.List;
+@Mapper
+public interface GameFightMapper extends BaseMapper<GameFight> {
 
-public interface GameFightMapper {
-    int deleteByPrimaryKey(Integer id);
-
-    int deleteByTime();
-
-    int deleteByTimeBatch();
-
-    int insert(GameFight record);
-
-    int insertSelective(GameFight record);
-
-    GameFight selectByPrimaryKey(String id);
-
-    List<GameFight> selectAll(String userId);
-
-    int updateByPrimaryKeySelective(GameFight record);
-
-    int updateByPrimaryKey(GameFight record);
 }
