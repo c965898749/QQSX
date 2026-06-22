@@ -21,6 +21,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DuplicateKeyException;
+import org.springframework.data.redis.core.HashOperations;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
 import org.springframework.mail.SimpleMailMessage;
@@ -7138,24 +7139,31 @@ public class GameServiceServiceImpl implements GameServiceService {
     @Transactional
     @NoRepeatSubmit(limitSeconds = 1)
     public BaseResp start2(TokenDto token, HttpServletRequest request) throws Exception {
-        Integer levelUp = 0;
-        Map map = new HashMap();
-        //先获取当前用户战队
         BaseResp baseResp = new BaseResp();
-        if (token == null || Xtool.isNull(token.getToken())) {
+        // 1. 登录校验抽前置，提前拦截
+        if (token == null || Xtool.isNull(token.getToken()) || Xtool.isNull(token.getUserId())) {
             baseResp.setSuccess(0);
             baseResp.setErrorMsg("登录过期");
             return baseResp;
         }
-//        String userId = (String) redisTemplate.opsForValue().get(token.getToken());
-        String userId = token.getUserId();
-        if (Xtool.isNull(userId)) {
-            baseResp.setSuccess(0);
-            baseResp.setErrorMsg("登录过期");
-            return baseResp;
-        }
-        User user = userMapper.selectUserByUserId(Integer.parseInt(userId));
-        // 1. 先自然恢复
+        Integer uid = Integer.parseInt(token.getUserId());
+        String userIdStr = token.getUserId();
+
+        // 常量统一管理
+        final int STAMINA_COST = 2;
+        final BigDecimal ADD_EXP = new BigDecimal(50);
+        final BigDecimal EXP_MAX = new BigDecimal(1000);
+        final BigDecimal LV_LIMIT = new BigDecimal(100);
+        final String CARD_TIANJUN = "132";
+        final String CARD_HUNQI = "105";
+        final String CARD_BASE = "100";
+        final int LV_50 = 50;
+        final int LV_80 = 80;
+        final int LV_100 = 100;
+
+        // 只查一次用户，全程复用
+        User user = userMapper.selectUserByUserId(uid);
+        // 体力自动恢复计算
         StaminaUtil.StaminaResult refresh = StaminaUtil.calcStamina(
                 user.getTiliCount(),
                 user.getTiliCountTime(),
@@ -7171,347 +7179,331 @@ public class GameServiceServiceImpl implements GameServiceService {
             baseResp.setErrorMsg("体力不足");
             return baseResp;
         }
-        if (user.getLv().compareTo(new BigDecimal(100)) < 0) {
-            BigDecimal exp = user.getExp().add(new BigDecimal(50));
-            if (exp.compareTo(new BigDecimal(1000)) >= 0) {
-                user.setLv(user.getLv().add(new BigDecimal(1)));
-                user.setExp(exp.subtract(new BigDecimal(1000)));
-                levelUp = user.getLv().intValue();
-                if (Xtool.isNotNull(user.getYaoCode())) {
-                    if (levelUp == 50) {
-                        List<User> users = userMapper.selectUserByYaoCode(user.getYaoCode());
-                        if (Xtool.isNotNull(users)) {
-                            //如果少年王天军
-                            Characters characters1 = charactersMapper.listById(userId, "132");
-                            if (characters1 != null) {
-                                characters1.setStackCount(characters1.getStackCount() + 1);
-                                charactersMapper.updateByPrimaryKey(characters1);
-                            } else {
-                                Card card = cardMapper.selectByid(132);
-                                if (card == null) {
-                                    baseResp.setErrorMsg("服务器异常联想管理员");
-                                    baseResp.setSuccess(0);
-                                    return baseResp;
-                                }
-                                Characters characters = new Characters();
-                                characters.setStackCount(1);
-                                characters.setId("132");
-                                characters.setLv(1);
-                                characters.setUserId(Integer.parseInt(userId));
-                                characters.setStar(new BigDecimal(1));
-                                characters.setMaxLv(CardMaxLevelUtils.getMaxLevel(card.getName(), card.getStar().doubleValue()));
-                                charactersMapper.insert(characters);
-                            }
-                        }
-                    }
-                    if (levelUp == 80) {
-                        List<User> users = userMapper.selectUserByYaoCode(user.getYaoCode());
-                        List<User> users2 = userMapper.selectUserByYaoCode2(user.getYaoCode());
-                        List<User> users1 = users2.stream().filter(x -> x.getLv().compareTo(new BigDecimal(80)) >= 0).collect(Collectors.toList());
-                        if (Xtool.isNotNull(users) && users1.size() == 9) {
-                            //
-                            Characters characters1 = charactersMapper.listById(userId, "105");
-                            if (characters1 != null) {
-                                characters1.setStackCount(characters1.getStackCount() + 10);
-                                charactersMapper.updateByPrimaryKey(characters1);
-                            } else {
-                                Card card = cardMapper.selectByid(105);
-                                if (card == null) {
-                                    baseResp.setErrorMsg("服务器异常联想管理员");
-                                    baseResp.setSuccess(0);
-                                    return baseResp;
-                                }
-                                Characters characters = new Characters();
-                                characters.setStackCount(10);
-                                characters.setId("105");
-                                characters.setLv(1);
-                                characters.setUserId(Integer.parseInt(userId));
-                                characters.setStar(new BigDecimal(1));
-                                characters.setMaxLv(CardMaxLevelUtils.getMaxLevel(card.getName(), card.getStar().doubleValue()));
-                                charactersMapper.insert(characters);
-                            }
-                        }
-                    }
 
-                    if (levelUp == 100) {
-                        List<User> users = userMapper.selectUserByYaoCode(user.getYaoCode());
-                        List<User> users2 = userMapper.selectUserByYaoCode2(user.getYaoCode());
-                        List<User> users1 = users2.stream().filter(x -> x.getLv().compareTo(new BigDecimal(100)) >= 0).collect(Collectors.toList());
-                        if (Xtool.isNotNull(users) && users1.size() == 30) {
-                            //
-                            Characters characters1 = charactersMapper.listById(userId, "100");
-                            if (characters1 != null) {
-                                characters1.setStackCount(characters1.getStackCount() + 1);
-                                charactersMapper.updateByPrimaryKey(characters1);
-                            } else {
-                                Card card = cardMapper.selectByid(100);
-                                if (card == null) {
-                                    baseResp.setErrorMsg("服务器异常联想管理员");
-                                    baseResp.setSuccess(0);
-                                    return baseResp;
-                                }
-                                Characters characters = new Characters();
-                                characters.setStackCount(1);
-                                characters.setId("100");
-                                characters.setLv(1);
-                                characters.setUserId(Integer.parseInt(userId));
-                                characters.setStar(new BigDecimal(1));
-                                characters.setMaxLv(CardMaxLevelUtils.getMaxLevel(card.getName(), card.getStar().doubleValue()));
-                                charactersMapper.insert(characters);
-                            }
-                        }
-                    }
+        int levelUp = 0;
+        // 经验升级逻辑
+        boolean isBelow100Lv = user.getLv().compareTo(LV_LIMIT) < 0;
+        BigDecimal newExp = user.getExp().add(ADD_EXP);
+        if (newExp.compareTo(EXP_MAX) >= 0) {
+            if (isBelow100Lv) {
+                // 未满100级：升级
+                user.setLv(user.getLv().add(BigDecimal.ONE));
+                user.setExp(newExp.subtract(EXP_MAX));
+                levelUp = user.getLv().intValue();
+                // 有 YaoCode 才发放升级卡牌
+                if (Xtool.isNotNull(user.getYaoCode())) {
+                    grantCardByLevel(user, levelUp);
                 }
             } else {
-                user.setExp(exp);
+                // 100级以上：给魂力宝珠
+                giveCardStack(uid, CARD_HUNQI, 2);
+                user.setExp(newExp.subtract(EXP_MAX));
             }
         } else {
-            BigDecimal exp = user.getExp().add(new BigDecimal(50));
-            if (exp.compareTo(new BigDecimal(1000)) >= 0) {
-                user.setExp(exp.subtract(new BigDecimal(1000)));
-                //如果巅峰经验满级获得5个魂力宝珠
-                Characters characters1 = charactersMapper.listById(userId, "105");
-                if (characters1 != null) {
-                    characters1.setStackCount(characters1.getStackCount() + 2);
-                    charactersMapper.updateByPrimaryKey(characters1);
-                } else {
-                    Card card = cardMapper.selectByid(105);
-                    if (card == null) {
-                        baseResp.setErrorMsg("服务器异常联想管理员");
-                        baseResp.setSuccess(0);
-                        return baseResp;
-                    }
-                    Characters characters = new Characters();
-                    characters.setStackCount(1);
-                    characters.setId("105");
-                    characters.setLv(1);
-                    characters.setUserId(Integer.parseInt(userId));
-                    characters.setStar(new BigDecimal(1));
-                    characters.setMaxLv(CardMaxLevelUtils.getMaxLevel(card.getName(), card.getStar().doubleValue()));
-                    charactersMapper.insert(characters);
-                }
-            } else {
-                user.setExp(exp);
-            }
+            user.setExp(newExp);
         }
-        //自己的战队
-        List<Characters> leftCharacter = charactersMapper.goIntoListById(user.getUserId() + "");
-        if (Xtool.isNull(leftCharacter)) {
+
+        // 校验出战战队
+        List<Characters> leftCharacter = charactersMapper.goIntoListById(userIdStr);
+        if (CollectionUtils.isEmpty(leftCharacter)) {
             baseResp.setSuccess(0);
             baseResp.setErrorMsg("你没有配置战队无法战斗");
             return baseResp;
         }
-        for (Characters characters : leftCharacter) {
-            List<EqCharacters> eqCharacters = eqCharactersMapper.listByGoOn(userId, characters.getId());
-            if (Xtool.isNotNull(eqCharacters)) {
-                characters.setEqCharactersList(formateEqCharacter(eqCharacters));
-            }
-        }
-        PveDetail pveDetail = pveDetailMapper.selectById(token.getStr());
+        // 填充装备信息
+        fillCharacterEquip(userIdStr, leftCharacter);
+
+        // 获取当前关卡配置
+        String detailCode = token.getStr();
+        PveDetail pveDetail = pveDetailMapper.selectById(detailCode);
         if (pveDetail == null) {
             baseResp.setSuccess(0);
             baseResp.setErrorMsg("关卡已探索完！");
             return baseResp;
         }
-        baseResp.setSuccess(1);
-        List<String> list = Arrays.asList(token.getStr().split("-"));
-        Integer num1 = Integer.parseInt(list.get(0));
-        Integer num2 = Integer.parseInt(list.get(1));
-        Integer num3 = Integer.parseInt(list.get(2));
-        List<Characters> rightCharacter = new ArrayList<>();
-        Map map1 = new HashMap();
-        map1.put("detail_code", token.getStr());
-        List<PveBossDetail> pveBossDetails = pveBossDetailMapper.selectByMap(map1);
-        Integer i = 0;
-        for (PveBossDetail pveBossDetail : pveBossDetails) {
-            Card card = cardMapper.selectByid(pveBossDetail.getBossId());
-            Characters characters = new Characters();
-            BeanUtils.copyProperties(card, characters);
-            characters.setGoIntoNum(pveBossDetail.getGoIntoNum());
-            characters.setLv(pveBossDetail.getDifficultyLevel());
-            characters.setUuid(i);
-            long originalCount = pveBossDetails.stream()
-                    .filter(x -> (x.getBossId() + "").equals(pveBossDetail.getBossId() + "")) // 过滤null对象
-                    .map(PveBossDetail::getBossId)
-                    .count();
-            if (originalCount > 1) {
-                characters.setName(characters.getName() + i);
-            } else {
-                characters.setName(characters.getName());
-            }
-            rightCharacter.add(characters);
-            i++;
-        }
-        Battle battle = this.battle(leftCharacter, Integer.parseInt(userId), user.getNickname(), rightCharacter, 0, pveDetail.getGuanName(), user.getGameImg(), "0");
+
+        // 组装敌方怪物
+        List<Characters> rightCharacter = buildEnemyCharacters(detailCode);
+        // 执行战斗（内部已改造写入Hash格式战斗摘要）
+        Battle battle = this.battle(leftCharacter, uid, user.getNickname(), rightCharacter, 0, pveDetail.getGuanName(), user.getGameImg(), "0");
+
+        Map<String, Object> resultMap = new HashMap<>();
+        List<PveReward> pveRewards = new ArrayList<>();
+        String rewardRecordItemId = "";
+
         if (battle.getIsWin() == 0) {
-            if (num3 + 1 > 10) {
-                if (num2 + 1 > 6) {
-                    if (num1 + 1 > 8) {
+            // 推进关卡编号
+            List<Integer> chapterNums = splitChapterCode(detailCode);
+            int n1 = chapterNums.get(0);
+            int n2 = chapterNums.get(1);
+            int n3 = chapterNums.get(2);
+            String newChapter = calcNextChapter(n1, n2, n3);
+            battle.setChapter(newChapter);
 
-                    } else {
-                        num1 = num1 + 1;
-                        num2 = 1;
-                        num3 = 1;
-                    }
-                } else {
-                    num2 = num2 + 1;
-                    num3 = 1;
-                }
-            } else {
-                num3 = num3 + 1;
+            // 更新玩家通关章节
+            if (!isCandidateGreater(newChapter, user.getChapter()) && !newChapter.equals(user.getChapter())) {
+                user.setChapter(newChapter);
+                user.setChapterTime(new Date());
             }
-            battle.setChapter(num1 + "-" + num2 + "-" + num3);
-            if (!isCandidateGreater(battle.getChapter(), user.getChapter())) {
-                if (!battle.getChapter().equals(user.getChapter())) {
-                    user.setChapterTime(new Date());
-                }
-                user.setChapter(battle.getChapter());
 
-            }
-            List<PveReward> pveRewardsAll = pveRewardMapper.selectByMap(map1);
-            List<PveReward> pveRewards = new ArrayList<>();
-            for (PveReward pveReward : pveRewardsAll) {
-                if (!ProbabilityUtils.hitProbability(pveReward.getPrent())) {
-                    continue;
-                }
-                pveRewards.add(pveReward);
-            }
-            if (isDetailCodeEndsWithMinusFive(token.getStr())) {
-                Map map11 = new HashMap();
-                map11.put("detail_code", token.getStr());
-                map11.put("user_id", userId);
-                List<PveRewardRecord> pveRewardsAll2 = pveRewardRecordMapper.selectByMap(map11);
-                if (Xtool.isNotNull(pveRewardsAll2)) {
-                    pveRewards = pveRewards.stream().filter(x -> !"4".equals(x.getRewardType())).collect(Collectors.toList());
+            // 抽取概率奖励
+            Map<String, Object> rewardMap = new HashMap<>();
+            rewardMap.put("detail_code", detailCode);
+            List<PveReward> allRewardList = pveRewardMapper.selectByMap(rewardMap);
+            pveRewards = allRewardList.stream()
+                    .filter(r -> ProbabilityUtils.hitProbability(r.getPrent()))
+                    .collect(Collectors.toList());
+
+            // 尾5关卡特殊奖励记录
+            if (isDetailCodeEndsWithMinusFive(detailCode)) {
+                Map<String, Object> recordMap = new HashMap<>();
+                recordMap.put("detail_code", detailCode);
+                recordMap.put("user_id", userIdStr);
+                List<PveRewardRecord> recordList = pveRewardRecordMapper.selectByMap(recordMap);
+                if (!CollectionUtils.isEmpty(recordList)) {
+                    pveRewards = pveRewards.stream()
+                            .filter(x -> !"4".equals(x.getRewardType()))
+                            .collect(Collectors.toList());
                 } else {
-                    List<PveReward> pveRewardsAll3 = pveRewards.stream().filter(x -> "4".equals(x.getRewardType())).collect(Collectors.toList());
-                    if (Xtool.isNotNull(pveRewardsAll3)) {
-                        PveRewardRecord pveRewardRecord = new PveRewardRecord();
-                        BeanUtils.copyProperties(pveRewardsAll3.get(0), pveRewardRecord);
-                        pveRewardRecord.setId(null);
-                        pveRewardRecord.setUserId(Integer.parseInt(userId));
-                        pveRewardRecordMapper.insert(pveRewardRecord);
+                    // 记录卡牌类首通奖励
+                    List<PveReward> cardReward = pveRewards.stream()
+                            .filter(x -> "4".equals(x.getRewardType()))
+                            .collect(Collectors.toList());
+                    if (!CollectionUtils.isEmpty(cardReward)) {
+                        PveRewardRecord insertRecord = new PveRewardRecord();
+                        BeanUtils.copyProperties(cardReward.get(0), insertRecord);
+                        insertRecord.setId(null);
+                        insertRecord.setUserId(uid);
+                        pveRewardRecordMapper.insert(insertRecord);
+                        rewardRecordItemId = String.valueOf(cardReward.get(0).getItemId());
                     }
                 }
             }
-            for (PveReward content : pveRewards) {
-                if ("1".equals(content.getRewardType() + "")) {
-                    //灵石
-                    user.setDiamond(user.getDiamond().add(new BigDecimal(content.getRewardAmount())));
-                } else if ("2".equals(content.getRewardType() + "")) {
-                    user.setGold(user.getGold().add(new BigDecimal(content.getRewardAmount())));
-                } else if ("3".equals(content.getRewardType() + "")) {
-                    user.setSoul(user.getSoul().add(new BigDecimal(content.getRewardAmount())));
-                } else if ("4".equals(content.getRewardType() + "")) {
-                    Characters characters1 = charactersMapper.listById(userId, content.getItemId() + "");
-                    if (characters1 != null) {
-                        characters1.setStackCount(characters1.getStackCount() + content.getRewardAmount());
-                        charactersMapper.updateByPrimaryKey(characters1);
-                    } else {
-                        Card card = cardMapper.selectByid(content.getItemId());
-                        if (card == null) {
-                            baseResp.setErrorMsg("服务器异常联想管理员");
-                            baseResp.setSuccess(0);
-                            return baseResp;
-                        }
-                        Characters characters = new Characters();
-                        characters.setStackCount(content.getRewardAmount() - 1);
-                        characters.setId(content.getItemId() + "");
-                        characters.setLv(1);
-                        characters.setUserId(Integer.parseInt(userId));
-                        characters.setStar(new BigDecimal(1));
-                        characters.setMaxLv(CardMaxLevelUtils.getMaxLevel(card.getName(), card.getStar().doubleValue()));
-                        charactersMapper.insert(characters);
-                    }
-                } else if ("5".equals(content.getRewardType() + "") || "6".equals(content.getRewardType() + "")) {
-                    GameItemBase gameItemBase = gameItemBaseMapper.selectById(content.getItemId());
-                    if (gameItemBase == null) {
-                        baseResp.setErrorMsg("服务器异常联想管理员");
-                        baseResp.setSuccess(0);
-                        return baseResp;
-                    }
-                    content.setImg(gameItemBase.getIcon());
-                    content.setItemName(gameItemBase.getItemName() + content.getRewardAmount());
-                    Map itemMap = new HashMap();
-                    itemMap.put("item_id", content.getItemId());
-                    itemMap.put("user_id", userId);
-                    itemMap.put("is_delete", "0");
-                    List<GamePlayerBag> playerBagList = gamePlayerBagMapper.selectByMap(itemMap);
-                    if (Xtool.isNotNull(playerBagList)) {
-                        GamePlayerBag playerBag = playerBagList.get(0);
-                        playerBag.setItemCount(playerBag.getItemCount() + content.getRewardAmount());
-                        gamePlayerBagMapper.updateById(playerBag);
-                    } else {
-                        GamePlayerBag playerBag = new GamePlayerBag();
-                        playerBag.setUserId(Integer.parseInt(userId));
-                        playerBag.setItemCount(content.getRewardAmount());
-                        playerBag.setGridIndex(1);
-                        playerBag.setItemId(content.getItemId());
-                        gamePlayerBagMapper.insert(playerBag);
-                    }
-                }
-            }
-            map.put("rewards", pveRewards);
+
+            // 发放所有奖励
+            distributeAllReward(user, pveRewards, uid);
         } else {
-            battle.setChapter(token.getStr());
+            battle.setChapter(detailCode);
         }
-        // 直接扣体力，不碰时间戳
-        StaminaUtil.StaminaItem tiliRes = StaminaUtil.useTiliPotion(
+
+        // 扣体力
+        StaminaUtil.StaminaItem useRes = StaminaUtil.useTiliPotion(
                 user.getTiliCount(),
                 user.getTiliCountTime(),
-                -2 // 消耗10点
+                -STAMINA_COST
         );
-        user.setTiliCount(tiliRes.getCount());
-        user.setTiliCountTime(tiliRes.getCountTime());
-// 直接存库，不用算恢复
-        PveDetail pveDetail2 = pveDetailMapper.selectById(battle.getChapter());
-        Map map2 = new HashMap();
-        map2.put("detail_code", battle.getChapter());
-        List<PveBossDetail> pveBossDetailList = pveBossDetailMapper.selectByMap(map2);
-        List<PveBossDetail> uniqueUserList = pveBossDetailList.stream()
-                // 以name为key，User为value，LinkedHashMap保留插入顺序
-                .collect(Collectors.toMap(
-                        PveBossDetail::getBossId,    // key：名字（去重依据）
-                        x -> x,     // value：用户对象
-                        (oldUser, newUser) -> oldUser, // 重复时保留旧值（首次出现）
-                        LinkedHashMap::new             // 保证顺序
-                ))
-                .values() // 提取去重后的User集合
-                .stream()
-                .collect(Collectors.toList());
-        pveDetail2.setPveBossDetails(uniqueUserList);
-        String reward = "";
-        if (isDetailCodeEndsWithMinusFive(battle.getChapter())) {
-            Map map11 = new HashMap();
-            map11.put("detail_code", battle.getChapter());
-            map11.put("user_id", userId);
-            List<PveRewardRecord> pveRewardsAll2 = pveRewardRecordMapper.selectByMap(map11);
-            if (Xtool.isNull(pveRewardsAll2)) {
-                Map map22 = new HashMap();
-                map22.put("detail_code", battle.getChapter());
-                List<PveReward> pveRewardRecords = pveRewardMapper.selectByMap(map22);
-                List<PveReward> pveRewardsAll3 = pveRewardRecords.stream().filter(x -> "4".equals(x.getRewardType())).collect(Collectors.toList());
-                if (Xtool.isNotNull(pveRewardsAll3)) {
-                    reward = pveRewardsAll3.get(0).getItemId() + "";
-                }
-            }
-        }
-        map.put("reward", reward);
-        userMapper.updateuser(user);
+        user.setTiliCount(useRes.getCount());
+        user.setTiliCountTime(useRes.getCountTime());
+
+        // 关卡怪物信息
+        PveDetail finishPveDetail = pveDetailMapper.selectById(battle.getChapter());
+        Map<String, Object> bossMap = new HashMap<>();
+        bossMap.put("detail_code", battle.getChapter());
+        List<PveBossDetail> bossList = pveBossDetailMapper.selectByMap(bossMap);
+        // boss去重
+        List<PveBossDetail> uniqueBoss = new ArrayList<>(
+                bossList.stream()
+                        .collect(Collectors.toMap(
+                                PveBossDetail::getBossId,
+                                x -> x,
+                                (old, now) -> old,
+                                LinkedHashMap::new
+                        )).values()
+        );
+        finishPveDetail.setPveBossDetails(uniqueBoss);
+
+        // 返回组装数据
         UserInfo userInfo = new UserInfo();
         BeanUtils.copyProperties(user, userInfo);
         userInfo.setLevelUp(levelUp);
-        //获取卡牌数据
-        List<Characters> characterList = charactersMapper.selectByUserId(user.getUserId());
-        userInfo.setCharacterList(formateCharacter(characterList));
-        map.put("levelUp", levelUp);
-        map.put("user", userInfo);
-        map.put("battle", battle);
-        map.put("pveDetail", pveDetail2);
-        baseResp.setData(map);
+        List<Characters> userCards = charactersMapper.selectByUserId(uid);
+        userInfo.setCharacterList(formateCharacter(userCards));
+
+        resultMap.put("rewards", pveRewards);
+        resultMap.put("reward", rewardRecordItemId);
+        resultMap.put("levelUp", levelUp);
+        resultMap.put("user", userInfo);
+        resultMap.put("battle", battle);
+        resultMap.put("pveDetail", finishPveDetail);
+        baseResp.setData(resultMap);
         baseResp.setSuccess(1);
-        dailyViewFinsh(userId, "guanka_code");
+
+        // 更新用户数据库
+        userMapper.updateuser(user);
+        dailyViewFinsh(userIdStr, "guanka_code");
         return baseResp;
+    }
+
+//==================== 抽取通用工具方法 ====================
+    /** 根据等级发放升级卡牌 */
+    private void grantCardByLevel(User user, int levelUp) throws Exception {
+        String yaoCode = user.getYaoCode();
+        Integer uid = user.getUserId();
+        final int LV_50 = 50;
+        final int LV_80 = 80;
+        final int LV_100 = 100;
+        final String CARD_TIANJUN = "132";
+        final String CARD_HUNQI = "105";
+        final String CARD_BASE = "100";
+
+        List<User> allTeamUser = userMapper.selectUserByYaoCode(yaoCode);
+        if (CollectionUtils.isEmpty(allTeamUser)) return;
+
+        if (levelUp == LV_50) {
+            giveCardStack(uid, CARD_TIANJUN, 1);
+        } else if (levelUp == LV_80) {
+            List<User> teamAll = userMapper.selectUserByYaoCode2(yaoCode);
+            long qualified = teamAll.stream()
+                    .filter(u -> u.getLv().compareTo(new BigDecimal(80)) >= 0)
+                    .count();
+            if (qualified == 9) {
+                giveCardStack(uid, CARD_HUNQI, 10);
+            }
+        } else if (levelUp == LV_100) {
+            List<User> teamAll = userMapper.selectUserByYaoCode2(yaoCode);
+            long qualified = teamAll.stream()
+                    .filter(u -> u.getLv().compareTo(new BigDecimal(100)) >= 0)
+                    .count();
+            if (qualified == 30) {
+                giveCardStack(uid, CARD_BASE, 1);
+            }
+        }
+    }
+
+    /** 增加卡牌堆叠，不存在则新建 */
+    private void giveCardStack(Integer userId, String cardId, int addNum) throws Exception {
+        Characters existCard = charactersMapper.listById(String.valueOf(userId), cardId);
+        if (existCard != null) {
+            existCard.setStackCount(existCard.getStackCount() + addNum);
+            charactersMapper.updateByPrimaryKey(existCard);
+            return;
+        }
+        Card cardInfo = cardMapper.selectByid(Integer.parseInt(cardId));
+        if (cardInfo == null) {
+            throw new Exception("服务器异常联系管理员");
+        }
+        Characters newCard = new Characters();
+        newCard.setStackCount(addNum);
+        newCard.setId(cardId);
+        newCard.setLv(1);
+        newCard.setUserId(userId);
+        newCard.setStar(new BigDecimal(1));
+        newCard.setMaxLv(CardMaxLevelUtils.getMaxLevel(cardInfo.getName(), cardInfo.getStar().doubleValue()));
+        charactersMapper.insert(newCard);
+    }
+
+    /** 填充战队角色装备 */
+    private void fillCharacterEquip(String userId, List<Characters> charList) {
+        for (Characters ch : charList) {
+            List<EqCharacters> eqList = eqCharactersMapper.listByGoOn(userId, ch.getId());
+            if (!CollectionUtils.isEmpty(eqList)) {
+                ch.setEqCharactersList(formateEqCharacter(eqList));
+            }
+        }
+    }
+
+    /** 构建敌方怪物列表 */
+    private List<Characters> buildEnemyCharacters(String detailCode) {
+        List<Characters> rightCharacter = new ArrayList<>();
+        Map<String, Object> map = new HashMap<>();
+        map.put("detail_code", detailCode);
+        List<PveBossDetail> bossList = pveBossDetailMapper.selectByMap(map);
+        int uuid = 0;
+        for (PveBossDetail boss : bossList) {
+            Card card = cardMapper.selectByid(boss.getBossId());
+            Characters ch = new Characters();
+            BeanUtils.copyProperties(card, ch);
+            ch.setGoIntoNum(boss.getGoIntoNum());
+            ch.setLv(boss.getDifficultyLevel());
+            ch.setUuid(uuid);
+            // 同名怪物后缀区分
+            long sameCount = bossList.stream()
+                    .filter(x -> x.getBossId().equals(boss.getBossId()))
+                    .count();
+            if (sameCount > 1) {
+                ch.setName(ch.getName() + uuid);
+            }
+            rightCharacter.add(ch);
+            uuid++;
+        }
+        return rightCharacter;
+    }
+
+    /** 拆分章节 1-1-1 */
+    private List<Integer> splitChapterCode(String code) {
+        return Arrays.stream(code.split("-"))
+                .map(Integer::parseInt)
+                .collect(Collectors.toList());
+    }
+
+    /** 计算下一章节编号 */
+    private String calcNextChapter(int n1, int n2, int n3) {
+        if (n3 + 1 <= 10) {
+            n3++;
+        } else if (n2 + 1 <= 6) {
+            n2++;
+            n3 = 1;
+        } else if (n1 + 1 <= 8) {
+            n1++;
+            n2 = 1;
+            n3 = 1;
+        }
+        return n1 + "-" + n2 + "-" + n3;
+    }
+
+    /** 批量发放奖励 */
+    private void distributeAllReward(User user, List<PveReward> rewardList, Integer uid) throws Exception {
+        for (PveReward reward : rewardList) {
+            String type = String.valueOf(reward.getRewardType());
+            BigDecimal amount = new BigDecimal(reward.getRewardAmount());
+            String itemId = String.valueOf(reward.getItemId());
+            switch (type) {
+                case "1":
+                    user.setDiamond(user.getDiamond().add(amount));
+                    break;
+                case "2":
+                    user.setGold(user.getGold().add(amount));
+                    break;
+                case "3":
+                    user.setSoul(user.getSoul().add(amount));
+                    break;
+                case "4":
+                    giveCardStack(uid, itemId, reward.getRewardAmount());
+                    break;
+                case "5":
+                case "6":
+                    giveBagItem(uid, reward);
+                    break;
+            }
+        }
+    }
+
+    /** 发放背包道具 */
+    private void giveBagItem(Integer uid, PveReward reward) throws Exception {
+        String itemId = String.valueOf(reward.getItemId());
+        GameItemBase itemBase = gameItemBaseMapper.selectById(reward.getItemId());
+        if (itemBase == null) {
+            throw new Exception("服务器异常联系管理员");
+        }
+        Map<String, Object> bagMap = new HashMap<>();
+        bagMap.put("item_id", reward.getItemId());
+        bagMap.put("user_id", uid);
+        bagMap.put("is_delete", "0");
+        List<GamePlayerBag> bagList = gamePlayerBagMapper.selectByMap(bagMap);
+        if (!CollectionUtils.isEmpty(bagList)) {
+            GamePlayerBag bag = bagList.get(0);
+            bag.setItemCount(bag.getItemCount() + reward.getRewardAmount());
+            gamePlayerBagMapper.updateById(bag);
+        } else {
+            GamePlayerBag newBag = new GamePlayerBag();
+            newBag.setUserId(uid);
+            newBag.setItemCount(reward.getRewardAmount());
+            newBag.setGridIndex(1);
+            newBag.setItemId(reward.getItemId());
+            gamePlayerBagMapper.insert(newBag);
+        }
+        reward.setImg(itemBase.getIcon());
+        reward.setItemName(itemBase.getItemName() + reward.getRewardAmount());
     }
 
     @Override
@@ -9201,43 +9193,32 @@ public class GameServiceServiceImpl implements GameServiceService {
     public BaseResp warReport(TokenDto token, HttpServletRequest request) throws Exception {
         BaseResp baseResp = new BaseResp();
         String userId = token.getUserId();
-
-        // 从Redis扫描获取该用户的所有战斗摘要
-        Set<String> keys = redisTemplate.keys("battle:summary:*");
         List<Map<String, Object>> warReportList = new ArrayList<>();
 
-        if (!CollectionUtils.isEmpty(keys)) {
-            for (String key : keys) {
-                String summaryJson = (String) redisTemplate.opsForValue().get(key);
-                if (Xtool.isNotNull(summaryJson)) {
-                    Object obj = JsonUtils.fromJsonToObjList(summaryJson);
-                    if (obj instanceof Map) {
-                        Map<String, Object> summary = (Map<String, Object>) obj;
-                        // 只返回当前用户的战斗记录
-                        if (userId.equals(String.valueOf(summary.get("userId"))) ||
-                                userId.equals(String.valueOf(summary.get("toUserId")))) {
-                            // 添加格式化时间
-                            Long timestamp = (Long) summary.get("timestamp");
-                            if (timestamp != null) {
-                                Date createTime = new Date(timestamp);
-                                summary.put("timeStr", formatTime(createTime));
-                            }
-                            warReportList.add(summary);
-                        }
-                    }
-                }
+        String hashKey = "battle:summary:user:" + userId;
+        Map<String, String> battleDataMap = redisTemplate.opsForHash().entries(hashKey);
+
+        for (String json : battleDataMap.values()) {
+            Object obj = JsonUtils.fromJsonToObjList(json);
+            if (!(obj instanceof Map)) {
+                continue;
             }
+            Map<String, Object> summary = (Map<String, Object>) obj;
+            Long time = (Long) summary.get("timestamp");
+            if (time != null) {
+                summary.put("timeStr", formatTime(new Date(time)));
+            }
+            warReportList.add(summary);
         }
 
-        // 按时间戳降序排序（最新的在前）
         warReportList.sort((a, b) -> {
-            Long timeA = (Long) a.get("timestamp");
-            Long timeB = (Long) b.get("timestamp");
-            return timeB.compareTo(timeA);
+            Long t1 = (Long) a.get("timestamp");
+            Long t2 = (Long) b.get("timestamp");
+            return Long.compare(t2, t1);
         });
 
-        baseResp.setData(warReportList);
         baseResp.setSuccess(1);
+        baseResp.setData(warReportList);
         return baseResp;
     }
 
@@ -9723,11 +9704,7 @@ public class GameServiceServiceImpl implements GameServiceService {
         map.put("name1", name1);
         map.put("isWin", isWin);
 
-        // 将完整战斗过程JSON存储到本地磁盘文件
-//        String json = JsonUtils.toJson(map);
-//        saveBattleLogToFile(battleId, json);
-
-        // 提取战斗摘要信息存储到Redis
+        // 组装摘要不变
         Map<String, Object> battleSummary = new HashMap<>();
         battleSummary.put("battleId", battleId);
         battleSummary.put("userId", userId);
@@ -9738,16 +9715,48 @@ public class GameServiceServiceImpl implements GameServiceService {
         battleSummary.put("type", type);
         battleSummary.put("img", img);
         battleSummary.put("timestamp", System.currentTimeMillis());
-
         String summaryJson = JsonUtils.toJson(battleSummary);
-        redisTemplate.opsForValue().set("battle:summary:" + battleId, summaryJson, 7, TimeUnit.DAYS);
 
+// 过期：2天基础 + 0~12小时随机，防止集中过期雪崩
+        long baseSec = TimeUnit.DAYS.toSeconds(2);
+        long randSec = new Random().nextLong(TimeUnit.HOURS.toSeconds(12));
+        long expireTotal = baseSec + randSec;
+
+        HashOperations<String, String, String> hashOps = redisTemplate.opsForHash();
+        String mainUserHash = "battle:summary:user:" + userId;
+// 存入刷图玩家自身Hash
+        hashOps.put(mainUserHash, String.valueOf(battleId), summaryJson);
+        redisTemplate.expire(mainUserHash, expireTotal, TimeUnit.SECONDS);
+        trimMaxBattleCount(hashOps, mainUserHash, 30);
+
+// PVE刷图 toUserId固定0，不用重复存储对手，节省Redis写入
+        if (!"0".equals(toUserId) && !userId.equals(toUserId)) {
+            String targetHash = "battle:summary:user:" + toUserId;
+            hashOps.put(targetHash, String.valueOf(battleId), summaryJson);
+            redisTemplate.expire(targetHash, expireTotal, TimeUnit.SECONDS);
+            trimMaxBattleCount(hashOps, targetHash, 30);
+        }
         // 战斗数据不再存储到数据库，仅存储到Redis和本地文件
         Battle bt = new Battle();
         bt.setIsWin(isWin);
         bt.setId(battleId);
         bt.setJson(map);
         return bt;
+    }
+
+    /** 限制单个用户最多保留N条战斗记录，删除最早 */
+    private void trimMaxBattleCount(HashOperations<String, String, String> hashOps, String hashKey, int maxSave) {
+        Map<String, String> allBattle = hashOps.entries(hashKey);
+        if (allBattle.size() <= maxSave) {
+            return;
+        }
+        List<String> oldBattleIds = allBattle.keySet().stream()
+                .map(Long::valueOf)
+                .sorted()
+                .limit(allBattle.size() - maxSave)
+                .map(String::valueOf)
+                .collect(Collectors.toList());
+        hashOps.delete(hashKey, oldBattleIds.toArray(new String[0]));
     }
 
     public static boolean isTeamAVictoryAdvanced(String content) {
