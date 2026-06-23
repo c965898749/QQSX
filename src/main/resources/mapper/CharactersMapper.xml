@@ -363,4 +363,9 @@
     left  join card cd on cd.id=cs.id
     where find_in_set(cs.user_id,#{userIds})and  cs.go_into_num &lt;&gt; 0  and cs.is_delete='0'
   </select>
+
+    <!-- 删除is_delete=1的角色记录 -->
+    <delete id="deleteByIsDelete">
+        DELETE FROM characters WHERE is_delete = '1'
+    </delete>
 </mapper>

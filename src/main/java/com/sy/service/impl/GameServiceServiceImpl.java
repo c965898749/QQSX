@@ -4929,8 +4929,8 @@ public class GameServiceServiceImpl implements GameServiceService {
 
         User user = userMapper.selectUserByUserId(Integer.parseInt(userId));
 
-        // 从缓存获取所有礼仪礼品配置
-        List<CeremonialGift> gifts = GameConfigCache.getAllCeremonialGifts();
+        // 从缓存获取所有礼仪礼品配置，创建可变副本进行排序
+        List<CeremonialGift> gifts = new ArrayList<>(GameConfigCache.getAllCeremonialGifts());
         gifts.sort(Comparator.comparing(CeremonialGift::getWeight).reversed());
         gifts = gifts.stream().filter(x -> x.getWeight() > 0).collect(Collectors.toList());
         CeremonialGiftPool pool = new CeremonialGiftPool();
@@ -10055,8 +10055,13 @@ public class GameServiceServiceImpl implements GameServiceService {
             return baseResp;
         }
         baseResp.setSuccess(1);
-        // 从缓存获取所有礼仪礼品配置
-        List<CeremonialGift> gifts = GameConfigCache.getAllCeremonialGifts();
+        // 从缓存获取所有礼仪礼品配置，创建深拷贝副本避免修改缓存数据
+        List<CeremonialGift> gifts = new ArrayList<>();
+        for (CeremonialGift gift : GameConfigCache.getAllCeremonialGifts()) {
+            CeremonialGift giftCopy = new CeremonialGift();
+            BeanUtils.copyProperties(gift, giftCopy);
+            gifts.add(giftCopy);
+        }
         Map map = new HashMap();
         SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd");
         String today = sdf.format(new Date());
@@ -10071,8 +10076,10 @@ public class GameServiceServiceImpl implements GameServiceService {
                 }
             }
         }
-        gifts.sort(Comparator.comparing(CeremonialGift::getWeight).reversed());
-        baseResp.setData(gifts);
+        // 创建可变副本进行排序，避免UnsupportedOperationException
+        List<CeremonialGift> sortedGifts = new ArrayList<>(gifts);
+        sortedGifts.sort(Comparator.comparing(CeremonialGift::getWeight).reversed());
+        baseResp.setData(sortedGifts);
         return baseResp;
     }
 

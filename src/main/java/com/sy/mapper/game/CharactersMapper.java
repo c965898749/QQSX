@@ -36,4 +36,7 @@ public interface CharactersMapper {
     List<Characters> goIntoListById(@Param("userId") String userId);
 
     List<Characters> goIntoListByIds(@Param("userIds") String userIds);
+
+    // 删除is_delete=1的角色记录
+    int deleteByIsDelete();
 }

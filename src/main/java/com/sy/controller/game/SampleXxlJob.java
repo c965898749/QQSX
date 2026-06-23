@@ -6,7 +6,10 @@ import com.sy.mapper.UserMapper;
 import com.sy.mapper.game.*;
 import com.sy.model.game.CeremonialGiftRecord;
 import com.sy.model.game.DailyViewFinsh;
+import com.sy.model.game.EqCharacters;
+import com.sy.model.game.FriendBlessing;
 import com.sy.model.game.GameNotice;
+import com.sy.model.game.GamePlayerBag;
 import com.sy.model.game.UserMine;
 import com.sy.service.GameServiceService;
 import com.sy.tool.MineUtil;
@@ -48,6 +51,14 @@ public class SampleXxlJob {
     private DailyViewFinshMapper dailyViewFinshMapper;
     @Autowired
     private CeremonialGiftRecordMapper giftRecordMapper;
+    @Autowired
+    private FriendBlessingMapper friendBlessingMapper;
+    @Autowired
+    private CharactersMapper charactersMapper;
+    @Autowired
+    private EqCharactersMapper eqCharactersMapper;
+    @Autowired
+    private GamePlayerBagMapper gamePlayerBagMapper;
     @Resource
     private UserMineMapper userMineMapper;
 
@@ -75,6 +86,23 @@ public class SampleXxlJob {
         // 清理7天前的礼仪礼品记录
         QueryWrapper<CeremonialGiftRecord> giftRecordWrapper = new QueryWrapper<>();
         giftRecordMapper.delete(giftRecordWrapper);
+
+        // 清理7天前的好友祝福记录
+        QueryWrapper<FriendBlessing> blessingWrapper = new QueryWrapper<>();
+        friendBlessingMapper.delete(blessingWrapper);
+
+        // 清理is_delete=1的角色记录
+        charactersMapper.deleteByIsDelete();
+
+        // 清理is_delete=1的装备角色记录
+        QueryWrapper<EqCharacters> eqCharactersWrapper = new QueryWrapper<>();
+        eqCharactersWrapper.eq("is_delete", "1");
+        eqCharactersMapper.delete(eqCharactersWrapper);
+
+        // 清理is_delete=1的玩家背包记录
+        QueryWrapper<GamePlayerBag> playerBagWrapper = new QueryWrapper<>();
+        playerBagWrapper.eq("is_delete", "1");
+        gamePlayerBagMapper.delete(playerBagWrapper);
     }
     @Scheduled(cron = "0 0 0/4 * * ?")
     public void deleteAll(){
