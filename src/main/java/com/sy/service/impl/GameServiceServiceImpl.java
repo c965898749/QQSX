@@ -6777,7 +6777,8 @@ public class GameServiceServiceImpl implements GameServiceService {
         if ("bronzetower".equals(token.getStr())) {
             user.setBronze1(101);
             PveReward pveReward = new PveReward();
-            GameItemBase gameItemBase = gameItemBaseMapper.selectById(13);
+            // 从缓存获取道具基础配置
+            GameItemBase gameItemBase = GameConfigCache.getItemBase(13);
             pveReward.setImg(gameItemBase.getIcon());
             pveReward.setItemName(gameItemBase.getItemName() + 2000);
             pveReward.setItemId(13);
@@ -6797,7 +6798,8 @@ public class GameServiceServiceImpl implements GameServiceService {
         if ("silvertower".equals(token.getStr())) {
             user.setSilvertower(101);
             PveReward pveReward = new PveReward();
-            GameItemBase gameItemBase = gameItemBaseMapper.selectById(14);
+            // 从缓存获取道具基础配置
+            GameItemBase gameItemBase = GameConfigCache.getItemBase(14);
             pveReward.setImg(gameItemBase.getIcon());
             pveReward.setItemName(gameItemBase.getItemName() + 1000);
             pveReward.setItemId(14);
@@ -6817,7 +6819,8 @@ public class GameServiceServiceImpl implements GameServiceService {
         if ("goldentower".equals(token.getStr())) {
             user.setGoldentower(101);
             PveReward pveReward = new PveReward();
-            GameItemBase gameItemBase = gameItemBaseMapper.selectById(15);
+            // 从缓存获取道具基础配置
+            GameItemBase gameItemBase = GameConfigCache.getItemBase(15);
             pveReward.setImg(gameItemBase.getIcon());
             pveReward.setItemName(gameItemBase.getItemName() + 500);
             pveReward.setItemId(15);
@@ -7532,7 +7535,8 @@ public class GameServiceServiceImpl implements GameServiceService {
     /** 发放背包道具 */
     private void giveBagItem(Integer uid, PveReward reward) throws Exception {
         String itemId = String.valueOf(reward.getItemId());
-        GameItemBase itemBase = gameItemBaseMapper.selectById(reward.getItemId());
+        // 从缓存获取道具基础配置
+        GameItemBase itemBase = GameConfigCache.getItemBase(reward.getItemId());
         if (itemBase == null) {
             throw new Exception("服务器异常联系管理员");
         }
@@ -7875,7 +7879,8 @@ public class GameServiceServiceImpl implements GameServiceService {
             } else if ("5".equals(content.getRewardType() + "") || "6".equals(content.getRewardType() + "")) {
                 // 道具/宝石等
                 String itemId = content.getItemId() + "";
-                GameItemBase gameItemBase = gameItemBaseMapper.selectById(content.getItemId());
+                // 从缓存获取道具基础配置
+                GameItemBase gameItemBase = GameConfigCache.getItemBase(content.getItemId());
                 if (gameItemBase == null) {
                     baseResp.setErrorMsg("服务器异常，请联系管理员");
                     baseResp.setSuccess(0);
@@ -8203,7 +8208,8 @@ public class GameServiceServiceImpl implements GameServiceService {
 
                 if (Xtool.isNotNull(bronzeTower1.getRewardItem1())) {
                     PveReward pveReward = new PveReward();
-                    GameItemBase gameItemBase = gameItemBaseMapper.selectById(bronzeTower1.getRewardItem1());
+                    // 从缓存获取道具基础配置
+                    GameItemBase gameItemBase = GameConfigCache.getItemBase(Integer.parseInt(bronzeTower1.getRewardItem1()));
                     pveReward.setImg(gameItemBase.getIcon());
                     pveReward.setItemName(gameItemBase.getItemName() + bronzeTower1.getRewardItem1Num());
                     pveReward.setItemId(Integer.parseInt(bronzeTower1.getRewardItem1()));
@@ -8732,7 +8738,8 @@ public class GameServiceServiceImpl implements GameServiceService {
                     playerBag.setIsDelete("0");
                 }
                 PveReward pveReward = new PveReward();
-                GameItemBase gameItemBase = gameItemBaseMapper.selectById(Integer.parseInt(token.getStr()));
+                // 从缓存获取道具基础配置
+                GameItemBase gameItemBase = GameConfigCache.getItemBase(Integer.parseInt(token.getStr()));
                 pveReward.setImg(gameItemBase.getIcon());
                 pveReward.setItemName(gameItemBase.getItemName() + " " + count);
                 pveReward.setItemId(gameItemBase.getItemId());
