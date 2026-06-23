@@ -271,8 +271,8 @@ public class GameServiceServiceImpl implements GameServiceService {
         if (playerBag3 != null) {
             info.setCrystal(playerBag3.getItemCount());
         }
-        //卡池数量
-        List<Card> cardList = cardMapper.selectAll();
+        //卡池数量 - 从缓存获取
+        List<Card> cardList = GameConfigCache.getAllCards();
         info.setUseCardCount(cardList.size() + "");
         info.setCharacterList(formateCharacter(characterList));
         info.setEqCharactersList(formateEqCharacter(eqCharactersList));
@@ -480,7 +480,8 @@ public class GameServiceServiceImpl implements GameServiceService {
                     return baseResp;
                 }
             }
-            Card card = cardMapper.selectByid(1002);
+            // 从缓存获取卡牌配置
+            Card card = GameConfigCache.getCard("1002");
             if (card == null) {
                 baseResp.setErrorMsg("服务器异常联想管理员");
                 baseResp.setSuccess(0);
@@ -584,8 +585,8 @@ public class GameServiceServiceImpl implements GameServiceService {
             info.setCrystal(playerBag3.getItemCount());
         }
         info.setEqCharactersList(formateEqCharacter(characterEqList));
-        //卡池数量
-        List<Card> cardList = cardMapper.selectAll();
+        //卡池数量 - 从缓存获取
+        List<Card> cardList = GameConfigCache.getAllCards();
         info.setUseCardCount(cardList.size() + "");
         info.setCharacterList(formateCharacter(characterList));
         baseResp.setData(info);
@@ -891,14 +892,15 @@ public class GameServiceServiceImpl implements GameServiceService {
         Integer num22 = Integer.parseInt(list2.get(1));
         PveDetail pveDetail = new PveDetail();
         if (num1 == num11 && num2 == num22) {
-            pveDetail = pveDetailMapper.selectById(user.getChapter());
+            // 从缓存获取PVE副本详情配置
+            pveDetail = GameConfigCache.getPveDetail(user.getChapter());
         } else {
-            pveDetail = pveDetailMapper.selectById(token.getId());
+            // 从缓存获取PVE副本详情配置
+            pveDetail = GameConfigCache.getPveDetail(token.getId());
         }
         pveDetail.setBaoCount(user.getBaoCount());
-        Map map = new HashMap();
-        map.put("detail_code", token.getId());
-        List<PveBossDetail> pveBossDetailList = pveBossDetailMapper.selectByMap(map);
+        // 从缓存获取PVE副本Boss配置
+        List<PveBossDetail> pveBossDetailList = GameConfigCache.getPveBossDetails(token.getId());
         List<PveBossDetail> uniqueUserList = pveBossDetailList.stream()
                 // 以name为key，User为value，LinkedHashMap保留插入顺序
                 .collect(Collectors.toMap(
@@ -1019,7 +1021,9 @@ public class GameServiceServiceImpl implements GameServiceService {
             }
         }
         List<Characters> rightCharacter = new ArrayList<>();
-        Card card = cardMapper.selectByid(activityDetail.getBossId());
+        // 从缓存获取卡牌配置
+            // 从缓存获取卡牌配置
+            Card card = GameConfigCache.getCard(activityDetail.getBossId() + "");
         Characters character = new Characters();
         BeanUtils.copyProperties(card, character);
         character.setGoIntoNum(1);
@@ -1070,7 +1074,9 @@ public class GameServiceServiceImpl implements GameServiceService {
                         characters1.setStackCount(characters1.getStackCount() + content.getRewardAmount());
                         charactersMapper.updateByPrimaryKey(characters1);
                     } else {
-                        Card card1 = cardMapper.selectByid(content.getItemId());
+                        // 从缓存获取卡牌配置
+                        // 从缓存获取卡牌配置
+                        Card card1 = GameConfigCache.getCard(content.getItemId() + "");
                         if (card1 == null) {
                             baseResp.setErrorMsg("服务器异常联想管理员");
                             baseResp.setSuccess(0);
@@ -1213,7 +1219,9 @@ public class GameServiceServiceImpl implements GameServiceService {
         map1.put("detail_code", activityDetail.getDetailCode());
         List<ActivityBoss> bosses = activityBossMapper.selectByMap(map1);
         for (ActivityBoss boss : bosses) {
-            Card card = cardMapper.selectByid(boss.getBossId());
+            // 从缓存获取卡牌配置
+            // 从缓存获取卡牌配置
+            Card card = GameConfigCache.getCard(boss.getBossId() + "");
             Characters character = new Characters();
             BeanUtils.copyProperties(card, character);
             character.setGoIntoNum(boss.getGoIntoNum());
@@ -1250,7 +1258,9 @@ public class GameServiceServiceImpl implements GameServiceService {
                         characters1.setStackCount(characters1.getStackCount() + content.getRewardAmount());
                         charactersMapper.updateByPrimaryKey(characters1);
                     } else {
-                        Card card1 = cardMapper.selectByid(content.getItemId());
+                        // 从缓存获取卡牌配置
+                        // 从缓存获取卡牌配置
+                        Card card1 = GameConfigCache.getCard(content.getItemId() + "");
                         if (card1 == null) {
                             baseResp.setErrorMsg("服务器异常联想管理员");
                             baseResp.setSuccess(0);
@@ -1443,7 +1453,9 @@ public class GameServiceServiceImpl implements GameServiceService {
             return baseResp;
         }
         Characters character = charactersMapper.listById(token.getUserId(), token.getId());
-        List<QqCardExp> qqCardExpList = qqCardExpMapper.findbyStar(character.getStar().stripTrailingZeros() + "");
+        List<QqCardExp> qqCardExpList = GameConfigCache.getQqCardExpList().stream()
+                .filter(exp -> exp.getUpgradeType().equals(character.getStar().stripTrailingZeros() + ""))
+                .collect(Collectors.toList());
         List<Integer> expTable = new ArrayList<>();
         List<Integer> silverTable = new ArrayList<>();
         List<MaterialCard> materials = new ArrayList<>();
@@ -1623,7 +1635,8 @@ public class GameServiceServiceImpl implements GameServiceService {
             baseResp.setErrorMsg("更新成功");
             return baseResp;
         }
-        List<QqShenxianFlyup> qqShenxianFlyupList = qqShenxianFlyupMapper.selectByMap(new HashMap<>());
+        // 从缓存获取神仙飞升配置
+        List<QqShenxianFlyup> qqShenxianFlyupList = GameConfigCache.getShenxianFlyupList();
         Map data = new HashMap();
         List<QqShenxianFlyup> qqShenxianFlyups = qqShenxianFlyupList.stream().filter(x -> x.getFlyupTimes() == character.getFlyup() + 1).collect(Collectors.toList());
         if (character.getProfession().equals("武圣")) {
@@ -1712,7 +1725,8 @@ public class GameServiceServiceImpl implements GameServiceService {
         }
 
         // 4. 获取飞升配置（增加空值校验）
-        List<QqShenxianFlyup> qqShenxianFlyupList = qqShenxianFlyupMapper.selectByMap(new HashMap<>());
+        // 从缓存获取神仙飞升配置
+        List<QqShenxianFlyup> qqShenxianFlyupList = GameConfigCache.getShenxianFlyupList();
         int targetFlyupTimes = character.getFlyup() + 1;
         List<QqShenxianFlyup> qqShenxianFlyups = qqShenxianFlyupList.stream()
                 .filter(x -> x.getFlyupTimes() == targetFlyupTimes)
@@ -1878,7 +1892,9 @@ public class GameServiceServiceImpl implements GameServiceService {
             return baseResp;
         }
         EqCharacters character = eqCharactersMapper.listById(token.getUserId(), token.getId());
-        List<QqCardExp> qqCardExpList = qqCardExpMapper.findbyStar(character.getStar().stripTrailingZeros() + "");
+        List<QqCardExp> qqCardExpList = GameConfigCache.getQqCardExpList().stream()
+                .filter(exp -> exp.getUpgradeType().equals(character.getStar().stripTrailingZeros() + ""))
+                .collect(Collectors.toList());
         List<Integer> expTable = new ArrayList<>();
         List<Integer> silverTable = new ArrayList<>();
         List<MaterialCard> materials = new ArrayList<>();
@@ -2032,7 +2048,9 @@ public class GameServiceServiceImpl implements GameServiceService {
 
         }
         Characters character = charactersMapper.listById(token.getUserId(), token.getId());
-        List<QqCardExp> qqCardExpList = qqCardExpMapper.findbyStar(character.getStar().stripTrailingZeros() + "");
+        List<QqCardExp> qqCardExpList = GameConfigCache.getQqCardExpList().stream()
+                .filter(exp -> exp.getUpgradeType().equals(character.getStar().stripTrailingZeros() + ""))
+                .collect(Collectors.toList());
         List<Integer> expTable = new ArrayList<>();
         List<Integer> silverTable = new ArrayList<>();
         for (QqCardExp qqCardExp : qqCardExpList) {
@@ -2094,7 +2112,9 @@ public class GameServiceServiceImpl implements GameServiceService {
             return baseResp;
         }
         EqCharacters character = eqCharactersMapper.listById(token.getUserId(), token.getId());
-        List<QqCardExp> qqCardExpList = qqCardExpMapper.findbyStar(character.getStar().stripTrailingZeros() + "");
+        List<QqCardExp> qqCardExpList = GameConfigCache.getQqCardExpList().stream()
+                .filter(exp -> exp.getUpgradeType().equals(character.getStar().stripTrailingZeros() + ""))
+                .collect(Collectors.toList());
         List<Integer> expTable = new ArrayList<>();
         List<Integer> silverTable = new ArrayList<>();
         List<MaterialCard> materials = new ArrayList<>();
@@ -2472,7 +2492,7 @@ public class GameServiceServiceImpl implements GameServiceService {
                     characters1.setStackCount(characters1.getStackCount() + content.getItemQuantity());
                     charactersMapper.updateByPrimaryKey(characters1);
                 } else {
-                    Card card1 = cardMapper.selectByid(Integer.parseInt(content.getItemId() + ""));
+                    Card card1 = GameConfigCache.getCard(content.getItemId() + "");
                     if (card1 == null) {
                         baseResp.setErrorMsg("服务器异常联想管理员");
                         baseResp.setSuccess(0);
@@ -2645,7 +2665,7 @@ public class GameServiceServiceImpl implements GameServiceService {
                     characters1.setStackCount(characters1.getStackCount() + content.getItemQuantity());
                     charactersMapper.updateByPrimaryKey(characters1);
                 } else {
-                    Card card1 = cardMapper.selectByid(Integer.parseInt(content.getItemId() + ""));
+                    Card card1 = GameConfigCache.getCard(content.getItemId() + "");
                     if (card1 == null) {
                         baseResp.setErrorMsg("服务器异常联想管理员");
                         baseResp.setSuccess(0);
@@ -2842,7 +2862,7 @@ public class GameServiceServiceImpl implements GameServiceService {
                     characters1.setStackCount(characters1.getStackCount() + content.getItemQuantity());
                     charactersMapper.updateByPrimaryKey(characters1);
                 } else {
-                    Card card1 = cardMapper.selectByid(Integer.parseInt(content.getItemId() + ""));
+                    Card card1 = GameConfigCache.getCard(content.getItemId() + "");
                     if (card1 == null) {
                         baseResp.setErrorMsg("服务器异常联想管理员");
                         baseResp.setSuccess(0);
@@ -2996,7 +3016,8 @@ public class GameServiceServiceImpl implements GameServiceService {
                 characters1.setStackCount(characters1.getStackCount() + 1);
                 charactersMapper.updateByPrimaryKey(characters1);
             } else {
-                Card card1 = cardMapper.selectByid(Integer.parseInt(craft.getTargetId() + ""));
+                // 从缓存获取卡牌配置
+                Card card1 = GameConfigCache.getCard(craft.getTargetId() + "");
                 if (card1 == null) {
                     baseResp.setErrorMsg("服务器异常联想管理员");
                     baseResp.setSuccess(0);
@@ -3104,7 +3125,8 @@ public class GameServiceServiceImpl implements GameServiceService {
                 characters1.setStackCount(characters1.getStackCount() + multiple);
                 charactersMapper.updateByPrimaryKey(characters1);
             } else {
-                Card card1 = cardMapper.selectByid(Integer.parseInt(craft.getTargetId() + ""));
+                // 从缓存获取卡牌配置
+                Card card1 = GameConfigCache.getCard(craft.getTargetId() + "");
                 if (card1 == null) {
                     baseResp.setErrorMsg("服务器异常联想管理员");
                     baseResp.setSuccess(0);
@@ -3784,7 +3806,9 @@ public class GameServiceServiceImpl implements GameServiceService {
                 characters1.setStackCount(characters1.getStackCount() + 1);
                 charactersMapper.updateByPrimaryKey(characters1);
             } else {
-                Card card1 = cardMapper.selectByid(gameItemShop.getItemId());
+                // 从缓存获取卡牌配置
+                // 从缓存获取卡牌配置
+                Card card1 = GameConfigCache.getCard(gameItemShop.getItemId() + "");
                 if (card1 == null) {
                     baseResp.setErrorMsg("服务器异常联想管理员");
                     baseResp.setSuccess(0);
@@ -4200,9 +4224,15 @@ public class GameServiceServiceImpl implements GameServiceService {
     @Override
     public BaseResp tuPuhenchenList(TokenDto token, HttpServletRequest request) throws Exception {
         BaseResp baseResp = new BaseResp();
-        List<StarSynthesisMain> mainList = starSynthesisMainMapper.selectAll();
+        // 从缓存获取星合成主配置列表
+        List<StarSynthesisMain> mainList = GameConfigCache.getStarSynthesisMains();
+        // 从缓存获取所有星合成材料配置
+        List<StarSynthesisMaterials> allMaterials = GameConfigCache.getStarSynthesisMaterials();
         for (StarSynthesisMain starSynthesisMain : mainList) {
-            List<StarSynthesisMaterials> materials = starSynthesisMaterialsMapper.selectall(starSynthesisMain.getId());
+            // 从缓存中过滤出当前合成ID对应的材料
+            List<StarSynthesisMaterials> materials = allMaterials.stream()
+                    .filter(m -> m.getSynthesisId().equals(starSynthesisMain.getId()))
+                    .collect(Collectors.toList());
             starSynthesisMain.setMaterials(materials);
         }
         baseResp.setData(mainList);
@@ -4227,7 +4257,16 @@ public class GameServiceServiceImpl implements GameServiceService {
             baseResp.setErrorMsg("登录过期");
             return baseResp;
         }
-        StarSynthesisMain starSynthesisMain = starSynthesisMainMapper.selectById(token.getId());
+        // 从缓存获取星合成主配置并根据ID过滤
+        StarSynthesisMain starSynthesisMain = GameConfigCache.getStarSynthesisMains().stream()
+                .filter(m -> m.getId().equals(token.getId()))
+                .findFirst()
+                .orElse(null);
+        if (starSynthesisMain == null) {
+            baseResp.setSuccess(0);
+            baseResp.setErrorMsg("合成配方不存在");
+            return baseResp;
+        }
         if (user.getGold().subtract(starSynthesisMain.getExtraCost()).compareTo(BigDecimal.ZERO) <= 0) {
             baseResp.setSuccess(0);
             baseResp.setErrorMsg("合成金币不足");
@@ -4236,7 +4275,11 @@ public class GameServiceServiceImpl implements GameServiceService {
         user.setGold(user.getGold().subtract(starSynthesisMain.getExtraCost()));
         List<Characters> charactersList = new ArrayList<>();
         if (starSynthesisMain != null) {
-            List<StarSynthesisMaterials> materials = starSynthesisMaterialsMapper.selectall(starSynthesisMain.getId());
+            // 从缓存获取所有星合成材料配置并过滤
+            List<StarSynthesisMaterials> allMaterials = GameConfigCache.getStarSynthesisMaterials();
+            List<StarSynthesisMaterials> materials = allMaterials.stream()
+                    .filter(m -> m.getSynthesisId().equals(starSynthesisMain.getId()))
+                    .collect(Collectors.toList());
             for (StarSynthesisMaterials material : materials) {
                 Characters characters = charactersMapper.listById(token.getUserId(), material.getId());
                 if (characters == null) {
@@ -4258,12 +4301,14 @@ public class GameServiceServiceImpl implements GameServiceService {
                 charactersList.add(characters);
             }
         }
-        List<QqCardExp> qqCardExpList = qqCardExpMapper.findAll();
+        // 从缓存获取卡牌经验配置
+        List<QqCardExp> qqCardExpList = GameConfigCache.getQqCardExpList();
         for (Characters characters : charactersList) {
             Characters characters1 = charactersMapper.listById(token.getUserId(), characters.getId());
             int cadExp = characters1.getExp(); // 当前溢出经验（超过maxLv的部分）
             //TODO 判断卡牌是否飞升
-            Card card = cardMapper.selectByid(Integer.parseInt(characters1.getId()));
+            // 从缓存获取卡牌配置
+            Card card = GameConfigCache.getCard(characters1.getId());
 
             // 获取卡牌的初始星级对应的未飞升最大等级
             int baseMaxLv = CardMaxLevelUtils.getMaxLevel(card.getName(), card.getStar().doubleValue());
@@ -4299,7 +4344,8 @@ public class GameServiceServiceImpl implements GameServiceService {
                     charactersMapper.updateByPrimaryKey(characters2);
                 } else {
                     // 没有卡牌 → 新建（这里原来的代码严重错误！已修复）
-                    Card card2 = cardMapper.selectByid(105);
+                    // 从缓存获取卡牌配置
+                    Card card2 = GameConfigCache.getCard("105");
                     if (card2 == null) {
                         baseResp.setErrorMsg("服务器异常，请联系管理员");
                         baseResp.setSuccess(0);
@@ -4329,7 +4375,8 @@ public class GameServiceServiceImpl implements GameServiceService {
         }
         userMapper.updateuser(user);
         Characters characters1 = charactersMapper.listById(userId, token.getId());
-        Card card1 = cardMapper.selectByid(Integer.parseInt(token.getId()));
+        // 从缓存获取卡牌配置
+        Card card1 = GameConfigCache.getCard(token.getId());
         if (characters1 != null) {
             characters1.setStackCount(characters1.getStackCount() + 1);
             charactersMapper.updateByPrimaryKey(characters1);
@@ -4446,7 +4493,8 @@ public class GameServiceServiceImpl implements GameServiceService {
             }
             charactersMapper.updateByPrimaryKey(characters);
         }
-        List<Card> cardList = cardMapper.selectAll();
+        // 从缓存获取所有卡牌并过滤
+        List<Card> cardList = GameConfigCache.getAllCards();
         cardList = cardList.stream().filter(x -> x.getStar().compareTo(star) == 0).collect(Collectors.toList());
         Random random = new Random();
         int randomIndex = random.nextInt(cardList.size()); // 生成0到集合大小-1的随机索引
@@ -4456,7 +4504,7 @@ public class GameServiceServiceImpl implements GameServiceService {
             characters1.setStackCount(characters1.getStackCount() + 1);
             charactersMapper.updateByPrimaryKey(characters1);
         } else {
-            Card card1 = cardMapper.selectByid(Integer.parseInt(drawnCard.getId()));
+            Card card1 = GameConfigCache.getCard(drawnCard.getId());
             if (card1 == null) {
                 baseResp.setErrorMsg("服务器异常联想管理员");
                 baseResp.setSuccess(0);
@@ -4807,7 +4855,7 @@ public class GameServiceServiceImpl implements GameServiceService {
             characters1.setStackCount(characters1.getStackCount() + 1);
             charactersMapper.updateByPrimaryKey(characters1);
         } else {
-            Card card1 = cardMapper.selectByid(Integer.parseInt(drawnCard.getId()));
+            Card card1 = GameConfigCache.getCard(drawnCard.getId());
             if (card1 == null) {
                 baseResp.setErrorMsg("服务器异常联想管理员");
                 baseResp.setSuccess(0);
@@ -4881,7 +4929,8 @@ public class GameServiceServiceImpl implements GameServiceService {
 
         User user = userMapper.selectUserByUserId(Integer.parseInt(userId));
 
-        List<CeremonialGift> gifts = ceremonialGiftMapper.selectByMap(new HashMap());
+        // 从缓存获取所有礼仪礼品配置
+        List<CeremonialGift> gifts = GameConfigCache.getAllCeremonialGifts();
         gifts.sort(Comparator.comparing(CeremonialGift::getWeight).reversed());
         gifts = gifts.stream().filter(x -> x.getWeight() > 0).collect(Collectors.toList());
         CeremonialGiftPool pool = new CeremonialGiftPool();
@@ -4921,7 +4970,7 @@ public class GameServiceServiceImpl implements GameServiceService {
                 characters1.setStackCount(characters1.getStackCount() + content.getRewardAmount());
                 charactersMapper.updateByPrimaryKey(characters1);
             } else {
-                Card card = cardMapper.selectByid(content.getItemId());
+                Card card = GameConfigCache.getCard(content.getItemId() + "");
                 if (card == null) {
                     baseResp.setErrorMsg("服务器异常联想管理员");
                     baseResp.setSuccess(0);
@@ -5344,7 +5393,7 @@ public class GameServiceServiceImpl implements GameServiceService {
             characters1.setStackCount(characters1.getStackCount() + 1);
             charactersMapper.updateByPrimaryKey(characters1);
         } else {
-            Card card1 = cardMapper.selectByid(Integer.parseInt(drawnCard.getId()));
+            Card card1 = GameConfigCache.getCard(drawnCard.getId());
             if (card1 == null) {
                 baseResp.setErrorMsg("服务器异常联想管理员");
                 baseResp.setSuccess(0);
@@ -5413,7 +5462,7 @@ public class GameServiceServiceImpl implements GameServiceService {
             Card drawnCard = pool.draw();
             //如果是20倍则获取的女娲石
             if (user.getRate() > 10 && i == 1) {
-                Card card = cardMapper.selectByid(100);
+                Card card = GameConfigCache.getCard("100");
                 drawnCards.add(card);
                 user.setRate(0);
                 userMapper.updateuser(user);
@@ -5436,7 +5485,7 @@ public class GameServiceServiceImpl implements GameServiceService {
                 characters1.setUpdateTime(new Date());
                 charactersMapper.updateByPrimaryKey(characters1);
             } else {
-                Card card1 = cardMapper.selectByid(Integer.parseInt(drawnCard.getId()));
+                Card card1 = GameConfigCache.getCard(drawnCard.getId());
                 if (card1 == null) {
                     baseResp.setErrorMsg("服务器异常联想管理员");
                     baseResp.setSuccess(0);
@@ -5522,7 +5571,7 @@ public class GameServiceServiceImpl implements GameServiceService {
                 characters1.setUpdateTime(new Date());
                 charactersMapper.updateByPrimaryKey(characters1);
             } else {
-                Card card1 = cardMapper.selectByid(Integer.parseInt(drawnCard.getId()));
+                Card card1 = GameConfigCache.getCard(drawnCard.getId());
                 if (card1 == null) {
                     baseResp.setErrorMsg("服务器异常联想管理员");
                     baseResp.setSuccess(0);
@@ -5611,7 +5660,7 @@ public class GameServiceServiceImpl implements GameServiceService {
         List<Characters> rightCharacter = charactersMapper.goIntoListById(token.getUserId() + "");
         if (Xtool.isNull(rightCharacter)) {
             rightCharacter = new ArrayList<>(); // 必须先创建对象，才能add
-            Card card = cardMapper.selectByid(3);
+            Card card = GameConfigCache.getCard("3");
             if (card == null) {
                 baseResp.setErrorMsg("服务器异常联想管理员");
                 baseResp.setSuccess(0);
@@ -6799,7 +6848,7 @@ public class GameServiceServiceImpl implements GameServiceService {
                     characters1.setStackCount(characters1.getStackCount() + content.getRewardAmount());
                     charactersMapper.updateByPrimaryKey(characters1);
                 } else {
-                    Card card = cardMapper.selectByid(content.getItemId());
+                    Card card = GameConfigCache.getCard(content.getItemId() + "");
                     if (card == null) {
                         baseResp.setErrorMsg("服务器异常联想管理员");
                         baseResp.setSuccess(0);
@@ -6951,7 +7000,7 @@ public class GameServiceServiceImpl implements GameServiceService {
                 characters1.setStackCount(characters1.getStackCount() + content.getRewardAmount());
                 charactersMapper.updateByPrimaryKey(characters1);
             } else {
-                Card card = cardMapper.selectByid(content.getItemId());
+                Card card = GameConfigCache.getCard(content.getItemId() + "");
                 if (card == null) {
                     baseResp.setErrorMsg("服务器异常联想管理员");
                     baseResp.setSuccess(0);
@@ -7215,7 +7264,8 @@ public class GameServiceServiceImpl implements GameServiceService {
 
         // 获取当前关卡配置
         String detailCode = token.getStr();
-        PveDetail pveDetail = pveDetailMapper.selectById(detailCode);
+        // 从缓存获取PVE副本详情配置
+        PveDetail pveDetail = GameConfigCache.getPveDetail(detailCode);
         if (pveDetail == null) {
             baseResp.setSuccess(0);
             baseResp.setErrorMsg("关卡已探索完！");
@@ -7247,9 +7297,8 @@ public class GameServiceServiceImpl implements GameServiceService {
             }
 
             // 抽取概率奖励
-            Map<String, Object> rewardMap = new HashMap<>();
-            rewardMap.put("detail_code", detailCode);
-            List<PveReward> allRewardList = pveRewardMapper.selectByMap(rewardMap);
+            // 从缓存获取PVE副本奖励配置
+            List<PveReward> allRewardList = GameConfigCache.getPveRewards(detailCode);
             pveRewards = allRewardList.stream()
                     .filter(r -> ProbabilityUtils.hitProbability(r.getPrent()))
                     .collect(Collectors.toList());
@@ -7296,10 +7345,10 @@ public class GameServiceServiceImpl implements GameServiceService {
         user.setTiliCountTime(useRes.getCountTime());
 
         // 关卡怪物信息
-        PveDetail finishPveDetail = pveDetailMapper.selectById(battle.getChapter());
-        Map<String, Object> bossMap = new HashMap<>();
-        bossMap.put("detail_code", battle.getChapter());
-        List<PveBossDetail> bossList = pveBossDetailMapper.selectByMap(bossMap);
+        // 从缓存获取PVE副本详情配置
+        PveDetail finishPveDetail = GameConfigCache.getPveDetail(battle.getChapter());
+        // 从缓存获取PVE副本Boss配置
+        List<PveBossDetail> bossList = GameConfigCache.getPveBossDetails(battle.getChapter());
         // boss去重
         List<PveBossDetail> uniqueBoss = new ArrayList<>(
                 bossList.stream()
@@ -7378,7 +7427,8 @@ public class GameServiceServiceImpl implements GameServiceService {
             charactersMapper.updateByPrimaryKey(existCard);
             return;
         }
-        Card cardInfo = cardMapper.selectByid(Integer.parseInt(cardId));
+        // 从缓存获取卡牌配置
+        Card cardInfo = GameConfigCache.getCard(cardId);
         if (cardInfo == null) {
             throw new Exception("服务器异常联系管理员");
         }
@@ -7405,12 +7455,13 @@ public class GameServiceServiceImpl implements GameServiceService {
     /** 构建敌方怪物列表 */
     private List<Characters> buildEnemyCharacters(String detailCode) {
         List<Characters> rightCharacter = new ArrayList<>();
-        Map<String, Object> map = new HashMap<>();
-        map.put("detail_code", detailCode);
-        List<PveBossDetail> bossList = pveBossDetailMapper.selectByMap(map);
+        // 从缓存获取PVE副本Boss配置
+        List<PveBossDetail> bossList = GameConfigCache.getPveBossDetails(detailCode);
         int uuid = 0;
         for (PveBossDetail boss : bossList) {
-            Card card = cardMapper.selectByid(boss.getBossId());
+            // 从缓存获取卡牌配置
+            // 从缓存获取卡牌配置
+            Card card = GameConfigCache.getCard(boss.getBossId() + "");
             Characters ch = new Characters();
             BeanUtils.copyProperties(card, ch);
             ch.setGoIntoNum(boss.getGoIntoNum());
@@ -7583,7 +7634,8 @@ public class GameServiceServiceImpl implements GameServiceService {
                                 characters1.setStackCount(characters1.getStackCount() + 1);
                                 charactersMapper.updateByPrimaryKey(characters1);
                             } else {
-                                Card card = cardMapper.selectByid(132);
+                                // 从缓存获取卡牌配置
+                                Card card = GameConfigCache.getCard("132");
                                 if (card == null) {
                                     baseResp.setErrorMsg("服务器异常联想管理员");
                                     baseResp.setSuccess(0);
@@ -7611,7 +7663,8 @@ public class GameServiceServiceImpl implements GameServiceService {
                                 characters1.setStackCount(characters1.getStackCount() + 10);
                                 charactersMapper.updateByPrimaryKey(characters1);
                             } else {
-                                Card card = cardMapper.selectByid(105);
+                                // 从缓存获取卡牌配置
+                                Card card = GameConfigCache.getCard("105");
                                 if (card == null) {
                                     baseResp.setErrorMsg("服务器异常联想管理员");
                                     baseResp.setSuccess(0);
@@ -7640,7 +7693,7 @@ public class GameServiceServiceImpl implements GameServiceService {
                                 characters1.setStackCount(characters1.getStackCount() + 1);
                                 charactersMapper.updateByPrimaryKey(characters1);
                             } else {
-                                Card card = cardMapper.selectByid(100);
+                                Card card = GameConfigCache.getCard("100");
                                 if (card == null) {
                                     baseResp.setErrorMsg("服务器异常联想管理员");
                                     baseResp.setSuccess(0);
@@ -7685,7 +7738,8 @@ public class GameServiceServiceImpl implements GameServiceService {
                     charactersMapper.updateByPrimaryKey(characters1);
                 } else {
                     // 没有卡牌 → 新建（这里原来的代码严重错误！已修复）
-                    Card card = cardMapper.selectByid(105);
+                    // 从缓存获取卡牌配置
+                    Card card = GameConfigCache.getCard("105");
                     if (card == null) {
                         baseResp.setErrorMsg("服务器异常，请联系管理员");
                         baseResp.setSuccess(0);
@@ -7709,12 +7763,8 @@ public class GameServiceServiceImpl implements GameServiceService {
             }
         }
         baseResp.setSuccess(1);
-        Map map1 = new HashMap();
-        map1.put("detail_code", token.getStr());
-
-
-// 原有查询逻辑保持不变
-        List<PveReward> pveRewardsAll = pveRewardMapper.selectByMap(map1);
+        // 从缓存获取PVE副本奖励配置
+        List<PveReward> pveRewardsAll = GameConfigCache.getPveRewards(token.getStr());
         if (isDetailCodeEndsWithMinusFive(token.getStr())) {
             Map map11 = new HashMap();
             map11.put("detail_code", token.getStr());
@@ -7807,7 +7857,7 @@ public class GameServiceServiceImpl implements GameServiceService {
                     characters1.setStackCount(characters1.getStackCount() + totalAmount);
                     charactersMapper.updateByPrimaryKey(characters1);
                 } else {
-                    Card card = cardMapper.selectByid(content.getItemId());
+                    Card card = GameConfigCache.getCard(content.getItemId() + "");
                     if (card == null) {
                         baseResp.setErrorMsg("服务器异常，请联系管理员");
                         baseResp.setSuccess(0);
@@ -8063,7 +8113,8 @@ public class GameServiceServiceImpl implements GameServiceService {
             List<BronzeBossDetail> bronzeBossDetails = bronzeBossDetailMapper.selectByMap(map1);
             Integer i = 0;
             for (BronzeBossDetail pveBossDetail : bronzeBossDetails) {
-                Card card = cardMapper.selectByid(pveBossDetail.getBossId());
+                // 从缓存获取卡牌配置
+                Card card = GameConfigCache.getCard(pveBossDetail.getBossId() + "");
                 Characters characters = new Characters();
                 BeanUtils.copyProperties(card, characters);
                 characters.setGoIntoNum(pveBossDetail.getGoIntoNum());
@@ -8207,7 +8258,7 @@ public class GameServiceServiceImpl implements GameServiceService {
                             characters1.setStackCount(characters1.getStackCount() + content.getRewardAmount());
                             charactersMapper.updateByPrimaryKey(characters1);
                         } else {
-                            Card card = cardMapper.selectByid(content.getItemId());
+                            Card card = GameConfigCache.getCard(content.getItemId() + "");
                             if (card == null) {
                                 baseResp.setErrorMsg("服务器异常联想管理员");
                                 baseResp.setSuccess(0);
@@ -8616,7 +8667,7 @@ public class GameServiceServiceImpl implements GameServiceService {
         List<Characters> rightCharacter = charactersMapper.goIntoListById(token.getUserId() + "");
         if (Xtool.isNull(rightCharacter)) {
             rightCharacter = new ArrayList<>(); // 必须先创建对象，才能add
-            Card card = cardMapper.selectByid(3);
+            Card card = GameConfigCache.getCard("3");
             if (card == null) {
                 baseResp.setErrorMsg("服务器异常联想管理员");
                 baseResp.setSuccess(0);
@@ -9537,7 +9588,8 @@ public class GameServiceServiceImpl implements GameServiceService {
                 characters1.setStackCount(characters1.getStackCount() + 1);
                 charactersMapper.updateByPrimaryKey(characters1);
             } else {
-                Card card = cardMapper.selectByid(1030);
+                // 从缓存获取卡牌配置
+                Card card = GameConfigCache.getCard("1030");
                 if (card == null) {
                     baseResp.setErrorMsg("服务器异常联想管理员");
                     baseResp.setSuccess(0);
@@ -9597,7 +9649,8 @@ public class GameServiceServiceImpl implements GameServiceService {
                 characters1.setStackCount(characters1.getStackCount() + 1);
                 charactersMapper.updateByPrimaryKey(characters1);
             } else {
-                Card card = cardMapper.selectByid(1040);
+                // 从缓存获取卡牌配置
+                Card card = GameConfigCache.getCard("1040");
                 if (card == null) {
                     baseResp.setErrorMsg("服务器异常联想管理员");
                     baseResp.setSuccess(0);
@@ -9995,7 +10048,8 @@ public class GameServiceServiceImpl implements GameServiceService {
             return baseResp;
         }
         baseResp.setSuccess(1);
-        List<CeremonialGift> gifts = ceremonialGiftMapper.selectByMap(new HashMap());
+        // 从缓存获取所有礼仪礼品配置
+        List<CeremonialGift> gifts = GameConfigCache.getAllCeremonialGifts();
         Map map = new HashMap();
         SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd");
         String today = sdf.format(new Date());
@@ -11395,7 +11449,7 @@ public class GameServiceServiceImpl implements GameServiceService {
         List<Characters> rightCharacter = charactersMapper.goIntoListById(user1.getUserId() + "");
         if (Xtool.isNull(rightCharacter)) {
             rightCharacter = new ArrayList<>(); // 必须先创建对象，才能add
-            Card card = cardMapper.selectByid(3);
+            Card card = GameConfigCache.getCard("3");
             if (card == null) {
                 baseResp.setErrorMsg("服务器异常联想管理员");
                 baseResp.setSuccess(0);

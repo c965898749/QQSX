@@ -137,4 +137,8 @@
     <select id="getByCodde3" resultType="com.sy.model.game.ActivityDetail">
     select * from  activity_detail where   detail_code = #{detailCode}
   </select>
+
+    <select id="selectAll" resultType="com.sy.model.game.ActivityDetail">
+    select * from activity_detail
+  </select>
 </mapper>

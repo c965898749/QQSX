@@ -10,4 +10,6 @@ public interface StarSynthesisMaterialsMapper {
     int insertSelective(StarSynthesisMaterials record);
 
     List<StarSynthesisMaterials> selectall(String synthesisId);
+    
+    List<StarSynthesisMaterials> selectAll();
 }

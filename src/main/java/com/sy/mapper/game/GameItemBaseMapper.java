@@ -9,5 +9,5 @@ import java.util.List;
 
 @Mapper
 public interface GameItemBaseMapper extends BaseMapper<GameItemBase> {
-
+    List<GameItemBase> selectAll();
 }

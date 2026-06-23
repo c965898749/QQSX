@@ -24,4 +24,6 @@ public interface ActivityDetailMapper {
 
     ActivityDetail getByCodde3(@Param("detailCode") String detailCode);
 
+    List<ActivityDetail> selectAll();
+
 }

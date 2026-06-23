@@ -65,4 +65,8 @@
   <select id="selectall" resultType="com.sy.model.game.StarSynthesisMaterials">
     select * from star_synthesis_materials where synthesis_id=#{synthesisId}
   </select>
+  
+  <select id="selectAll" resultType="com.sy.model.game.StarSynthesisMaterials">
+    SELECT * FROM star_synthesis_materials
+  </select>
 </mapper>

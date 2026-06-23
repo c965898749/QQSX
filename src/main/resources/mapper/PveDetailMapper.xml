@@ -57,4 +57,8 @@
     SELECT * FROM pve_detail
     where id=#{id}
   </select>
+
+  <select id="selectAll" resultType="com.sy.model.game.PveDetail">
+    SELECT * FROM pve_detail
+  </select>
 </mapper>

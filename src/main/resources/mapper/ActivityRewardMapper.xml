@@ -155,4 +155,8 @@
   <select id="getByCodde" resultType="com.sy.model.game.ActivityReward">
     select * from activity_reward where   detail_code = #{detailCode}
   </select>
+
+  <select id="selectAll" resultType="com.sy.model.game.ActivityReward">
+    select * from activity_reward
+  </select>
 </mapper>

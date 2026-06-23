@@ -33,4 +33,6 @@ public interface ActivityRewardMapper {
 
     List<ActivityReward> getByCodde(String detailCode);
 
+    List<ActivityReward> selectAll();
+
 }
