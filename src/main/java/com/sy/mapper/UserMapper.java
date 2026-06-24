@@ -199,4 +199,25 @@ public interface UserMapper {
     int updatechongzhiTower();
     int updatechongzhiQiangduo();
     int updatebaoCount();
+
+    /**
+     * 批量更新排名：将指定区间内的所有玩家排名+1
+     * @param minRank 最小排名（包含）
+     * @param maxRank 最大排名（不包含）
+     * @return 更新的行数
+     */
+    int batchUpdateRanking(@Param("minRank") Integer minRank, @Param("maxRank") Integer maxRank);
+
+    /**
+     * 查询当前最小的可用排名（从1开始，找到第一个没有被占用的排名）
+     * @param maxLimit 最大限制（不能超过挑战者的当前排名）
+     * @return 最小可用排名，如果1~maxLimit都被占用则返回null
+     */
+    Integer findMinAvailableRank(@Param("maxLimit") Integer maxLimit);
+
+    /**
+     * 修复异常等级：将0级更新为1级，超过100级的更新为100级
+     * @return 更新的行数
+     */
+    int fixAbnormalLevel();
 }

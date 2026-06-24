@@ -5687,12 +5687,25 @@ public class GameServiceServiceImpl implements GameServiceService {
         Battle battle = this.battle(leftCharacter, Integer.parseInt(userId), user.getNickname(), rightCharacter, Integer.parseInt(token.getUserId()), user1.getNickname(), user.getGameImg(), "1");
         if (battle.getIsWin() == 0) {
             user.setWinCount(user.getWinCount() + 1);
-            if (user1.getGameRanking() < user.getGameRanking()) {
-                Integer gameRank = user.getGameRanking();
-                user.setGameRanking(user1.getGameRanking());
-                user1.setGameRanking(gameRank);
+            // 竞技场排名逻辑：挑战者胜利后，只更新自己和被挑战者
+            Integer defenderRank = user1.getGameRanking();
+            Integer challengerRank = user.getGameRanking();
+            
+            // 优先查找空缺排名（从1开始到挑战者当前排名）
+            Integer minAvailableRank = userMapper.findMinAvailableRank(challengerRank);
+            
+            if (minAvailableRank != null && minAvailableRank < challengerRank) {
+                // 有空缺排名，挑战者获得该排名，被挑战者不变
+                user.setGameRanking(minAvailableRank);
+                userMapper.updateuser(user);
+            } else if (challengerRank > defenderRank) {
+                // 没有空缺排名，且挑战者排名比被挑战者低，交换双方排名
+                user.setGameRanking(defenderRank);
+                user1.setGameRanking(challengerRank);
+                userMapper.updateuser(user);
                 userMapper.updateuser(user1);
             }
+            // 如果 challengerRank <= defenderRank 且没有空缺，不做任何操作
         }
         //保证离线玩家
         saveBattleLogToFile(battle.getId(), JsonUtils.toJson(battle.getJson()));

@@ -172,6 +172,57 @@
     cd.zl_def
     from   card cd
   </select>
+  
+  <!-- 查询所有未删除的角色记录 -->
+  <select id="selectActiveCardList" resultType="com.sy.model.game.Characters">
+    select
+    cs.uuid,
+    cs.user_id,
+    cs.id,
+    cs.lv,
+    cd.star,
+    cs.stack_count,
+    cs.go_into_num,
+    cs.exp,
+    cs.max_lv,
+    cs.flyup,
+    cs.is_delete,
+    cs.create_time,
+    cs.update_time,
+    cd.name,
+    cd.camp,
+    cd.hp_growth,
+    cd.attack_growth,
+    cd.defence_growth,
+    cd.pierce_growth,
+    cd.speed_growth,
+    cd.profession,
+    cd.coll_attack,
+    cd.coll_speed,
+    cd.coll_hp,
+    cd.passive_introduce_one,
+    cd.passive_introduce_two,
+    cd.passive_introduce_three,
+    cd.passive_introduce_threee,
+    cd.passive_introduce_four,
+    cd.passive_introduce_one_str,
+    cd.passive_introduce_two_str,
+    cd.passive_introduce_three_str,
+    cd.passive_introduce_four_str,
+    cd.wl_atk,
+    cd.hy_atk,
+    cd.ds_atk,
+    cd.fd_atk,
+    cd.wl_def,
+    cd.hy_def,
+    cd.ds_def,
+    cd.fd_def,
+    cd.sex,
+    cd.zl_def
+    from characters cs
+    left join card cd on cd.id = cs.id
+    where cs.is_delete = '0'
+  </select>
     <select id="selectByUserId" parameterType="com.sy.model.game.Characters" resultType="com.sy.model.game.Characters">
     select
     cs.uuid,
@@ -368,4 +419,37 @@
     <delete id="deleteByIsDelete">
         DELETE FROM characters WHERE is_delete = '1'
     </delete>
+
+    <!-- 修复异常数据：处理同一userId和id下的重复数据，保留最优的一条 -->
+    <update id="fixAbnormalCharacters">
+        -- 第一步：将lv=0的记录更新为1
+        UPDATE characters 
+        SET lv = 1,
+            update_time = NOW()
+        WHERE lv = 0 AND is_delete = '0';
+
+        -- 第二步：标记重复数据中较差的记录为删除
+        -- 对于同一userId和id，如果有两条记录A和B
+        -- 如果 A.stackCount >= B.stackCount AND A.lv >= B.lv AND A.flyup >= B.flyup
+        -- 且至少有一个字段严格大于，则标记B为删除
+        UPDATE characters c1
+        INNER JOIN characters c2 
+            ON c1.user_id = c2.user_id 
+            AND c1.id = c2.id
+            AND c1.uuid != c2.uuid
+            AND c1.is_delete = '0'
+            AND c2.is_delete = '0'
+        SET c2.is_delete = '1',
+            c2.update_time = NOW()
+        WHERE (
+            c1.stack_count >= c2.stack_count 
+            AND c1.lv >= c2.lv 
+            AND (c1.flyup IS NOT NULL AND c2.flyup IS NOT NULL AND c1.flyup >= c2.flyup)
+        )
+        AND (
+            c1.stack_count > c2.stack_count 
+            OR c1.lv > c2.lv 
+            OR (c1.flyup IS NOT NULL AND c2.flyup IS NOT NULL AND c1.flyup > c2.flyup)
+        );
+    </update>
 </mapper>

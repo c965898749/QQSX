@@ -687,4 +687,43 @@
     <update id="updatebaoCount" parameterType="com.sy.model.User">
 		update user set bao_count = '20'
 	</update>
+    
+    <!-- 批量更新排名：将指定区间内的所有玩家排名+1 -->
+    <update id="batchUpdateRanking">
+        UPDATE user 
+        SET game_ranking = game_ranking + 1
+        WHERE game_ranking >= #{minRank} 
+          AND game_ranking &lt; #{maxRank}
+          AND game_ranking IS NOT NULL
+    </update>
+    
+    <!-- 查询最小可用排名：从1开始找到第一个没有被占用的排名 -->
+    <select id="findMinAvailableRank" resultType="java.lang.Integer">
+        SELECT COALESCE(
+            (
+                SELECT MIN(t.available_rank)
+                FROM (
+                    SELECT @row := @row + 1 AS available_rank
+                    FROM user u1,
+                    (SELECT @row := 0) r
+                    WHERE @row &lt; #{maxLimit}
+                ) t
+                LEFT JOIN user u2 ON u2.game_ranking = t.available_rank
+                WHERE u2.userId IS NULL
+                LIMIT 1
+            ),
+            NULL
+        )
+    </select>
+    
+    <!-- 修复异常等级：将0级更新为1级，超过100级的更新为100级 -->
+    <update id="fixAbnormalLevel">
+        UPDATE user 
+        SET lv = CASE
+            WHEN lv &lt;= 0 THEN 1
+            WHEN lv &gt; 100 THEN 100
+            ELSE lv
+        END
+        WHERE lv &lt;= 0 OR lv &gt; 100
+    </update>
 </mapper>
