@@ -17,7 +17,7 @@
             WHERE userId IN (
                 SELECT userId FROM (
                     SELECT userId FROM user ur
-                    where  ur.game_ranking between 1 and 1000
+                    where  ur.game_ranking between 1 and 9999
                     ORDER BY RAND()
                     LIMIT 5
                 ) AS temp

@@ -821,6 +821,13 @@ public class GameContoller {
         }
     }
 
+    /**
+     * 竞技列表
+     *
+     * @param token
+     * @param request
+     * @return
+     */
     @PostMapping("jingji")
     @CrossOrigin
     public BaseResp jingji(@RequestBody TokenDto token, HttpServletRequest request) {
