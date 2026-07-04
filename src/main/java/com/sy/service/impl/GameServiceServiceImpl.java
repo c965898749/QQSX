@@ -510,6 +510,54 @@ public class GameServiceServiceImpl implements GameServiceService {
     }
 
     @Override
+    @Transactional
+    @NoRepeatSubmit(limitSeconds = 1)
+    public BaseResp forgotPassword(User user2, HttpServletRequest request) throws Exception {
+        BaseResp baseResp = new BaseResp();
+        try {
+            if (user2 == null) {
+                baseResp.setSuccess(0);
+                baseResp.setErrorMsg("请输入账号和密码");
+                return baseResp;
+            }
+            if (Xtool.isNull(user2.getUsername()) || Xtool.isNull(user2.getUserpassword())) {
+                baseResp.setSuccess(0);
+                baseResp.setErrorMsg("请输入账号和密码");
+                return baseResp;
+            }
+            if (Xtool.isNull(user2.getYaoCode()) || Xtool.isNull(user2.getYaoCode())) {
+                baseResp.setSuccess(0);
+                baseResp.setErrorMsg("请输入验证码");
+                return baseResp;
+            }
+            String Idcode = (String) redisTemplate.opsForValue().get(user2.getUsername());
+            if (!user2.getYaoCode().equals(Idcode)) {
+                baseResp.setSuccess(0);
+                baseResp.setErrorMsg("验证码不正确");
+                return baseResp;
+            }
+            User user1 = userMapper.selectUserByusername(user2.getUsername());
+            if (user1 == null){
+                baseResp.setSuccess(0);
+                baseResp.setErrorMsg("账号不存在");
+                return baseResp;
+            }
+            User user = new User();
+            user.setUserId(user1.getUserId());
+            String password = DigestUtils.md5DigestAsHex(user2.getUserpassword().getBytes());
+            user.setUserpassword(password);
+            userMapper.updateuser(user);
+            baseResp.setSuccess(1);
+            baseResp.setErrorMsg("重置成功！");
+            return baseResp;
+        } catch (Exception e) {
+            e.printStackTrace();
+            baseResp.setSuccess(0);
+            return baseResp;
+        }
+    }
+
+    @Override
     public BaseResp updateGame(TokenDto token, HttpServletRequest request) throws Exception {
         BaseResp baseResp = new BaseResp();
         if (token == null || Xtool.isNull(token.getToken())) {
@@ -524,6 +572,16 @@ public class GameServiceServiceImpl implements GameServiceService {
             return baseResp;
         }
         User user = userMapper.selectUserByUserId(Integer.parseInt(userId));
+        if (user==null) {
+            baseResp.setSuccess(0);
+            baseResp.setErrorMsg("登录过期");
+            return baseResp;
+        }
+        if (Xtool.isNull(user.getStatus())) {
+            baseResp.setSuccess(0);
+            baseResp.setErrorMsg("登录过期");
+            return baseResp;
+        }
         //5、查看状态，如果为已禁用状态，则返回员工已禁用结果
         if (user.getStatus() == 0) {
             baseResp.setSuccess(0);

@@ -81,6 +81,27 @@ public class GameContoller {
     }
 
     /**
+     * 注册
+     *
+     * @param user
+     * @param request
+     * @return
+     */
+    @RequestMapping(value = "forgotPassword", method = RequestMethod.POST)
+    @CrossOrigin
+    public BaseResp forgotPassword(@RequestBody User user, HttpServletRequest request) {
+        BaseResp baseResp = new BaseResp();
+        try {
+            baseResp = gameServiceService.forgotPassword(user, request);
+            return baseResp;
+        } catch (Exception e) {
+            e.printStackTrace();
+            baseResp.setSuccess(0);
+            return baseResp;
+        }
+    }
+
+    /**
      * 单抽
      *
      * @param token
