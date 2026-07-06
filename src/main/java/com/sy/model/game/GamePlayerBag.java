@@ -6,6 +6,7 @@ import com.baomidou.mybatisplus.annotation.TableName;
 import com.baomidou.mybatisplus.annotation.IdType;
 import lombok.Data;
 
+import java.math.BigDecimal;
 import java.util.Date;
 @Data
 @TableName("game_player_bag")
@@ -17,7 +18,7 @@ public class GamePlayerBag {
     @TableField("item_id")
     private Integer itemId;
     @TableField("item_count")
-    private Integer itemCount;
+    private BigDecimal itemCount;
     @TableField("grid_index")
     private Integer gridIndex;
     @TableField("bind_status")

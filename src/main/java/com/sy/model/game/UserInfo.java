@@ -80,10 +80,10 @@ public class UserInfo {
     private Date shopUpdate;
 
     //
-    private Integer bronze;
-    private Integer darkSteel;
-    private Integer purpleGold;
-    private Integer crystal;
+    private BigDecimal bronze;
+    private BigDecimal darkSteel;
+    private BigDecimal purpleGold;
+    private BigDecimal crystal;
     private Integer bronze1;
     private Integer silvertower;
     private Integer goldentower;

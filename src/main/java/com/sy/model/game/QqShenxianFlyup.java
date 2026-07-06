@@ -6,6 +6,8 @@ import com.baomidou.mybatisplus.annotation.TableName;
 import com.baomidou.mybatisplus.annotation.IdType;
 import lombok.Data;
 
+import java.math.BigDecimal;
+
 @Data
 @TableName("qq_shenxian_flyup")
 public class QqShenxianFlyup {
@@ -16,9 +18,9 @@ public class QqShenxianFlyup {
     @TableField("level_increase")
     private Integer levelIncrease;
     @TableField("current_consume")
-    private Integer currentConsume;
+    private BigDecimal currentConsume;
     @TableField("total_consume")
-    private Integer totalConsume;
+    private BigDecimal totalConsume;
     @TableField("gold")
-    private Integer gold;
+    private BigDecimal gold;
 }

@@ -251,10 +251,10 @@ public class GameServiceServiceImpl implements GameServiceService {
         //获取卡牌数据
         List<Characters> characterList = charactersMapper.selectByUserId(emp.getUserId());
         List<EqCharacters> eqCharactersList = eqCharactersMapper.selectByUserId(emp.getUserId());
-        info.setBronze(0);
-        info.setDarkSteel(0);
-        info.setPurpleGold(0);
-        info.setCrystal(0);
+        info.setBronze(BigDecimal.ZERO);
+        info.setDarkSteel(BigDecimal.ZERO);
+        info.setPurpleGold(BigDecimal.ZERO);
+        info.setCrystal(BigDecimal.ZERO);
         GamePlayerBag playerBag = gamePlayerBagMapper.goIntoListByIdAndItemId(emp.getUserId() + "", 13);
         if (playerBag != null) {
             info.setBronze(playerBag.getItemCount());
@@ -622,10 +622,10 @@ public class GameServiceServiceImpl implements GameServiceService {
         //获取卡牌数据
         List<Characters> characterList = charactersMapper.selectByUserId(user.getUserId());
         List<EqCharacters> characterEqList = eqCharactersMapper.selectByUserId(user.getUserId());
-        info.setBronze(0);
-        info.setDarkSteel(0);
-        info.setPurpleGold(0);
-        info.setCrystal(0);
+        info.setBronze(BigDecimal.ZERO);
+        info.setDarkSteel(BigDecimal.ZERO);
+        info.setPurpleGold(BigDecimal.ZERO);
+        info.setCrystal(BigDecimal.ZERO);
         GamePlayerBag playerBag = gamePlayerBagMapper.goIntoListByIdAndItemId(userId, 13);
         if (playerBag != null) {
             info.setBronze(playerBag.getItemCount());
@@ -982,7 +982,7 @@ public class GameServiceServiceImpl implements GameServiceService {
         itemMap.put("is_delete", "0");
         List<GamePlayerBag> playerBagList = gamePlayerBagMapper.selectByMap(itemMap);
         if (Xtool.isNotNull(playerBagList)) {
-            pveDetail.setNum(playerBagList.get(0).getItemCount());
+            pveDetail.setNum(playerBagList.get(0).getItemCount().intValue());
         } else {
             pveDetail.setNum(0);
         }
@@ -1157,12 +1157,12 @@ public class GameServiceServiceImpl implements GameServiceService {
                     List<GamePlayerBag> playerBagList = gamePlayerBagMapper.selectByMap(itemMap);
                     if (Xtool.isNotNull(playerBagList)) {
                         GamePlayerBag playerBag = playerBagList.get(0);
-                        playerBag.setItemCount(playerBag.getItemCount() + content.getRewardAmount());
+                        playerBag.setItemCount(playerBag.getItemCount().add(new BigDecimal(content.getRewardAmount())));
                         gamePlayerBagMapper.updateById(playerBag);
                     } else {
                         GamePlayerBag playerBag = new GamePlayerBag();
                         playerBag.setUserId(Integer.parseInt(userId));
-                        playerBag.setItemCount(content.getRewardAmount());
+                        playerBag.setItemCount(new BigDecimal(content.getRewardAmount()));
                         playerBag.setGridIndex(1);
                         playerBag.setItemId(content.getItemId());
                         gamePlayerBagMapper.insert(playerBag);
@@ -1341,12 +1341,12 @@ public class GameServiceServiceImpl implements GameServiceService {
                     List<GamePlayerBag> playerBagList = gamePlayerBagMapper.selectByMap(itemMap);
                     if (Xtool.isNotNull(playerBagList)) {
                         GamePlayerBag playerBag = playerBagList.get(0);
-                        playerBag.setItemCount(playerBag.getItemCount() + content.getRewardAmount());
+                        playerBag.setItemCount(playerBag.getItemCount().add(new BigDecimal(content.getRewardAmount())));
                         gamePlayerBagMapper.updateById(playerBag);
                     } else {
                         GamePlayerBag playerBag = new GamePlayerBag();
                         playerBag.setUserId(Integer.parseInt(userId));
-                        playerBag.setItemCount(content.getRewardAmount());
+                        playerBag.setItemCount(new BigDecimal(content.getRewardAmount()));
                         playerBag.setGridIndex(1);
                         playerBag.setItemId(content.getItemId());
                         gamePlayerBagMapper.insert(playerBag);
@@ -1629,14 +1629,14 @@ public class GameServiceServiceImpl implements GameServiceService {
             return baseResp;
         }
         GamePlayerBag gamePlayerBag = playerBags.get(0);
-        if (gamePlayerBag.getItemCount() - 1 < 0) {
+        if (gamePlayerBag.getItemCount().subtract(BigDecimal.ONE).compareTo(BigDecimal.ZERO) < 0) {
             baseResp.setSuccess(0);
             baseResp.setErrorMsg("吸纳券不足");
             return baseResp;
         }
         // 扣减物品数量
-        if (gamePlayerBag.getItemCount() - 1 > 0) {
-            gamePlayerBag.setItemCount(gamePlayerBag.getItemCount() - 1);
+        if (gamePlayerBag.getItemCount().subtract(BigDecimal.ONE).compareTo(BigDecimal.ZERO) > 0) {
+            gamePlayerBag.setItemCount(gamePlayerBag.getItemCount().subtract(BigDecimal.ONE));
         } else {
             gamePlayerBag.setIsDelete("1");
         }
@@ -1804,7 +1804,7 @@ public class GameServiceServiceImpl implements GameServiceService {
             return baseResp;
         }
         // 5.2 金币校验
-        if (user.getGold().compareTo(new BigDecimal(flyup.getGold())) < 0) {
+        if (user.getGold().compareTo(flyup.getGold()) < 0) {
             baseResp.setSuccess(0);
             baseResp.setErrorMsg("飞升金币不足");
             return baseResp;
@@ -1835,7 +1835,7 @@ public class GameServiceServiceImpl implements GameServiceService {
 
         // 6. 扣减资源
         character.setStackCount(character.getStackCount() - flyup.getFlyupTimes());
-        user.setGold(user.getGold().subtract(new BigDecimal(flyup.getGold())));
+        user.setGold(user.getGold().subtract(flyup.getGold()));
         character.setFlyup(targetFlyupTimes);
         character.setMaxLv(character.getMaxLv() + 5); // 核心：更新maxLv
 
@@ -1872,7 +1872,7 @@ public class GameServiceServiceImpl implements GameServiceService {
         }
 
         // 11. 查询当前飞升丹数量
-        int currentDanCount = getFlyupDanCount(token.getUserId(), itemId);
+        BigDecimal currentDanCount = getFlyupDanCount(token.getUserId(), itemId);
         data.put("dangyaoTotal", currentDanCount);
 
         // 12. 返回结果
@@ -1898,7 +1898,7 @@ public class GameServiceServiceImpl implements GameServiceService {
     /**
      * 校验并扣减飞升丹
      */
-    private boolean checkAndDeductFlyupDan(String userId, int itemId, int consumeCount, String professionName) {
+    private boolean checkAndDeductFlyupDan(String userId, int itemId, BigDecimal consumeCount, String professionName) {
         Map<String, Object> map = new HashMap<>();
         map.put("user_id", userId);
         map.put("item_id", itemId);
@@ -1910,17 +1910,17 @@ public class GameServiceServiceImpl implements GameServiceService {
         }
 
         GamePlayerBag playerBag = playerBags.get(0);
-        if (playerBag.getItemCount() < consumeCount) {
+        if (playerBag.getItemCount().compareTo(consumeCount)<= 0) {
             return false;
         }
 
         // 扣减飞升丹
-        int remainCount = playerBag.getItemCount() - consumeCount;
-        if (remainCount > 0) {
+        BigDecimal remainCount = playerBag.getItemCount().subtract(consumeCount);
+        if (remainCount.compareTo(BigDecimal.ZERO)>0) {
             playerBag.setItemCount(remainCount);
         } else {
             playerBag.setIsDelete("1");
-            playerBag.setItemCount(0);
+            playerBag.setItemCount(BigDecimal.ZERO);
         }
         gamePlayerBagMapper.updateById(playerBag);
         return true;
@@ -1929,14 +1929,14 @@ public class GameServiceServiceImpl implements GameServiceService {
     /**
      * 获取当前飞升丹数量
      */
-    private int getFlyupDanCount(String userId, int itemId) {
+    private BigDecimal getFlyupDanCount(String userId, int itemId) {
         Map<String, Object> map = new HashMap<>();
         map.put("user_id", userId);
         map.put("item_id", itemId);
         map.put("is_delete", 0);
         List<GamePlayerBag> playerBags = gamePlayerBagMapper.selectByMap(map);
         if (CollectionUtils.isEmpty(playerBags)) {
-            return 0;
+            return BigDecimal.ZERO;
         }
         return playerBags.get(0).getItemCount();
     }
@@ -2573,12 +2573,12 @@ public class GameServiceServiceImpl implements GameServiceService {
                 List<GamePlayerBag> playerBagList = gamePlayerBagMapper.selectByMap(itemMap);
                 if (Xtool.isNotNull(playerBagList)) {
                     GamePlayerBag playerBag = playerBagList.get(0);
-                    playerBag.setItemCount(playerBag.getItemCount() + content.getItemQuantity());
+                    playerBag.setItemCount(playerBag.getItemCount().add(new BigDecimal(content.getItemQuantity())));
                     gamePlayerBagMapper.updateById(playerBag);
                 } else {
                     GamePlayerBag playerBag = new GamePlayerBag();
                     playerBag.setUserId(Integer.parseInt(userId));
-                    playerBag.setItemCount(content.getItemQuantity());
+                    playerBag.setItemCount(new BigDecimal(content.getItemQuantity()));
                     playerBag.setGridIndex(1);
                     playerBag.setItemId(Integer.parseInt(content.getItemId() + ""));
                     gamePlayerBagMapper.insert(playerBag);
@@ -2589,10 +2589,10 @@ public class GameServiceServiceImpl implements GameServiceService {
         baseResp.setSuccess(1);
         UserInfo info = new UserInfo();
         BeanUtils.copyProperties(user, info);
-        info.setBronze(0);
-        info.setDarkSteel(0);
-        info.setPurpleGold(0);
-        info.setCrystal(0);
+        info.setBronze(BigDecimal.ZERO);
+        info.setDarkSteel(BigDecimal.ZERO);
+        info.setPurpleGold(BigDecimal.ZERO);
+        info.setCrystal(BigDecimal.ZERO);
         GamePlayerBag playerBag = gamePlayerBagMapper.goIntoListByIdAndItemId(userId, 13);
         if (playerBag != null) {
             info.setBronze(playerBag.getItemCount());
@@ -2746,12 +2746,12 @@ public class GameServiceServiceImpl implements GameServiceService {
                 List<GamePlayerBag> playerBagList = gamePlayerBagMapper.selectByMap(itemMap);
                 if (Xtool.isNotNull(playerBagList)) {
                     GamePlayerBag playerBag = playerBagList.get(0);
-                    playerBag.setItemCount(playerBag.getItemCount() + content.getItemQuantity());
+                    playerBag.setItemCount(playerBag.getItemCount().add(new BigDecimal(content.getItemQuantity())));
                     gamePlayerBagMapper.updateById(playerBag);
                 } else {
                     GamePlayerBag playerBag = new GamePlayerBag();
                     playerBag.setUserId(Integer.parseInt(userId));
-                    playerBag.setItemCount(content.getItemQuantity());
+                    playerBag.setItemCount(new BigDecimal(content.getItemQuantity()));
                     playerBag.setGridIndex(1);
                     playerBag.setItemId(Integer.parseInt(content.getItemId() + ""));
                     gamePlayerBagMapper.insert(playerBag);
@@ -2762,10 +2762,10 @@ public class GameServiceServiceImpl implements GameServiceService {
         baseResp.setSuccess(1);
         UserInfo info = new UserInfo();
         BeanUtils.copyProperties(user, info);
-        info.setBronze(0);
-        info.setDarkSteel(0);
-        info.setPurpleGold(0);
-        info.setCrystal(0);
+        info.setBronze(BigDecimal.ZERO);
+        info.setDarkSteel(BigDecimal.ZERO);
+        info.setPurpleGold(BigDecimal.ZERO);
+        info.setCrystal(BigDecimal.ZERO);
         GamePlayerBag playerBag = gamePlayerBagMapper.goIntoListByIdAndItemId(userId, 13);
         if (playerBag != null) {
             info.setBronze(playerBag.getItemCount());
@@ -2943,12 +2943,12 @@ public class GameServiceServiceImpl implements GameServiceService {
                 List<GamePlayerBag> playerBagList = gamePlayerBagMapper.selectByMap(itemMap);
                 if (Xtool.isNotNull(playerBagList)) {
                     GamePlayerBag playerBag = playerBagList.get(0);
-                    playerBag.setItemCount(playerBag.getItemCount() + content.getItemQuantity());
+                    playerBag.setItemCount(playerBag.getItemCount().add(new BigDecimal(content.getItemQuantity())));
                     gamePlayerBagMapper.updateById(playerBag);
                 } else {
                     GamePlayerBag playerBag = new GamePlayerBag();
                     playerBag.setUserId(Integer.parseInt(userId));
-                    playerBag.setItemCount(content.getItemQuantity());
+                    playerBag.setItemCount(new BigDecimal(content.getItemQuantity()));
                     playerBag.setGridIndex(1);
                     playerBag.setItemId(Integer.parseInt(content.getItemId() + ""));
                     gamePlayerBagMapper.insert(playerBag);
@@ -2959,10 +2959,10 @@ public class GameServiceServiceImpl implements GameServiceService {
         baseResp.setSuccess(1);
         UserInfo info = new UserInfo();
         BeanUtils.copyProperties(user, info);
-        info.setBronze(0);
-        info.setDarkSteel(0);
-        info.setPurpleGold(0);
-        info.setCrystal(0);
+        info.setBronze(BigDecimal.ZERO);
+        info.setDarkSteel(BigDecimal.ZERO);
+        info.setPurpleGold(BigDecimal.ZERO);
+        info.setCrystal(BigDecimal.ZERO);
         GamePlayerBag playerBag = gamePlayerBagMapper.goIntoListByIdAndItemId(userId, 13);
         if (playerBag != null) {
             info.setBronze(playerBag.getItemCount());
@@ -3052,15 +3052,15 @@ public class GameServiceServiceImpl implements GameServiceService {
             baseResp.setErrorMsg("合成素材不足");
             return baseResp;
         }
-        if (playerBag.getItemCount() < craft.getMaterialCount()) {
+        if (playerBag.getItemCount().compareTo(new BigDecimal(craft.getMaterialCount()))<0) {
             baseResp.setSuccess(0);
             baseResp.setErrorMsg("合成素材不足");
             return baseResp;
         }
 
 
-        if (playerBag.getItemCount() - craft.getMaterialCount() > 0) {
-            playerBag.setItemCount(playerBag.getItemCount() - craft.getMaterialCount());
+        if (playerBag.getItemCount().subtract(new BigDecimal(craft.getMaterialCount())).compareTo(BigDecimal.ZERO)>0) {
+            playerBag.setItemCount(playerBag.getItemCount().subtract(new BigDecimal(craft.getMaterialCount())));
             baseResp.setData(playerBag.getItemCount());
         } else {
             playerBag.setIsDelete("1");
@@ -3098,12 +3098,12 @@ public class GameServiceServiceImpl implements GameServiceService {
                     .eq(GamePlayerBag::getIsDelete, "0"));
             if (Xtool.isNotNull(playerBagList)) {
                 GamePlayerBag bag = playerBagList.get(0);
-                bag.setItemCount(bag.getItemCount() + 1);
+                bag.setItemCount(bag.getItemCount().add(BigDecimal.ONE));
                 gamePlayerBagMapper.updateById(bag);
             } else {
                 GamePlayerBag bag = new GamePlayerBag();
                 bag.setUserId(Integer.parseInt(userId));
-                bag.setItemCount(1);
+                bag.setItemCount(BigDecimal.ONE);
                 bag.setGridIndex(1);
                 bag.setItemId(craft.getTargetId());
                 gamePlayerBagMapper.insert(bag);
@@ -3159,17 +3159,28 @@ public class GameServiceServiceImpl implements GameServiceService {
             baseResp.setErrorMsg("合成素材不足");
             return baseResp;
         }
-        if (playerBag.getItemCount() < craft.getMaterialCount()) {
+        if (playerBag.getItemCount().compareTo(new BigDecimal(craft.getMaterialCount()))<0) {
             baseResp.setSuccess(0);
             baseResp.setErrorMsg("合成素材不足");
             return baseResp;
         }
         // 计算playerBag.getItemCount()被craft.getMaterialCount()整除的倍数
-        int multiple = playerBag.getItemCount() / craft.getMaterialCount();
-        int totalMaterialUsed = multiple * craft.getMaterialCount();
+//        int multiple = playerBag.getItemCount() / craft.getMaterialCount();
+        BigDecimal itemCount = playerBag.getItemCount();
+        BigDecimal materialCount = new BigDecimal(craft.getMaterialCount());
+        BigDecimal multiple;
+        if (materialCount.compareTo(BigDecimal.ZERO) == 0) {
+            multiple = BigDecimal.ZERO;
+        } else {
+            // 向下取整，舍弃小数部分，材料不足一次直接为0
+            multiple = itemCount.divide(materialCount, 0, RoundingMode.FLOOR);
+        }
 
-        if (playerBag.getItemCount() - totalMaterialUsed > 0) {
-            playerBag.setItemCount(playerBag.getItemCount() - totalMaterialUsed);
+// 转数字使用
+        BigDecimal totalMaterialUsed = multiple.multiply(new BigDecimal(craft.getMaterialCount()));
+
+        if (playerBag.getItemCount().subtract(totalMaterialUsed).compareTo(BigDecimal.ZERO)>0) {
+            playerBag.setItemCount(playerBag.getItemCount().subtract(totalMaterialUsed));
             baseResp.setData(playerBag.getItemCount());
         } else {
             playerBag.setIsDelete("1");
@@ -3180,7 +3191,7 @@ public class GameServiceServiceImpl implements GameServiceService {
         if ("4".equals(craft.getTargetType())){
             Characters characters1 = charactersMapper.listById(userId, craft.getTargetId() + "");
             if (characters1 != null) {
-                characters1.setStackCount(characters1.getStackCount() + multiple);
+                characters1.setStackCount(characters1.getStackCount() + multiple.intValue());
                 charactersMapper.updateByPrimaryKey(characters1);
             } else {
                 // 从缓存获取卡牌配置
@@ -3191,7 +3202,7 @@ public class GameServiceServiceImpl implements GameServiceService {
                     return baseResp;
                 }
                 Characters characters = new Characters();
-                characters.setStackCount(multiple-1);
+                characters.setStackCount(multiple.intValue()-1);
                 characters.setId(craft.getTargetId() + "");
                 characters.setLv(1);
                 characters.setUserId(Integer.parseInt(userId));
@@ -3207,7 +3218,7 @@ public class GameServiceServiceImpl implements GameServiceService {
                     .eq(GamePlayerBag::getIsDelete, "0"));
             if (Xtool.isNotNull(playerBagList)) {
                 GamePlayerBag bag = playerBagList.get(0);
-                bag.setItemCount(bag.getItemCount() + multiple);
+                bag.setItemCount(bag.getItemCount().add(multiple));
                 gamePlayerBagMapper.updateById(bag);
             } else {
                 GamePlayerBag bag = new GamePlayerBag();
@@ -3426,11 +3437,11 @@ public class GameServiceServiceImpl implements GameServiceService {
 //            // 4. 校验并扣减背包物品
             List<GamePlayerBag> playerBagList = gamePlayerBagMapper.selectList(new LambdaQueryWrapper<GamePlayerBag>()
                     .eq(GamePlayerBag::getItemId, 1).eq(GamePlayerBag::getUserId, userId).eq(GamePlayerBag::getIsDelete, "0"));
-            if (Xtool.isNotNull(playerBagList)&&playerBagList.get(0).getItemCount()>0) {
+            if (Xtool.isNotNull(playerBagList)&&playerBagList.get(0).getItemCount().compareTo(BigDecimal.ZERO)>0) {
                 GamePlayerBag playerBag = playerBagList.get(0);
                 // 扣减物品数量
-                if (playerBag.getItemCount() - 1 > 0) {
-                    playerBag.setItemCount(playerBag.getItemCount() - 1);
+                if (playerBag.getItemCount().subtract(BigDecimal.ONE).compareTo(BigDecimal.ZERO)> 0) {
+                    playerBag.setItemCount(playerBag.getItemCount().subtract(BigDecimal.ONE));
                 } else {
                     playerBag.setIsDelete("1");
                 }
@@ -4127,12 +4138,12 @@ public class GameServiceServiceImpl implements GameServiceService {
         List<GamePlayerBag> playerBagList = gamePlayerBagMapper.selectByMap(itemMap);
         if (Xtool.isNotNull(playerBagList)) {
             GamePlayerBag playerBag = playerBagList.get(0);
-            playerBag.setItemCount(playerBag.getItemCount() + Integer.parseInt(token.getStr()));
+            playerBag.setItemCount(playerBag.getItemCount().add(new BigDecimal(token.getStr())));
             gamePlayerBagMapper.updateById(playerBag);
         } else {
             GamePlayerBag playerBag = new GamePlayerBag();
             playerBag.setUserId(Integer.parseInt(userId));
-            playerBag.setItemCount(Integer.parseInt(token.getStr()));
+            playerBag.setItemCount(new BigDecimal(token.getStr()));
             playerBag.setGridIndex(1);
             playerBag.setItemId(Integer.parseInt(token.getId()));
             gamePlayerBagMapper.insert(playerBag);
@@ -5051,12 +5062,12 @@ public class GameServiceServiceImpl implements GameServiceService {
             List<GamePlayerBag> playerBagList = gamePlayerBagMapper.selectByMap(itemMap);
             if (Xtool.isNotNull(playerBagList)) {
                 GamePlayerBag playerBag = playerBagList.get(0);
-                playerBag.setItemCount(playerBag.getItemCount() + content.getRewardAmount());
+                playerBag.setItemCount(playerBag.getItemCount().add(new BigDecimal(content.getRewardAmount())));
                 gamePlayerBagMapper.updateById(playerBag);
             } else {
                 GamePlayerBag playerBag = new GamePlayerBag();
                 playerBag.setUserId(Integer.parseInt(userId));
-                playerBag.setItemCount(content.getRewardAmount());
+                playerBag.setItemCount(new BigDecimal(content.getRewardAmount()));
                 playerBag.setGridIndex(1);
                 playerBag.setItemId(content.getItemId());
                 gamePlayerBagMapper.insert(playerBag);
@@ -5200,13 +5211,13 @@ public class GameServiceServiceImpl implements GameServiceService {
             }
             user.setGold(user.getGold().subtract(gold));
             GamePlayerBag playerBag = gamePlayerBagMapper.goIntoListByIdAndItemId(userId, 13);
-            if (playerBag == null || playerBag.getItemCount() < 1000) {
+            if (playerBag == null || playerBag.getItemCount().compareTo(new BigDecimal(1000)) < 0) {
                 baseResp.setSuccess(0);
                 baseResp.setErrorMsg("材料不足");
                 return baseResp;
             } else {
-                if (playerBag.getItemCount() - 1000 > 0) {
-                    playerBag.setItemCount(playerBag.getItemCount() - 1000);
+                if (playerBag.getItemCount().subtract(new BigDecimal(1000)).compareTo(new BigDecimal(0))>0) {
+                    playerBag.setItemCount(playerBag.getItemCount().subtract(new BigDecimal(1000)));
                 } else {
                     playerBag.setIsDelete("1");
                 }
@@ -5222,13 +5233,13 @@ public class GameServiceServiceImpl implements GameServiceService {
             }
             user.setGold(user.getGold().subtract(gold));
             GamePlayerBag playerBag = gamePlayerBagMapper.goIntoListByIdAndItemId(userId, 14);
-            if (playerBag == null || playerBag.getItemCount() < 2000) {
+            if (playerBag == null || playerBag.getItemCount().compareTo(new BigDecimal(2000)) < 0) {
                 baseResp.setSuccess(0);
                 baseResp.setErrorMsg("材料不足");
                 return baseResp;
             } else {
-                if (playerBag.getItemCount() - 2000 > 0) {
-                    playerBag.setItemCount(playerBag.getItemCount() - 2000);
+                if (playerBag.getItemCount().subtract(new BigDecimal(2000)).compareTo(BigDecimal.ZERO)>0) {
+                    playerBag.setItemCount(playerBag.getItemCount().subtract(new BigDecimal(2000)));
                 } else {
                     playerBag.setIsDelete("1");
                 }
@@ -5244,13 +5255,13 @@ public class GameServiceServiceImpl implements GameServiceService {
             }
             user.setGold(user.getGold().subtract(gold));
             GamePlayerBag playerBag = gamePlayerBagMapper.goIntoListByIdAndItemId(userId, 15);
-            if (playerBag == null || playerBag.getItemCount() < 5000) {
+            if (playerBag == null || playerBag.getItemCount().compareTo(new BigDecimal(5000)) < 0) {
                 baseResp.setSuccess(0);
                 baseResp.setErrorMsg("材料不足");
                 return baseResp;
             } else {
-                if (playerBag.getItemCount() - 5000 > 0) {
-                    playerBag.setItemCount(playerBag.getItemCount() - 5000);
+                if (playerBag.getItemCount().subtract(new BigDecimal(5000)).compareTo(BigDecimal.ZERO)>0) {
+                    playerBag.setItemCount(playerBag.getItemCount().subtract(new BigDecimal(5000)));
                 } else {
                     playerBag.setIsDelete("1");
                 }
@@ -5266,13 +5277,13 @@ public class GameServiceServiceImpl implements GameServiceService {
             }
             user.setGold(user.getGold().subtract(gold));
             GamePlayerBag playerBag = gamePlayerBagMapper.goIntoListByIdAndItemId(userId, 16);
-            if (playerBag == null || playerBag.getItemCount() < 10000) {
+            if (playerBag == null || playerBag.getItemCount().compareTo(new BigDecimal(10000)) < 0) {
                 baseResp.setSuccess(0);
                 baseResp.setErrorMsg("材料不足");
                 return baseResp;
             } else {
-                if (playerBag.getItemCount() - 10000 > 0) {
-                    playerBag.setItemCount(playerBag.getItemCount() - 10000);
+                if (playerBag.getItemCount().subtract(new BigDecimal(10000)).compareTo(BigDecimal.ZERO)> 0) {
+                    playerBag.setItemCount(playerBag.getItemCount().subtract(new BigDecimal(10000)));
                 } else {
                     playerBag.setIsDelete("1");
                 }
@@ -5348,10 +5359,10 @@ public class GameServiceServiceImpl implements GameServiceService {
         //卡池数量
         UserInfo info = new UserInfo();
         BeanUtils.copyProperties(user, info);
-        info.setBronze(0);
-        info.setDarkSteel(0);
-        info.setPurpleGold(0);
-        info.setCrystal(0);
+        info.setBronze(BigDecimal.ZERO);
+        info.setDarkSteel(BigDecimal.ZERO);
+        info.setPurpleGold(BigDecimal.ZERO);
+        info.setCrystal(BigDecimal.ZERO);
         GamePlayerBag playerBag = gamePlayerBagMapper.goIntoListByIdAndItemId(userId, 13);
         if (playerBag != null) {
             info.setBronze(playerBag.getItemCount());
@@ -6465,14 +6476,14 @@ public class GameServiceServiceImpl implements GameServiceService {
                 return baseResp;
             }
             GamePlayerBag playerBag = playerBagList.get(0);
-            if (playerBag.getItemCount() <= 0) {
+            if (playerBag.getItemCount().compareTo(BigDecimal.ZERO) <= 0) {
                 baseResp.setSuccess(0);
                 baseResp.setErrorMsg("物品数量不足");
                 return baseResp;
             }
             // 扣减物品数量
-            if (playerBag.getItemCount() - 1 > 0) {
-                playerBag.setItemCount(playerBag.getItemCount() - 1);
+            if (playerBag.getItemCount().subtract(BigDecimal.ONE).compareTo(BigDecimal.ZERO) > 0) {
+                playerBag.setItemCount(playerBag.getItemCount().subtract(BigDecimal.ONE));
             } else {
                 playerBag.setIsDelete("1");
             }
@@ -6550,14 +6561,14 @@ public class GameServiceServiceImpl implements GameServiceService {
             return baseResp;
         }
         GamePlayerBag playerBag = playerBagList.get(0);
-        if (playerBag.getItemCount() <= 0) {
+        if (playerBag.getItemCount().compareTo(BigDecimal.ZERO) <= 0) {
             baseResp.setSuccess(0);
             baseResp.setErrorMsg("物品数量不足");
             return baseResp;
         }
         // 扣减物品数量
-        if (playerBag.getItemCount() - 1 > 0) {
-            playerBag.setItemCount(playerBag.getItemCount() - 1);
+        if (playerBag.getItemCount().subtract(BigDecimal.ONE).compareTo(BigDecimal.ZERO)> 0) {
+            playerBag.setItemCount(playerBag.getItemCount().subtract(BigDecimal.ONE));
         } else {
             playerBag.setIsDelete("1");
         }
@@ -6758,12 +6769,12 @@ public class GameServiceServiceImpl implements GameServiceService {
         List<GamePlayerBag> playerBags = gamePlayerBagMapper.selectByMap(itemMap);
         if (Xtool.isNotNull(playerBags)) {
             GamePlayerBag gamePlayerBag = playerBags.get(0);
-            gamePlayerBag.setItemCount(gamePlayerBag.getItemCount() + count);
+            gamePlayerBag.setItemCount(gamePlayerBag.getItemCount().add(new BigDecimal(count)));
             gamePlayerBagMapper.updateById(gamePlayerBag);
         } else {
             GamePlayerBag gamePlayerBag = new GamePlayerBag();
             gamePlayerBag.setUserId(Integer.parseInt(userId));
-            gamePlayerBag.setItemCount(count); // 修复原代码写死为2的错误
+            gamePlayerBag.setItemCount(new BigDecimal( count)); // 修复原代码写死为2的错误
             gamePlayerBag.setGridIndex(1);
             gamePlayerBag.setItemId(itemId);
             gamePlayerBagMapper.insert(gamePlayerBag);
@@ -6945,12 +6956,12 @@ public class GameServiceServiceImpl implements GameServiceService {
                 List<GamePlayerBag> playerBagList = gamePlayerBagMapper.selectByMap(itemMap);
                 if (Xtool.isNotNull(playerBagList)) {
                     GamePlayerBag playerBag = playerBagList.get(0);
-                    playerBag.setItemCount(playerBag.getItemCount() + content.getRewardAmount());
+                    playerBag.setItemCount(playerBag.getItemCount().add(new BigDecimal(content.getRewardAmount())));
                     gamePlayerBagMapper.updateById(playerBag);
                 } else {
                     GamePlayerBag playerBag = new GamePlayerBag();
                     playerBag.setUserId(Integer.parseInt(userId));
-                    playerBag.setItemCount(content.getRewardAmount());
+                    playerBag.setItemCount(new BigDecimal(content.getRewardAmount()));
                     playerBag.setGridIndex(1);
                     playerBag.setItemId(content.getItemId());
                     gamePlayerBagMapper.insert(playerBag);
@@ -6983,10 +6994,10 @@ public class GameServiceServiceImpl implements GameServiceService {
         User user2 = userMapper.selectUserByUserId(Integer.parseInt(userId));
         UserInfo info = new UserInfo();
         BeanUtils.copyProperties(user2, info);
-        info.setBronze(0);
-        info.setDarkSteel(0);
-        info.setPurpleGold(0);
-        info.setCrystal(0);
+        info.setBronze(BigDecimal.ZERO);
+        info.setDarkSteel(BigDecimal.ZERO);
+        info.setPurpleGold(BigDecimal.ZERO);
+        info.setCrystal(BigDecimal.ZERO);
         GamePlayerBag playerBag = gamePlayerBagMapper.goIntoListByIdAndItemId(userId, 13);
         if (playerBag != null) {
             info.setBronze(playerBag.getItemCount());
@@ -7097,12 +7108,12 @@ public class GameServiceServiceImpl implements GameServiceService {
             List<GamePlayerBag> playerBagList = gamePlayerBagMapper.selectByMap(itemMap);
             if (Xtool.isNotNull(playerBagList)) {
                 GamePlayerBag playerBag = playerBagList.get(0);
-                playerBag.setItemCount(playerBag.getItemCount() + content.getRewardAmount());
+                playerBag.setItemCount(playerBag.getItemCount().add(new BigDecimal(content.getRewardAmount())));
                 gamePlayerBagMapper.updateById(playerBag);
             } else {
                 GamePlayerBag playerBag = new GamePlayerBag();
                 playerBag.setUserId(Integer.parseInt(userId));
-                playerBag.setItemCount(content.getRewardAmount());
+                playerBag.setItemCount(new BigDecimal(content.getRewardAmount()));
                 playerBag.setGridIndex(1);
                 playerBag.setItemId(content.getItemId());
                 gamePlayerBagMapper.insert(playerBag);
@@ -7118,10 +7129,10 @@ public class GameServiceServiceImpl implements GameServiceService {
         //获取卡牌数据
         List<Characters> characterList = charactersMapper.selectByUserId(emp.getUserId());
         List<EqCharacters> eqCharactersList = eqCharactersMapper.selectByUserId(emp.getUserId());
-        info.setBronze(0);
-        info.setDarkSteel(0);
-        info.setPurpleGold(0);
-        info.setCrystal(0);
+        info.setBronze(BigDecimal.ZERO);
+        info.setDarkSteel(BigDecimal.ZERO);
+        info.setPurpleGold(BigDecimal.ZERO);
+        info.setCrystal(BigDecimal.ZERO);
         GamePlayerBag playerBag = gamePlayerBagMapper.goIntoListByIdAndItemId(emp.getUserId() + "", 13);
         if (playerBag != null) {
             info.setBronze(playerBag.getItemCount());
@@ -7568,7 +7579,7 @@ public class GameServiceServiceImpl implements GameServiceService {
         } else if (n2 + 1 <= 6) {
             n2++;
             n3 = 1;
-        } else if (n1 + 1 <= 8) {
+        } else if (n1 + 1 <= 9) {
             n1++;
             n2 = 1;
             n3 = 1;
@@ -7618,12 +7629,12 @@ public class GameServiceServiceImpl implements GameServiceService {
         List<GamePlayerBag> bagList = gamePlayerBagMapper.selectByMap(bagMap);
         if (!CollectionUtils.isEmpty(bagList)) {
             GamePlayerBag bag = bagList.get(0);
-            bag.setItemCount(bag.getItemCount() + reward.getRewardAmount());
+            bag.setItemCount(bag.getItemCount().add(new BigDecimal(reward.getRewardAmount())));
             gamePlayerBagMapper.updateById(bag);
         } else {
             GamePlayerBag newBag = new GamePlayerBag();
             newBag.setUserId(uid);
-            newBag.setItemCount(reward.getRewardAmount());
+            newBag.setItemCount(new BigDecimal(reward.getRewardAmount()));
             newBag.setGridIndex(1);
             newBag.setItemId(reward.getItemId());
             gamePlayerBagMapper.insert(newBag);
@@ -7670,14 +7681,14 @@ public class GameServiceServiceImpl implements GameServiceService {
             return baseResp;
         }
         GamePlayerBag gamePlayerBag = playerBags.get(0);
-        if (gamePlayerBag.getItemCount() - num < 0) {
+        if (gamePlayerBag.getItemCount().subtract(new BigDecimal(num)).compareTo(BigDecimal.ZERO)<0) {
             baseResp.setSuccess(0);
             baseResp.setErrorMsg("扫荡券不足");
             return baseResp;
         }
         // 扣减物品数量
-        if (gamePlayerBag.getItemCount() - num > 0) {
-            gamePlayerBag.setItemCount(gamePlayerBag.getItemCount() - num);
+        if (gamePlayerBag.getItemCount().subtract(new BigDecimal(num)).compareTo(BigDecimal.ZERO)> 0) {
+            gamePlayerBag.setItemCount(gamePlayerBag.getItemCount().subtract(new BigDecimal(num)));
         } else {
             gamePlayerBag.setIsDelete("1");
         }
@@ -7971,13 +7982,13 @@ public class GameServiceServiceImpl implements GameServiceService {
                 if (Xtool.isNotNull(playerBagList)) {
                     // 已有道具，累加总数量
                     GamePlayerBag playerBag = playerBagList.get(0);
-                    playerBag.setItemCount(playerBag.getItemCount() + totalAmount);
+                    playerBag.setItemCount(playerBag.getItemCount().add(new BigDecimal(totalAmount)));
                     gamePlayerBagMapper.updateById(playerBag);
                 } else {
                     // 新增道具
                     GamePlayerBag playerBag = new GamePlayerBag();
                     playerBag.setUserId(Integer.parseInt(userId));
-                    playerBag.setItemCount(totalAmount);
+                    playerBag.setItemCount(new BigDecimal(totalAmount));
                     playerBag.setGridIndex(1);
                     playerBag.setItemId(content.getItemId());
                     gamePlayerBagMapper.insert(playerBag);
@@ -8380,12 +8391,12 @@ public class GameServiceServiceImpl implements GameServiceService {
                         List<GamePlayerBag> playerBagList = gamePlayerBagMapper.selectByMap(itemMap);
                         if (Xtool.isNotNull(playerBagList)) {
                             GamePlayerBag playerBag = playerBagList.get(0);
-                            playerBag.setItemCount(playerBag.getItemCount() + content.getRewardAmount());
+                            playerBag.setItemCount(playerBag.getItemCount().add(new BigDecimal(content.getRewardAmount())));
                             gamePlayerBagMapper.updateById(playerBag);
                         } else {
                             GamePlayerBag playerBag = new GamePlayerBag();
                             playerBag.setUserId(Integer.parseInt(userId));
-                            playerBag.setItemCount(content.getRewardAmount());
+                            playerBag.setItemCount(new BigDecimal(content.getRewardAmount()));
                             playerBag.setGridIndex(1);
                             playerBag.setItemId(content.getItemId());
                             gamePlayerBagMapper.insert(playerBag);
@@ -8401,10 +8412,10 @@ public class GameServiceServiceImpl implements GameServiceService {
             BeanUtils.copyProperties(user2, info);
             List<EqCharacters> eqCharactersList = eqCharactersMapper.selectByUserId(info.getUserId());
             info.setEqCharactersList(eqCharactersList);
-            info.setBronze(0);
-            info.setDarkSteel(0);
-            info.setPurpleGold(0);
-            info.setCrystal(0);
+            info.setBronze(BigDecimal.ZERO);
+            info.setDarkSteel(BigDecimal.ZERO);
+            info.setPurpleGold(BigDecimal.ZERO);
+            info.setCrystal(BigDecimal.ZERO);
             GamePlayerBag playerBag = gamePlayerBagMapper.goIntoListByIdAndItemId(userId, 13);
             if (playerBag != null) {
                 info.setBronze(playerBag.getItemCount());
@@ -8803,9 +8814,16 @@ public class GameServiceServiceImpl implements GameServiceService {
 
             if (Xtool.isNotNull(playerBagList)) {
                 GamePlayerBag playerBag = playerBagList.get(0);
-                Integer count = Math.round(playerBag.getItemCount() * 0.2f);
-                playerBag.setItemCount(playerBag.getItemCount() - count);
-                if (playerBag.getItemCount() <= 0) {
+// 原物品数量
+                BigDecimal itemNum = new BigDecimal(playerBag.getItemCount().toString());
+// 乘以0.2，向下取整得到返还数量count
+                BigDecimal count = itemNum.multiply(new BigDecimal("0.2")).setScale(0, RoundingMode.FLOOR);
+
+// 扣除数量
+                BigDecimal remain = itemNum.subtract(count);
+                playerBag.setItemCount(remain);
+
+                if (remain.compareTo(BigDecimal.ZERO) <= 0) {
                     playerBag.setIsDelete("0");
                 }
                 PveReward pveReward = new PveReward();
@@ -8814,7 +8832,7 @@ public class GameServiceServiceImpl implements GameServiceService {
                 pveReward.setImg(gameItemBase.getIcon());
                 pveReward.setItemName(gameItemBase.getItemName() + " " + count);
                 pveReward.setItemId(gameItemBase.getItemId());
-                pveReward.setRewardAmount(count);
+                pveReward.setRewardAmount(count.intValue());
                 pveReward.setRewardType("6");
                 pveRewards.add(pveReward);
                 gamePlayerBagMapper.updateById(playerBag);
@@ -8824,7 +8842,7 @@ public class GameServiceServiceImpl implements GameServiceService {
                 pillRobRecord.setRobTime(new Date());
                 pillRobRecord.setRobDate(new Date());
                 pillRobRecord.setRobResult(1);
-                pillRobRecord.setRobPillNum(count);
+                pillRobRecord.setRobPillNum(count.intValue());
                 pillRobRecord.setRobMaterial(token.getStr());
                 pillRobRecord.setCreateTime(new Date());
                 pillRobRecord.setFreeRobCount(1);
@@ -8833,7 +8851,7 @@ public class GameServiceServiceImpl implements GameServiceService {
                 pillRobRecordMapper.insert(pillRobRecord);
                 if (Xtool.isNotNull(playerBagList2)) {
                     GamePlayerBag playerBag2 = playerBagList2.get(0);
-                    playerBag2.setItemCount(playerBag2.getItemCount() + count);
+                    playerBag2.setItemCount(playerBag2.getItemCount().add(count));
                     gamePlayerBagMapper.updateById(playerBag2);
                 } else {
                     GamePlayerBag playerBag2 = new GamePlayerBag();
@@ -8904,15 +8922,15 @@ public class GameServiceServiceImpl implements GameServiceService {
                 return baseResp;
             }
             GamePlayerBag playerBag = playerBagList.get(0);
-            if (playerBag.getItemCount() - Integer.parseInt(token.getStr()) < 0) {
+            if (playerBag.getItemCount().subtract(new BigDecimal(token.getStr())).compareTo(BigDecimal.ZERO) < 0) {
                 baseResp.setSuccess(0);
                 baseResp.setErrorMsg("材料不足");
                 return baseResp;
             }
             int[] result = MaterialSynthesisUtil.calculate(Integer.parseInt(token.getStr()));
             // 扣减物品数量
-            if (playerBag.getItemCount() - Integer.parseInt(token.getStr()) + result[1] > 0) {
-                playerBag.setItemCount(playerBag.getItemCount() - Integer.parseInt(token.getStr()) + result[1]);
+            if (playerBag.getItemCount().subtract(new BigDecimal(token.getStr())).add(new BigDecimal(result[1])).compareTo(BigDecimal.ZERO) > 0) {
+                playerBag.setItemCount(playerBag.getItemCount().subtract(new BigDecimal(token.getStr())).add(new BigDecimal(result[1])));
             } else {
                 playerBag.setIsDelete("1");
             }
@@ -8925,12 +8943,12 @@ public class GameServiceServiceImpl implements GameServiceService {
             List<GamePlayerBag> playerBagList2 = gamePlayerBagMapper.selectByMap(itemMap2);
             if (Xtool.isNotNull(playerBagList2)) {
                 GamePlayerBag playerBag2 = playerBagList2.get(0);
-                playerBag2.setItemCount(playerBag2.getItemCount() + result[0]);
+                playerBag2.setItemCount(playerBag2.getItemCount().add(new BigDecimal(result[0])));
                 gamePlayerBagMapper.updateById(playerBag2);
             } else {
                 GamePlayerBag playerBag2 = new GamePlayerBag();
                 playerBag2.setUserId(Integer.parseInt(userId));
-                playerBag2.setItemCount(result[0]);
+                playerBag2.setItemCount(new BigDecimal(result[0]));
                 playerBag2.setGridIndex(1);
                 playerBag2.setItemId(23);
                 gamePlayerBagMapper.insert(playerBag2);
@@ -8947,15 +8965,15 @@ public class GameServiceServiceImpl implements GameServiceService {
                 return baseResp;
             }
             GamePlayerBag playerBag = playerBagList.get(0);
-            if (playerBag.getItemCount() - Integer.parseInt(token.getStr()) < 0) {
+            if (playerBag.getItemCount().subtract(new BigDecimal(token.getStr())).compareTo(BigDecimal.ZERO) < 0) {
                 baseResp.setSuccess(0);
                 baseResp.setErrorMsg("材料不足");
                 return baseResp;
             }
             int[] result = MaterialSynthesisUtil.calculate(Integer.parseInt(token.getStr()));
             // 扣减物品数量
-            if (playerBag.getItemCount() - Integer.parseInt(token.getStr()) + result[1] > 0) {
-                playerBag.setItemCount(playerBag.getItemCount() - Integer.parseInt(token.getStr()) + result[1]);
+            if (playerBag.getItemCount().subtract(new BigDecimal(token.getStr())).add(new BigDecimal(result[1])).compareTo(BigDecimal.ZERO) > 0) {
+                playerBag.setItemCount(playerBag.getItemCount().subtract(new BigDecimal(token.getStr())).add(new BigDecimal(result[1])));
             } else {
                 playerBag.setIsDelete("1");
             }
@@ -8968,12 +8986,12 @@ public class GameServiceServiceImpl implements GameServiceService {
             List<GamePlayerBag> playerBagList2 = gamePlayerBagMapper.selectByMap(itemMap2);
             if (Xtool.isNotNull(playerBagList2)) {
                 GamePlayerBag playerBag2 = playerBagList2.get(0);
-                playerBag2.setItemCount(playerBag2.getItemCount() + result[0]);
+                playerBag2.setItemCount(playerBag2.getItemCount().add(new BigDecimal(result[0])));
                 gamePlayerBagMapper.updateById(playerBag2);
             } else {
                 GamePlayerBag playerBag2 = new GamePlayerBag();
                 playerBag2.setUserId(Integer.parseInt(userId));
-                playerBag2.setItemCount(result[0]);
+                playerBag2.setItemCount(new BigDecimal( result[0]));
                 playerBag2.setGridIndex(1);
                 playerBag2.setItemId(26);
                 gamePlayerBagMapper.insert(playerBag2);
@@ -8990,15 +9008,15 @@ public class GameServiceServiceImpl implements GameServiceService {
                 return baseResp;
             }
             GamePlayerBag playerBag = playerBagList.get(0);
-            if (playerBag.getItemCount() - Integer.parseInt(token.getStr()) < 0) {
+            if (playerBag.getItemCount().subtract(new BigDecimal(token.getStr())).compareTo(BigDecimal.ZERO) < 0) {
                 baseResp.setSuccess(0);
                 baseResp.setErrorMsg("材料不足");
                 return baseResp;
             }
             int[] result = MaterialSynthesisUtil.calculate(Integer.parseInt(token.getStr()));
             // 扣减物品数量
-            if (playerBag.getItemCount() - Integer.parseInt(token.getStr()) + result[1] > 0) {
-                playerBag.setItemCount(playerBag.getItemCount() - Integer.parseInt(token.getStr()) + result[1]);
+            if (playerBag.getItemCount().subtract(new BigDecimal(token.getStr())).add(new BigDecimal(result[1])).compareTo(BigDecimal.ZERO) > 0) {
+                playerBag.setItemCount(playerBag.getItemCount().subtract(new BigDecimal(token.getStr())).add(new BigDecimal(result[1])));
             } else {
                 playerBag.setIsDelete("1");
             }
@@ -9011,12 +9029,12 @@ public class GameServiceServiceImpl implements GameServiceService {
             List<GamePlayerBag> playerBagList2 = gamePlayerBagMapper.selectByMap(itemMap2);
             if (Xtool.isNotNull(playerBagList2)) {
                 GamePlayerBag playerBag2 = playerBagList2.get(0);
-                playerBag2.setItemCount(playerBag2.getItemCount() + result[0]);
+                playerBag2.setItemCount(playerBag2.getItemCount().add(new BigDecimal(result[0])));
                 gamePlayerBagMapper.updateById(playerBag2);
             } else {
                 GamePlayerBag playerBag2 = new GamePlayerBag();
                 playerBag2.setUserId(Integer.parseInt(userId));
-                playerBag2.setItemCount(result[0]);
+                playerBag2.setItemCount(new BigDecimal( result[0]));
                 playerBag2.setGridIndex(1);
                 playerBag2.setItemId(24);
                 gamePlayerBagMapper.insert(playerBag2);
