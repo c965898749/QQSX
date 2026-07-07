@@ -1082,32 +1082,33 @@ public class BattleManager {
                     case "托塔天王":
                         // 镇妖塔：对敌方场上造成飞弹伤害
                         if (guardian1 != null) {
+                            int[] skillLevell = CardSkillLevelUtil.calculateSkillLevels(enemy.getLevel(), enemy.getStar().doubleValue());
                             // 1. 计算所有中毒效果的总伤害（累加 POISON 类型的 value）
-                            int totalPoisonDamage = 69 * skillLevel[1];
+                            int totalPoisonDamage = 69 * skillLevell[0];
                             // 2. 计算毒抗相关（直接基于你现有 EffectInstance 计算，不新增 Guardian 方法）
                             // 飞弹增益：所有 POISON_RESIST 类型效果的 value 总和
-                            int resistUp = calculateTotalVaule(guardian1, EffectType.MISSILE_BOOST);
+                            int resistUp = calculateTotalVaule(enemy, EffectType.MISSILE_BOOST);
                             // 飞弹增益百分比：所有 POISON_RESIST 类型效果的 value 乘积
-                            double resistUpPret = calculateTotalUpPretVaule(guardian1, EffectType.MISSILE_BOOST_PRET);
+                            double resistUpPret = calculateTotalUpPretVaule(enemy, EffectType.MISSILE_BOOST_PRET);
                             // 飞弹降低：所有 POISON_RESIST_DOWN 类型效果的 value 总和
-                            int resistDown = calculateTotalVaule(guardian1, EffectType.MISSILE_DOWN);
+                            int resistDown = calculateTotalVaule(enemy, EffectType.MISSILE_DOWN);
                             // 飞弹降低百分比：所有 POISON_RESIST 类型效果的 value 乘积
-                            double resistDownPret = calculateTotalDownPretVaule(guardian1, EffectType.MISSILE_DOWN_PRET);
+                            double resistDownPret = calculateTotalDownPretVaule(enemy, EffectType.MISSILE_DOWN_PRET);
 
 
                             // 2. 计算毒抗相关（直接基于你现有 EffectInstance 计算，不新增 Guardian 方法）
                             // 弹抗增益：所有 POISON_RESIST 类型效果的 value 总和
-                            int targetUp = calculateTotalVaule(enemy, EffectType.MISSILE_RESIST_BOOST);
+                            int targetUp = calculateTotalVaule(guardian1, EffectType.MISSILE_RESIST_BOOST);
                             // 弹抗增益百分比：所有 POISON_RESIST 类型效果的 value 乘积
-                            double targetUpPret = calculateTotalDownPretVaule(enemy, EffectType.MISSILE_RESIST_BOOST_PRET);
+                            double targetUpPret = calculateTotalDownPretVaule(guardian1, EffectType.MISSILE_RESIST_BOOST_PRET);
                             // 弹抗降低：所有 POISON_RESIST_DOWN 类型效果的 value 总和
-                            int targetDown = calculateTotalVaule(enemy, EffectType.MISSILE_RESIST_DOWN);
+                            int targetDown = calculateTotalVaule(guardian1, EffectType.MISSILE_RESIST_DOWN);
                             // 弹抗降低百分比：所有 POISON_RESIST 类型效果的 value 乘积
-                            double targetDownPret = calculateTotalUpPretVaule(enemy, EffectType.MISSILE_RESIST_DOWN_PRET);
+                            double targetDownPret = calculateTotalUpPretVaule(guardian1, EffectType.MISSILE_RESIST_DOWN_PRET);
                             // 最终（仅基于 buff 计算，无新增方法）
 
                             int burnDamage = (int) (totalPoisonDamage * resistUpPret * resistDownPret * targetUpPret * targetDownPret
-                                    + (resistUp - resistDown + guardian1.getFdAtk() - enemy.getFdDef() - targetUp + targetDown));
+                                    + (resistUp - resistDown + enemy.getFdAtk() - guardian1.getFdDef() - targetUp + targetDown));
 
                             if (burnDamage < 0) {
                                 burnDamage = 0;
@@ -1115,7 +1116,7 @@ public class BattleManager {
                             Integer logIndex=battleLogs.size();
                             burnDamage=triggerOnAttackedSkills(guardian1,burnDamage,EffectType.MISSILE_DAMAGE);
                             // 4. 扣除伤害
-                            enemy.setCurrentHp(enemy.getCurrentHp() - burnDamage);
+                            guardian1.setCurrentHp(guardian1.getCurrentHp() - burnDamage);
                             addLog("镇妖塔",
                                     enemy.getId(),
                                     enemy.getMaxHp(),
@@ -1303,32 +1304,33 @@ public class BattleManager {
                     case "托塔天王":
                         // 镇妖塔：对敌方场上造成飞弹伤害
                         if (guardian2 != null) {
+                            int[] skillLevell = CardSkillLevelUtil.calculateSkillLevels(enemy.getLevel(), enemy.getStar().doubleValue());
                             // 1. 计算所有中毒效果的总伤害（累加 POISON 类型的 value）
-                            int totalPoisonDamage = 69 * skillLevel2[1];
+                            int totalPoisonDamage = 69 * skillLevell[0];
                             // 2. 计算毒抗相关（直接基于你现有 EffectInstance 计算，不新增 Guardian 方法）
                             // 飞弹增益：所有 POISON_RESIST 类型效果的 value 总和
-                            int resistUp = calculateTotalVaule(guardian2, EffectType.MISSILE_BOOST);
+                            int resistUp = calculateTotalVaule(enemy, EffectType.MISSILE_BOOST);
                             // 飞弹增益百分比：所有 POISON_RESIST 类型效果的 value 乘积
-                            double resistUpPret = calculateTotalUpPretVaule(guardian2, EffectType.MISSILE_BOOST_PRET);
+                            double resistUpPret = calculateTotalUpPretVaule(enemy, EffectType.MISSILE_BOOST_PRET);
                             // 飞弹降低：所有 POISON_RESIST_DOWN 类型效果的 value 总和
-                            int resistDown = calculateTotalVaule(guardian2, EffectType.MISSILE_DOWN);
+                            int resistDown = calculateTotalVaule(enemy, EffectType.MISSILE_DOWN);
                             // 飞弹降低百分比：所有 POISON_RESIST 类型效果的 value 乘积
-                            double resistDownPret = calculateTotalDownPretVaule(guardian2, EffectType.MISSILE_DOWN_PRET);
+                            double resistDownPret = calculateTotalDownPretVaule(enemy, EffectType.MISSILE_DOWN_PRET);
 
 
                             // 2. 计算毒抗相关（直接基于你现有 EffectInstance 计算，不新增 Guardian 方法）
                             // 弹抗增益：所有 POISON_RESIST 类型效果的 value 总和
-                            int targetUp = calculateTotalVaule(enemy, EffectType.MISSILE_RESIST_BOOST);
+                            int targetUp = calculateTotalVaule(guardian2, EffectType.MISSILE_RESIST_BOOST);
                             // 弹抗增益百分比：所有 POISON_RESIST 类型效果的 value 乘积
-                            double targetUpPret = calculateTotalDownPretVaule(enemy, EffectType.MISSILE_RESIST_BOOST_PRET);
+                            double targetUpPret = calculateTotalDownPretVaule(guardian2, EffectType.MISSILE_RESIST_BOOST_PRET);
                             // 弹抗降低：所有 POISON_RESIST_DOWN 类型效果的 value 总和
-                            int targetDown = calculateTotalVaule(enemy, EffectType.MISSILE_RESIST_DOWN);
+                            int targetDown = calculateTotalVaule(guardian2, EffectType.MISSILE_RESIST_DOWN);
                             // 弹抗降低百分比：所有 POISON_RESIST 类型效果的 value 乘积
-                            double targetDownPret = calculateTotalUpPretVaule(enemy, EffectType.MISSILE_RESIST_DOWN_PRET);
+                            double targetDownPret = calculateTotalUpPretVaule(guardian2, EffectType.MISSILE_RESIST_DOWN_PRET);
                             // 最终（仅基于 buff 计算，无新增方法）
 
                             int burnDamage = (int) (totalPoisonDamage * resistUpPret * resistDownPret * targetUpPret * targetDownPret
-                                    + (resistUp - resistDown + guardian2.getFdAtk() - enemy.getFdDef() - targetUp + targetDown));
+                                    + (resistUp - resistDown + enemy.getFdAtk() - guardian2.getFdDef() - targetUp + targetDown));
 
                             if (burnDamage < 0) {
                                 burnDamage = 0;
@@ -1337,7 +1339,7 @@ public class BattleManager {
                             burnDamage=triggerOnAttackedSkills(guardian2,burnDamage,EffectType.MISSILE_DAMAGE);
 
                             // 4. 扣除伤害
-                            enemy.setCurrentHp(enemy.getCurrentHp() - burnDamage);
+                            guardian2.setCurrentHp(guardian2.getCurrentHp() - burnDamage);
                             addLog("镇妖塔",
                                     enemy.getId(),
                                     enemy.getMaxHp(),
