@@ -1872,5 +1872,23 @@ public class GameContoller {
             return baseResp;
         }
     }
-
+    /**
+     * 留影
+     * @param token
+     * @param request
+     * @return
+     */
+    @PostMapping("savePlay")
+    @CrossOrigin
+    public BaseResp savePlay(@RequestBody TokenDto token, HttpServletRequest request) {
+        BaseResp baseResp = new BaseResp();
+        try {
+            baseResp = gameServiceService.savePlay(token, request);
+            return baseResp;
+        } catch (Exception e) {
+            e.printStackTrace();
+            baseResp.setSuccess(0);
+            return baseResp;
+        }
+    }
 }

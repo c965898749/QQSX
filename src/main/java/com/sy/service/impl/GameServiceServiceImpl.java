@@ -1776,7 +1776,7 @@ public class GameServiceServiceImpl implements GameServiceService {
             baseResp.setErrorMsg("飞升需主卡达到满级");
             return baseResp;
         }
-        if (character.getFlyup() >= 10) { // 改为>=，防止越界
+        if (character.getFlyup() >= 20) { // 改为>=，防止越界
             baseResp.setSuccess(0);
             baseResp.setErrorMsg("最多飞升10次");
             return baseResp;
@@ -9191,6 +9191,45 @@ public class GameServiceServiceImpl implements GameServiceService {
         }
         baseResp.setSuccess(1);
         baseResp.setData(fightList);
+        return baseResp;
+    }
+
+    @Override
+    public BaseResp savePlay(TokenDto token, HttpServletRequest request) throws Exception {
+        //先获取当前用户战队
+        BaseResp baseResp = new BaseResp();
+        if (token == null || Xtool.isNull(token.getToken())) {
+            baseResp.setSuccess(0);
+            baseResp.setErrorMsg("登录过期");
+            return baseResp;
+        }
+//        String userId = (String) redisTemplate.opsForValue().get(token.getToken());
+        String userId = token.getUserId();
+        if (Xtool.isNull(userId)) {
+            baseResp.setSuccess(0);
+            baseResp.setErrorMsg("登录过期");
+            return baseResp;
+        }
+        User user = userMapper.selectUserByUserId(Integer.parseInt(userId));
+        BigDecimal diamond = user.getDiamond().subtract(new BigDecimal(100));
+        if (diamond.compareTo(BigDecimal.ZERO) < 0) {
+            baseResp.setSuccess(0);
+            baseResp.setErrorMsg("灵石不足");
+            return baseResp;
+        }
+        user.setDiamond(diamond);
+        GameFight gameFight = new GameFight();
+        gameFight.setUserId(Integer.parseInt(userId));
+        gameFight.setFightter(token.getStr());
+        gameFight.setCreatetime(new Date());
+        gameFightMapper.insert(gameFight);
+        userMapper.updateuser(user);
+        baseResp.setSuccess(1);
+        UserInfo info = new UserInfo();
+        BeanUtils.copyProperties(user, info);
+        baseResp.setData(info);
+        baseResp.setSuccess(1);
+        baseResp.setErrorMsg("留影成功");
         return baseResp;
     }
 
