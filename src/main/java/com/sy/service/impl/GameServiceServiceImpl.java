@@ -9220,8 +9220,12 @@ public class GameServiceServiceImpl implements GameServiceService {
         user.setDiamond(diamond);
         GameFight gameFight = new GameFight();
         gameFight.setUserId(Integer.parseInt(userId));
+        gameFight.setUserName(token.getToken());
+        gameFight.setToUserName(token.getDifficultyLevel());
+        gameFight.setIsWin(token.getFinalLevel());
         gameFight.setFightter(token.getStr());
         gameFight.setCreatetime(new Date());
+        gameFight.setId(token.getId());
         gameFightMapper.insert(gameFight);
         userMapper.updateuser(user);
         baseResp.setSuccess(1);
@@ -9230,6 +9234,28 @@ public class GameServiceServiceImpl implements GameServiceService {
         baseResp.setData(info);
         baseResp.setSuccess(1);
         baseResp.setErrorMsg("留影成功");
+        return baseResp;
+    }
+
+    @Override
+    public BaseResp deleteVideo(TokenDto token, HttpServletRequest request) throws Exception {
+        BaseResp baseResp = new BaseResp();
+        if (token == null || Xtool.isNull(token.getToken())) {
+            baseResp.setSuccess(0);
+            baseResp.setErrorMsg("登录过期");
+            return baseResp;
+        }
+//        String userId = (String) redisTemplate.opsForValue().get(token.getToken());
+        String userId = token.getUserId();
+        if (Xtool.isNull(userId)) {
+            baseResp.setSuccess(0);
+            baseResp.setErrorMsg("登录过期");
+            return baseResp;
+        }
+        gameFightMapper.delete(new LambdaQueryWrapper<GameFight>()
+                .eq(GameFight::getId, token.getId()).eq(GameFight::getUserId, Integer.parseInt(userId)));
+        baseResp.setSuccess(1);
+        baseResp.setErrorMsg("删除成功");
         return baseResp;
     }
 
@@ -11426,7 +11452,15 @@ public class GameServiceServiceImpl implements GameServiceService {
             }
 
             log.debug("成功读取战斗日志文件: {}", fileName);
-            return content.toString();
+            String fileContent = content.toString();
+
+            // 如果文件内容为空，查询数据库
+            if (Xtool.isNull(fileContent)) {
+                GameFight gameFight = gameFightMapper.selectById(battleId);
+                fileContent= gameFight.getFightter();
+            }
+
+            return fileContent;
         } catch (IOException e) {
             log.error("读取战斗日志文件失败，battleId: {}", battleId, e);
             return null;

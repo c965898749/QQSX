@@ -1891,4 +1891,23 @@ public class GameContoller {
             return baseResp;
         }
     }
+    /**
+     * 留影
+     * @param token
+     * @param request
+     * @return
+     */
+    @PostMapping("deleteVideo")
+    @CrossOrigin
+    public BaseResp deleteVideo(@RequestBody TokenDto token, HttpServletRequest request) {
+        BaseResp baseResp = new BaseResp();
+        try {
+            baseResp = gameServiceService.deleteVideo(token, request);
+            return baseResp;
+        } catch (Exception e) {
+            e.printStackTrace();
+            baseResp.setSuccess(0);
+            return baseResp;
+        }
+    }
 }
