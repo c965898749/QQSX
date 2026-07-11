@@ -492,7 +492,7 @@ public class GameServiceServiceImpl implements GameServiceService {
             BeanUtils.copyProperties(card, characters);
             characters.setUuid(null);
             characters.setId("1002");
-            characters.setLv(1);
+            characters.setLv(10);
             characters.setGoIntoNum(1);
             characters.setStackCount(0);
             characters.setUserId(Integer.parseInt(emp.getUserId() + ""));

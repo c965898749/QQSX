@@ -33,8 +33,6 @@ public class GameFight {
     private Integer isWin;//0赢1输
     @TableField("img")
     private String img;
-    @TableField("my_user_id")
-    private Integer myUserId;
     @TableField(exist = false)
     private String timeStr;
 }
