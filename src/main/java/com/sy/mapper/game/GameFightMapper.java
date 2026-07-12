@@ -8,5 +8,5 @@ import org.apache.ibatis.annotations.Mapper;
 import java.util.List;
 @Mapper
 public interface GameFightMapper extends BaseMapper<GameFight> {
-
+    List<GameFight> getGameFightList(String userId);
 }

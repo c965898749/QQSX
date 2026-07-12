@@ -2,6 +2,7 @@ package com.sy.service.impl;
 
 import cn.hutool.core.util.IdUtil;
 import com.alibaba.fastjson.JSON;
+import com.alibaba.fastjson.JSONObject;
 import com.alibaba.fastjson.TypeReference;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
@@ -335,6 +336,20 @@ public class GameServiceServiceImpl implements GameServiceService {
             baseResp.setErrorMsg("登录过期");
             return baseResp;
         }
+        String key = buildChannelKey(1, 0L, 0L);
+        Map<String, List<JSONObject>> map = new HashMap<>();
+        List<Object> objList = redisTemplate.opsForList().range(key, 0, -1);
+        List<JSONObject> dataList = new ArrayList<>();
+
+        if (objList != null && !objList.isEmpty()) {
+            for (Object obj : objList) {
+                String jsonStr = (String) obj;
+                JSONObject jsonObj = JSONObject.parseObject(jsonStr);
+                dataList.add(jsonObj);
+            }
+        }
+        map.put("world", dataList);
+        baseResp.setData(map);
         baseResp.setSuccess(1);
         return baseResp;
     }
@@ -358,9 +373,6 @@ public class GameServiceServiceImpl implements GameServiceService {
             characterArrayList.add(character);
         }
         characterArrayList.addAll(reasonableData2(charactersList2));
-        for (Characters characters : charactersList2) {
-
-        }
         return characterArrayList;
     }
 
@@ -9184,8 +9196,7 @@ public class GameServiceServiceImpl implements GameServiceService {
     public BaseResp videoList(TokenDto token, HttpServletRequest request) throws Exception {
         BaseResp baseResp = new BaseResp();
         String userId = token.getUserId();
-        List<GameFight> fightList = gameFightMapper.selectList(new LambdaQueryWrapper<GameFight>()
-                .eq(GameFight::getUserId, userId));
+        List<GameFight> fightList = gameFightMapper.getGameFightList(userId);
         for (GameFight gameFight : fightList) {
             gameFight.setTimeStr(this.formatTime(gameFight.getCreatetime()));
         }
@@ -9258,6 +9269,45 @@ public class GameServiceServiceImpl implements GameServiceService {
         baseResp.setErrorMsg("删除成功");
         return baseResp;
     }
+
+    @Override
+    public BaseResp saveChatMsg(ChatMsg chatMsg) {
+        BaseResp baseResp = new BaseResp();
+        SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd HH:mm");
+        chatMsg.setSendTime(sdf.format(new Date()));
+        SensitiveWord sw = new SensitiveWord("CensorWords.txt");
+        sw.InitializationWork();
+        String content = sw.filterInfo(chatMsg.getContent());
+        chatMsg.setContent(content);
+        String key = buildChannelKey(chatMsg.getChannelType(), chatMsg.getSenderId(), chatMsg.getTargetId());
+        // 手动转JSON字符串存入List
+        String jsonStr = JsonUtils.toJson(chatMsg);
+        redisTemplate.opsForList().leftPush(key, jsonStr);
+        // 只保留100条
+        redisTemplate.opsForList().trim(key, 0, 99);
+        baseResp.setSuccess(1);
+        return baseResp;
+    }
+
+    // 构造频道Redis Key
+    private String buildChannelKey(Integer channelType, Long senderId, Long targetId) {
+        switch (channelType) {
+            case 1:
+                // 世界频道统一key
+                return "chat:channel:world";
+            case 2:
+                // 洞府频道 targetId=洞府ID
+                return "chat:channel:cave:" + targetId;
+            case 3:
+                // 私聊 取大小ID统一key
+                long min = Math.min(senderId, targetId);
+                long max = Math.max(senderId, targetId);
+                return "chat:channel:single:" + min + ":" + max;
+            default:
+                throw new RuntimeException("未知聊天频道");
+        }
+    }
+
 
     @Override
     public BaseResp friendAllList(TokenDto token, HttpServletRequest request) throws Exception {
@@ -9515,6 +9565,13 @@ public class GameServiceServiceImpl implements GameServiceService {
             BigDecimal maxHp = lv.multiply(characters.getHpGrowth().multiply(((characters.getStar().subtract(new BigDecimal(1))).multiply(new BigDecimal("0.15")).add(new BigDecimal(1))).multiply((lv.divide(new BigDecimal(80)).add(new BigDecimal("0.8"))))));
             BigDecimal attack = lv.multiply(characters.getAttackGrowth().multiply(((characters.getStar().subtract(new BigDecimal(1))).multiply(new BigDecimal("0.15")).add(new BigDecimal(1))).multiply((lv.divide(new BigDecimal(80)).add(new BigDecimal("0.8"))))));
             BigDecimal speed = lv.multiply(characters.getSpeedGrowth().multiply(((characters.getStar().subtract(new BigDecimal(1))).multiply(new BigDecimal("0.15")).add(new BigDecimal(1))).multiply((lv.divide(new BigDecimal(80)).add(new BigDecimal("0.8"))))));
+            // 飞升加成：每级flyup增加3%属性
+            if (Xtool.isNotNull(characters.getFlyup())){
+                BigDecimal flyupRate = new BigDecimal("1").add(new BigDecimal(characters.getFlyup()).multiply(new BigDecimal("0.03")));
+                maxHp = maxHp.multiply(flyupRate);
+                attack = attack.multiply(flyupRate);
+                speed = speed.multiply(flyupRate);
+            }
             character.setMaxHp(maxHp.intValue());
             character.setHp(maxHp.intValue());
             character.setAttack(attack.intValue());
@@ -9534,6 +9591,13 @@ public class GameServiceServiceImpl implements GameServiceService {
         BigDecimal maxHp = lv.multiply(characters.getHpGrowth().multiply(((characters.getStar().subtract(new BigDecimal(1))).multiply(new BigDecimal("0.15")).add(new BigDecimal(1))).multiply((lv.divide(new BigDecimal(80)).add(new BigDecimal("0.8"))))));
         BigDecimal attack = lv.multiply(characters.getAttackGrowth().multiply(((characters.getStar().subtract(new BigDecimal(1))).multiply(new BigDecimal("0.15")).add(new BigDecimal(1))).multiply((lv.divide(new BigDecimal(80)).add(new BigDecimal("0.8"))))));
         BigDecimal speed = lv.multiply(characters.getSpeedGrowth().multiply(((characters.getStar().subtract(new BigDecimal(1))).multiply(new BigDecimal("0.15")).add(new BigDecimal(1))).multiply((lv.divide(new BigDecimal(80)).add(new BigDecimal("0.8"))))));
+        // 飞升加成：每级flyup增加3%属性
+        if (Xtool.isNotNull(characters.getFlyup())){
+            BigDecimal flyupRate = new BigDecimal("1").add(new BigDecimal(characters.getFlyup()).multiply(new BigDecimal("0.03")));
+            maxHp = maxHp.multiply(flyupRate);
+            attack = attack.multiply(flyupRate);
+            speed = speed.multiply(flyupRate);
+        }
         character.setHp(maxHp.intValue());
         character.setStar(characters.getStar());
         character.setMaxHp(maxHp.intValue());
@@ -11456,8 +11520,10 @@ public class GameServiceServiceImpl implements GameServiceService {
 
             // 如果文件内容为空，查询数据库
             if (Xtool.isNull(fileContent)) {
-                GameFight gameFight = gameFightMapper.selectById(battleId);
-                fileContent= gameFight.getFightter();
+                List<GameFight> gameFight = gameFightMapper.selectList(new LambdaQueryWrapper<GameFight>().eq(GameFight::getId, Long.parseLong(battleId)));
+                if(Xtool.isNotNull(gameFight)){
+                    fileContent=gameFight.get(0).getFightter();
+                }
             }
 
             return fileContent;

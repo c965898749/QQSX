@@ -1,6 +1,7 @@
 package com.sy.controller.game;
 
 import com.sy.model.User;
+import com.sy.model.game.ChatMsg;
 import com.sy.model.game.GiftListItemVO;
 import com.sy.model.game.LevelUpResult;
 import com.sy.model.game.TokenDto;
@@ -11,6 +12,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 
 import javax.servlet.http.HttpServletRequest;
+import java.time.LocalDateTime;
+import java.util.Date;
 import java.util.List;
 
 @RestController
@@ -1910,4 +1913,22 @@ public class GameContoller {
             return baseResp;
         }
     }
+    // 保存消息存入Redis
+    @PostMapping("chatMsgSave")
+    @CrossOrigin
+    public BaseResp saveChatMsg(@RequestBody ChatMsg chatMsg) {
+        BaseResp baseResp = new BaseResp();
+        try {
+//            chatMsg.setMsgId(System.currentTimeMillis());
+            baseResp= gameServiceService.saveChatMsg(chatMsg);
+            return baseResp;
+        } catch (Exception e) {
+            e.printStackTrace();
+            baseResp.setSuccess(0);
+            return baseResp;
+        }
+
+    }
+
+
 }

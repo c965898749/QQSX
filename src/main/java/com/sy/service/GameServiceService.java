@@ -1,6 +1,7 @@
 package com.sy.service;
 
 import com.sy.model.User;
+import com.sy.model.game.ChatMsg;
 import com.sy.model.game.LevelUpResult;
 import com.sy.model.game.TokenDto;
 import com.sy.model.resp.BaseResp;
@@ -101,6 +102,7 @@ public interface GameServiceService {
     BaseResp videoList(TokenDto token, HttpServletRequest request) throws Exception;
     BaseResp savePlay(TokenDto token, HttpServletRequest request) throws Exception;
     BaseResp deleteVideo(TokenDto token, HttpServletRequest request) throws Exception;
+    BaseResp saveChatMsg(ChatMsg chatMsg) throws Exception;
     BaseResp friendAllList(TokenDto token, HttpServletRequest request) throws Exception;
     BaseResp invitationSend(TokenDto token, HttpServletRequest request) throws Exception;
     BaseResp invitationHandle(TokenDto token, HttpServletRequest request) throws Exception;
