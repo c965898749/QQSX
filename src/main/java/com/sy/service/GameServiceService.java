@@ -43,6 +43,7 @@ public interface GameServiceService {
     BaseResp dailyViewList(TokenDto token, HttpServletRequest request) throws Exception;
     BaseResp danChouEq(TokenDto token, HttpServletRequest request) throws Exception;
     BaseResp characteSell(TokenDto token, HttpServletRequest request) throws Exception;
+    BaseResp characterCS(TokenDto token, HttpServletRequest request) throws Exception;
     BaseResp messageList(TokenDto token, HttpServletRequest request) throws Exception;
     BaseResp duoMessageList(TokenDto token, HttpServletRequest request) throws Exception;
     BaseResp arenaMessageList(TokenDto token, HttpServletRequest request) throws Exception;

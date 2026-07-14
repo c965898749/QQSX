@@ -167,6 +167,20 @@ public class GameContoller {
         }
     }
 
+    @RequestMapping(value = "characterCS", method = RequestMethod.POST)
+    @CrossOrigin
+    public BaseResp characterCS(@RequestBody TokenDto token, HttpServletRequest request) {
+        BaseResp baseResp = new BaseResp();
+        try {
+            baseResp = gameServiceService.characterCS(token, request);
+            return baseResp;
+        } catch (Exception e) {
+            e.printStackTrace();
+            baseResp.setSuccess(0);
+            return baseResp;
+        }
+    }
+
     /**
      * 魂抽
      *

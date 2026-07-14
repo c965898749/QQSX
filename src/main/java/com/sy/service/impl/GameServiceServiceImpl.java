@@ -5446,6 +5446,48 @@ public class GameServiceServiceImpl implements GameServiceService {
         return baseResp;
     }
 
+    @Override
+    @Transactional
+    @NoRepeatSubmit(limitSeconds = 1)
+    public BaseResp characterCS(TokenDto token, HttpServletRequest request) throws Exception {
+        BaseResp baseResp = new BaseResp();
+        if (token == null || Xtool.isNull(token.getToken())) {
+            baseResp.setSuccess(0);
+            baseResp.setErrorMsg("登录过期");
+            return baseResp;
+        }
+//        String userId = (String) redisTemplate.opsForValue().get(token.getToken());
+        String userId = token.getUserId();
+        if (Xtool.isNull(userId)) {
+            baseResp.setSuccess(0);
+            baseResp.setErrorMsg("登录过期");
+            return baseResp;
+        }
+        Characters characters1 = charactersMapper.listById(userId, token.getId());
+        if (characters1 == null) {
+            baseResp.setErrorMsg("卡牌已不存在");
+            baseResp.setSuccess(0);
+            return baseResp;
+        }
+        if (!checkAndDeductFlyupDan(userId,38,new BigDecimal(characters1.getFlyup()),"")) {
+            baseResp.setSuccess(0);
+            baseResp.setErrorMsg("洗髓丹不足");
+            return baseResp;
+        }
+        characters1.setFlyup(0);
+        charactersMapper.updateByPrimaryKey(characters1);
+        List<Characters> nowCharactersList = charactersMapper.selectByUserId(Integer.parseInt(userId));
+        CardDto dto = new CardDto();
+        dto.setCharacters(nowCharactersList);
+        //卡池数量
+        baseResp.setSuccess(1);
+        Map map = new HashMap();
+        map.put("dto", dto);
+        baseResp.setData(map);
+        baseResp.setErrorMsg("重置成功");
+        return baseResp;
+    }
+
 
     @Override
     public BaseResp soulChou(TokenDto token, HttpServletRequest request) throws Exception {
