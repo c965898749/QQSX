@@ -804,7 +804,7 @@ public class GameContoller {
     }
 
     /**
-     * 夺取
+     * 夺取，抢夺
      *
      * @param token
      * @param request

@@ -5469,12 +5469,119 @@ public class GameServiceServiceImpl implements GameServiceService {
             baseResp.setSuccess(0);
             return baseResp;
         }
+        if (characters1.getFlyup() == 0) {
+            baseResp.setErrorMsg("未飞升");
+            baseResp.setSuccess(0);
+            return baseResp;
+        }
         if (!checkAndDeductFlyupDan(userId,38,new BigDecimal(characters1.getFlyup()),"")) {
             baseResp.setSuccess(0);
             baseResp.setErrorMsg("洗髓丹不足");
             return baseResp;
         }
+        // 从缓存获取卡牌配置
+        Card card = GameConfigCache.getCard(token.getId());
+        if (card == null) {
+            throw new Exception("服务器异常联系管理员");
+        }
+        // 从缓存获取卡牌经验配置
+        List<QqCardExp> qqCardExpList = GameConfigCache.getQqCardExpList();
+        int flyupExp = 0;
+        if (characters1.getLv() > 1) {
+            for (int level = 1; level < characters1.getLv(); level++) {
+                int finalLevel = level;
+                QqCardExp expConfig = qqCardExpList.stream()
+                        .filter(c -> card.getStar().compareTo(new BigDecimal(c.getUpgradeType())) == 0 && c.getLevel() == finalLevel)
+                        .findFirst()
+                        .orElse(null);
+                if (expConfig != null) {
+                    flyupExp += expConfig.getUpgradeExp();
+                }
+            }
+        }
+        int cadExp = characters1.getExp();
+        // 总溢出经验 = 飞升后投入的经验 + 当前溢出经验
+        int totalOverflowExp = flyupExp + cadExp;
+        if (totalOverflowExp > 5000) {
+            BigDecimal num = new BigDecimal(totalOverflowExp)
+                    .multiply(new BigDecimal("0.2"))
+                    .divide(BigDecimal.valueOf(5000), 0, RoundingMode.CEILING);
+            // 计算剩余经验
+            // 满级奖励：魂力宝珠（ID:105）
+            Characters characters2 = charactersMapper.listById(userId, "105");
+
+            if (characters2 != null) {
+                // 已有卡牌 → 叠加
+                characters2.setStackCount(characters2.getStackCount() + num.intValue());
+                charactersMapper.updateByPrimaryKey(characters2);
+            } else {
+                // 没有卡牌 → 新建（这里原来的代码严重错误！已修复）
+                // 从缓存获取卡牌配置
+                Card card2 = GameConfigCache.getCard("105");
+                if (card2 == null) {
+                    baseResp.setErrorMsg("服务器异常，请联系管理员");
+                    baseResp.setSuccess(0);
+                    return baseResp;
+                }
+                Characters newChar = new Characters();
+                newChar.setId("105");
+                newChar.setLv(1);
+                newChar.setUserId(Integer.parseInt(userId));
+                newChar.setStar(BigDecimal.ONE);
+                newChar.setMaxLv(CardMaxLevelUtils.getMaxLevel(card2.getName(), card2.getStar().doubleValue()));
+
+                // 计算数量（修复null指针核心）
+                newChar.setStackCount(num.intValue() - 1); // 用newChar 不是 characters1！
+
+                charactersMapper.insert(newChar);
+            }
+        }
+        // 5.3 飞升丹校验（抽取成方法，避免重复代码）
+        int itemId;
+        switch (characters1.getProfession()) {
+            case "武圣":
+                itemId = 21;
+                break;
+            case "神将":
+                itemId = 23;
+                break;
+            default:
+                itemId = 22; // 修复仙灵item_id错误
+                break;
+        }
+        List<QqShenxianFlyup> qqShenxianFlyupList = GameConfigCache.getShenxianFlyupList();
+        List<QqShenxianFlyup> qqShenxianFlyups = qqShenxianFlyupList.stream()
+                .filter(x -> x.getFlyupTimes() == characters1.getFlyup())
+                .collect(Collectors.toList());
+        if (CollectionUtils.isEmpty(qqShenxianFlyups)) { // 使用Spring的CollectionUtils做空判断
+            baseResp.setSuccess(0);
+            baseResp.setErrorMsg("飞升配置不存在");
+            return baseResp;
+        }
+        QqShenxianFlyup flyup = qqShenxianFlyups.get(0);
+        BigDecimal count =flyup.getTotalConsume().multiply(new BigDecimal("0.2"));
+        Map<String, Object> map2 = new HashMap<>();
+        map2.put("user_id", userId);
+        map2.put("item_id", itemId);
+        map2.put("is_delete", 0);
+        List<GamePlayerBag> playerBags = gamePlayerBagMapper.selectByMap(map2);
+        if (Xtool.isNotNull(playerBags)) {
+            GamePlayerBag playerBag2 = playerBags.get(0);
+            playerBag2.setItemCount(playerBag2.getItemCount().add(count));
+            gamePlayerBagMapper.updateById(playerBag2);
+        } else {
+            GamePlayerBag playerBag2 = new GamePlayerBag();
+            playerBag2.setUserId(Integer.parseInt(userId));
+            playerBag2.setItemCount(count);
+            playerBag2.setGridIndex(1);
+            playerBag2.setItemId(itemId);
+            gamePlayerBagMapper.insert(playerBag2);
+        }
+        characters1.setLv(1);
+        int baseMaxLv = CardMaxLevelUtils.getMaxLevel(card.getName(), card.getStar().doubleValue());
+        characters1.setExp(5);
         characters1.setFlyup(0);
+        characters1.setMaxLv(baseMaxLv);
         charactersMapper.updateByPrimaryKey(characters1);
         List<Characters> nowCharactersList = charactersMapper.selectByUserId(Integer.parseInt(userId));
         CardDto dto = new CardDto();
