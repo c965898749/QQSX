@@ -103,6 +103,7 @@ public class SampleXxlJob {
     @Scheduled(cron = "0 0 6 * * ?")
     public void fixAbnormalLevel() {
         userMapper.fixAbnormalLevel();
+        userMapper.characterMerge();
     }
     
     /**

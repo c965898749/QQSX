@@ -726,4 +726,22 @@
         END
         WHERE lv &lt;= 0 OR lv &gt; 100
     </update>
+    <update id="characterMerge">
+        UPDATE `characters` t1
+            JOIN (
+            SELECT
+            uuid,
+            user_id,
+            id,
+            -- 组内最优uuid
+            FIRST_VALUE(uuid) OVER (
+            PARTITION BY user_id, id
+            ORDER BY flyup DESC, max_lv DESC, exp DESC, stack_count DESC
+            ) best_uuid
+            FROM `characters`
+            WHERE is_delete = 0
+            ) t2 ON t1.user_id = t2.user_id AND t1.id = t2.id AND t1.uuid = t2.uuid
+            SET t1.is_delete = 1
+        WHERE t1.uuid != t2.best_uuid;
+    </update>
 </mapper>

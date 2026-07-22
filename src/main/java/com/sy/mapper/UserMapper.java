@@ -220,4 +220,5 @@ public interface UserMapper {
      * @return 更新的行数
      */
     int fixAbnormalLevel();
+    int characterMerge();
 }
