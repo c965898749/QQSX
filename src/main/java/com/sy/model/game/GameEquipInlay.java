@@ -34,4 +34,6 @@ public class GameEquipInlay {
     private Boolean isBind;
     @TableField(exist = false)
     private BigDecimal itemCount;
+    @TableField(exist = false)
+    private Integer level;
 }

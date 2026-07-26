@@ -17,4 +17,6 @@ public class CraftEq {
     private String type;
     @TableField("icon")
     private String icon;
+    @TableField("level")
+    private int level;
 }

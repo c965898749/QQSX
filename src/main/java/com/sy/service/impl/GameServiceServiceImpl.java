@@ -9500,6 +9500,11 @@ public class GameServiceServiceImpl implements GameServiceService {
         }
         List<CraftEq> craftEqList = GameConfigCache.getAllCraftEqs();
         List<Integer> itemIds=craftEqList.stream().filter(x->token.getStr().equals(x.getType())).map(x->x.getItemId()).collect(Collectors.toList());
+        if (Xtool.isNull(itemIds)){
+            baseResp.setSuccess(0);
+            baseResp.setErrorMsg("暂未开放");
+            return baseResp;
+        }
         List<GamePlayerBag> playerBags = gamePlayerBagMapper.selectList(new LambdaQueryWrapper<GamePlayerBag>()
                 .eq(GamePlayerBag::getUserId, Integer.parseInt(userId)).eq(GamePlayerBag::getIsDelete,0).in(GamePlayerBag::getItemId,itemIds));
         List<GameEquipInlay> map = new ArrayList<>();
@@ -10039,6 +10044,82 @@ public class GameServiceServiceImpl implements GameServiceService {
         //TODO 装备属性
         if (Xtool.isNotNull(characters.getEqCharactersList())) {
             List<EqCharacters> eqCharacters = characters.getEqCharactersList();
+            List<CraftEq> craftEqList = GameConfigCache.getAllCraftEqs();
+            for (EqCharacters eqCharacter : eqCharacters) {
+                if (Xtool.isNotNull(eqCharacter.getGemList())){
+                    List<GameEquipInlay> gemList=eqCharacter.getGemList();
+                    if (eqCharacter.getWlAtk()>0){
+                        List<Integer> itemIds = gemList.stream()
+                                .filter(gem -> gem.getItemId()<=88).map(GameEquipInlay::getItemId)
+                                .collect(Collectors.toList());
+                        // 当前装备上所有太阳石总等级
+                        int gemLv = craftEqList.stream()
+                                .filter(inlay -> itemIds.contains(inlay.getItemId()))
+                                .mapToInt(CraftEq::getLevel)
+                                .sum();
+                        double rate = 1 + gemLv * 0.01;
+                        eqCharacter.setWlAtk((int) Math.round(eqCharacter.getWlAtk() * rate));
+                    }
+                    if (1==1){
+                        List<Integer> itemIds = gemList.stream()
+                                .filter(gem -> gem.getItemId()<=248&&gem.getItemId()>88).map(GameEquipInlay::getItemId)
+                                .collect(Collectors.toList());
+                        // 当前装备上所有太阳石总等级
+                        int gemLv = craftEqList.stream()
+                                .filter(inlay -> itemIds.contains(inlay.getItemId()))
+                                .mapToInt(CraftEq::getLevel)
+                                .sum();
+                        double rate = 1 + gemLv * 0.01;
+                        if (eqCharacter.getHyDef()>0){
+                            eqCharacter.setHyDef((int) Math.round(eqCharacter.getHyDef() * rate));
+                        }
+                        if (eqCharacter.getDsDef()>0){
+                            eqCharacter.setDsDef((int) Math.round(eqCharacter.getDsDef() * rate));
+                        }
+                    }
+                    if (1==1){
+                        List<Integer> itemIds = gemList.stream()
+                                .filter(gem -> gem.getItemId()<=298&&gem.getItemId()>248).map(GameEquipInlay::getItemId)
+                                .collect(Collectors.toList());
+                        // 当前装备上所有太阳石总等级
+                        int gemLv = craftEqList.stream()
+                                .filter(inlay -> itemIds.contains(inlay.getItemId()))
+                                .mapToInt(CraftEq::getLevel)
+                                .sum();
+                        double rate = 1 + gemLv * 0.01;
+                        if (eqCharacter.getHyAtk()>0){
+                            eqCharacter.setHyAtk((int) Math.round(eqCharacter.getHyAtk() * rate));
+                        }
+                        if (eqCharacter.getDsAtk()>0){
+                            eqCharacter.setDsAtk((int) Math.round(eqCharacter.getDsAtk() * rate));
+                        }
+                    }
+                    if (eqCharacter.getZlDef()>0){
+                        List<Integer> itemIds = gemList.stream()
+                                .filter(gem -> gem.getItemId()<=348&&gem.getItemId()>298).map(GameEquipInlay::getItemId)
+                                .collect(Collectors.toList());
+                        // 当前装备上所有太阳石总等级
+                        int gemLv = craftEqList.stream()
+                                .filter(inlay -> itemIds.contains(inlay.getItemId()))
+                                .mapToInt(CraftEq::getLevel)
+                                .sum();
+                        double rate = 1 + gemLv * 0.01;
+                        eqCharacter.setZlDef((int) Math.round(eqCharacter.getZlDef() * rate));
+                    }
+                    if (eqCharacter.getWlDef()>0){
+                        List<Integer> itemIds = gemList.stream()
+                                .filter(gem -> gem.getItemId()<=398&&gem.getItemId()>348).map(GameEquipInlay::getItemId)
+                                .collect(Collectors.toList());
+                        // 当前装备上所有太阳石总等级
+                        int gemLv = craftEqList.stream()
+                                .filter(inlay -> itemIds.contains(inlay.getItemId()))
+                                .mapToInt(CraftEq::getLevel)
+                                .sum();
+                        double rate = 1 + gemLv * 0.01;
+                        eqCharacter.setWlDef((int) Math.round(eqCharacter.getWlDef() * rate));
+                    }
+                }
+            }
             //攻击
             character.setWlAtk(eqCharacters.stream().map(EqCharacters::getWlAtk).mapToInt(wlAtk -> Objects.isNull(wlAtk) ? 0 : wlAtk).sum());
             character.setAttack(character.getAttack() + character.getWlAtk());
