@@ -1944,5 +1944,42 @@ public class GameContoller {
 
     }
 
-
+    /**
+     * 宝石列表
+     * @param token
+     * @param request
+     * @return
+     */
+    @PostMapping("bosList")
+    @CrossOrigin
+    public BaseResp bosList(@RequestBody TokenDto token, HttpServletRequest request) {
+        BaseResp baseResp = new BaseResp();
+        try {
+            baseResp = gameServiceService.bosList(token, request);
+            return baseResp;
+        } catch (Exception e) {
+            e.printStackTrace();
+            baseResp.setSuccess(0);
+            return baseResp;
+        }
+    }
+    /**
+     * 宝石列表
+     * @param token
+     * @param request
+     * @return
+     */
+    @PostMapping("toggleGem")
+    @CrossOrigin
+    public BaseResp toggleGem(@RequestBody TokenDto token, HttpServletRequest request) {
+        BaseResp baseResp = new BaseResp();
+        try {
+            baseResp = gameServiceService.toggleGem(token, request);
+            return baseResp;
+        } catch (Exception e) {
+            e.printStackTrace();
+            baseResp.setSuccess(0);
+            return baseResp;
+        }
+    }
 }

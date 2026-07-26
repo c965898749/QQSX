@@ -8,6 +8,8 @@ import lombok.Data;
 
 import java.math.BigDecimal;
 import java.util.Date;
+import java.util.List;
+
 @Data
 @TableName("eq_characters")
 public class EqCharacters {
@@ -77,4 +79,6 @@ public class EqCharacters {
     private Integer fdDef;
     @TableField(exist = false)
     private Integer zlDef;
+    @TableField(exist = false)
+    private List<GameEquipInlay> gemList;
 }

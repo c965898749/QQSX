@@ -1,0 +1,145 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.sy.mapper.game.GameEquipInlayMapper">
+  <resultMap id="BaseResultMap" type="com.sy.model.game.GameEquipInlay">
+    <constructor>
+      <idArg column="id" javaType="java.lang.Integer" jdbcType="INTEGER" />
+      <arg column="user_id" javaType="java.lang.Integer" jdbcType="INTEGER" />
+      <arg column="equip_unique_id" javaType="java.lang.Integer" jdbcType="INTEGER" />
+      <arg column="slot_index" javaType="java.lang.Byte" jdbcType="TINYINT" />
+      <arg column="item_id" javaType="java.lang.Integer" jdbcType="INTEGER" />
+      <arg column="extra_attr" javaType="java.lang.String" jdbcType="VARCHAR" />
+      <arg column="create_time" javaType="java.util.Date" jdbcType="TIMESTAMP" />
+      <arg column="update_time" javaType="java.util.Date" jdbcType="TIMESTAMP" />
+      <arg column="icon" javaType="java.lang.String" jdbcType="VARCHAR" />
+    </constructor>
+  </resultMap>
+  <sql id="Base_Column_List">
+    id, user_id, equip_unique_id, slot_index, item_id, extra_attr, create_time, update_time, 
+    icon
+  </sql>
+  <select id="selectByPrimaryKey" parameterType="java.lang.Integer" resultMap="BaseResultMap">
+    select 
+    <include refid="Base_Column_List" />
+    from game_equip_inlay
+    where id = #{id,jdbcType=INTEGER}
+  </select>
+  <delete id="deleteByPrimaryKey" parameterType="java.lang.Integer">
+    delete from game_equip_inlay
+    where id = #{id,jdbcType=INTEGER}
+  </delete>
+  <insert id="insert" parameterType="com.sy.model.game.GameEquipInlay">
+    insert into game_equip_inlay (id, user_id, equip_unique_id, 
+      slot_index, item_id, extra_attr, 
+      create_time, update_time, icon
+      )
+    values (#{id,jdbcType=INTEGER}, #{userId,jdbcType=INTEGER}, #{equipUniqueId,jdbcType=INTEGER}, 
+      #{slotIndex,jdbcType=TINYINT}, #{itemId,jdbcType=INTEGER}, #{extraAttr,jdbcType=VARCHAR}, 
+      #{createTime,jdbcType=TIMESTAMP}, #{updateTime,jdbcType=TIMESTAMP}, #{icon,jdbcType=VARCHAR}
+      )
+  </insert>
+  <insert id="insertSelective" parameterType="com.sy.model.game.GameEquipInlay">
+    insert into game_equip_inlay
+    <trim prefix="(" suffix=")" suffixOverrides=",">
+      <if test="id != null">
+        id,
+      </if>
+      <if test="userId != null">
+        user_id,
+      </if>
+      <if test="equipUniqueId != null">
+        equip_unique_id,
+      </if>
+      <if test="slotIndex != null">
+        slot_index,
+      </if>
+      <if test="itemId != null">
+        item_id,
+      </if>
+      <if test="extraAttr != null">
+        extra_attr,
+      </if>
+      <if test="createTime != null">
+        create_time,
+      </if>
+      <if test="updateTime != null">
+        update_time,
+      </if>
+      <if test="icon != null">
+        icon,
+      </if>
+    </trim>
+    <trim prefix="values (" suffix=")" suffixOverrides=",">
+      <if test="id != null">
+        #{id,jdbcType=INTEGER},
+      </if>
+      <if test="userId != null">
+        #{userId,jdbcType=INTEGER},
+      </if>
+      <if test="equipUniqueId != null">
+        #{equipUniqueId,jdbcType=INTEGER},
+      </if>
+      <if test="slotIndex != null">
+        #{slotIndex,jdbcType=TINYINT},
+      </if>
+      <if test="itemId != null">
+        #{itemId,jdbcType=INTEGER},
+      </if>
+      <if test="extraAttr != null">
+        #{extraAttr,jdbcType=VARCHAR},
+      </if>
+      <if test="createTime != null">
+        #{createTime,jdbcType=TIMESTAMP},
+      </if>
+      <if test="updateTime != null">
+        #{updateTime,jdbcType=TIMESTAMP},
+      </if>
+      <if test="icon != null">
+        #{icon,jdbcType=VARCHAR},
+      </if>
+    </trim>
+  </insert>
+  <update id="updateByPrimaryKeySelective" parameterType="com.sy.model.game.GameEquipInlay">
+    update game_equip_inlay
+    <set>
+      <if test="userId != null">
+        user_id = #{userId,jdbcType=INTEGER},
+      </if>
+      <if test="equipUniqueId != null">
+        equip_unique_id = #{equipUniqueId,jdbcType=INTEGER},
+      </if>
+      <if test="slotIndex != null">
+        slot_index = #{slotIndex,jdbcType=TINYINT},
+      </if>
+      <if test="itemId != null">
+        item_id = #{itemId,jdbcType=INTEGER},
+      </if>
+      <if test="extraAttr != null">
+        extra_attr = #{extraAttr,jdbcType=VARCHAR},
+      </if>
+      <if test="createTime != null">
+        create_time = #{createTime,jdbcType=TIMESTAMP},
+      </if>
+      <if test="updateTime != null">
+        update_time = #{updateTime,jdbcType=TIMESTAMP},
+      </if>
+      <if test="icon != null">
+        icon = #{icon,jdbcType=VARCHAR},
+      </if>
+    </set>
+    where id = #{id,jdbcType=INTEGER}
+  </update>
+  <update id="updateByPrimaryKey" parameterType="com.sy.model.game.GameEquipInlay">
+    update game_equip_inlay
+    set user_id = #{userId,jdbcType=INTEGER},
+      equip_unique_id = #{equipUniqueId,jdbcType=INTEGER},
+      slot_index = #{slotIndex,jdbcType=TINYINT},
+      item_id = #{itemId,jdbcType=INTEGER},
+      extra_attr = #{extraAttr,jdbcType=VARCHAR},
+      create_time = #{createTime,jdbcType=TIMESTAMP},
+      update_time = #{updateTime,jdbcType=TIMESTAMP},
+      icon = #{icon,jdbcType=VARCHAR}
+    where id = #{id,jdbcType=INTEGER}
+  </update>
+
+</mapper>

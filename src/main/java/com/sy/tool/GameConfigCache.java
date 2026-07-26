@@ -21,6 +21,9 @@ import java.util.stream.Collectors;
 public class GameConfigCache implements CommandLineRunner {
 
     @Autowired
+    private CraftEqMapper craftEqMapper;
+
+    @Autowired
     private CardMapper cardMapper;
     
     @Autowired
@@ -134,7 +137,44 @@ public class GameConfigCache implements CommandLineRunner {
     // PVE副本奖励配置缓存 key: detailCode -> List<PveReward>
     private static final Map<String, List<PveReward>> PVE_REWARD_CACHE = new ConcurrentHashMap<>();
 
+    // 合成配方配置缓存 key: craftId
+    private static final Map<Integer, CraftEq> CRAFT_EQ_CACHE = new ConcurrentHashMap<>();
+
+
+
+
+
+
+    private void loadCraftEqCache() {
+        List<CraftEq> craftEqs = craftEqMapper.selectList(null);
+        if (craftEqs != null && !craftEqs.isEmpty()) {
+            for (CraftEq craftEq : craftEqs) {
+                if (craftEq.getId() != null) {
+                    CRAFT_EQ_CACHE.put(craftEq.getId(), craftEq);
+                }
+            }
+        }
+    }
+
+
+
+
     /**
+     * 获取合成装备配置
+     */
+    public static CraftEq getCraftEq(Integer craftEqId) {
+        return CRAFT_EQ_CACHE.get(craftEqId);
+    }
+
+    /**
+     * 获取所有合成装备配置
+     */
+    public static List<CraftEq> getAllCraftEqs() {
+        return CRAFT_EQ_CACHE.values().stream().toList();
+    }
+
+
+       /**
      * 获取卡牌配置
      */
     public static Card getCard(String cardId) {
@@ -377,7 +417,7 @@ public class GameConfigCache implements CommandLineRunner {
             loadPveDetailCache();
             loadPveBossDetailCache();
             loadPveRewardCache();
-            
+            loadCraftEqCache();
             log.info("========== 游戏配置数据加载完成 ==========");
             log.info("卡牌配置数量: {}", CARD_CACHE.size());
             log.info("角色配置数量: {}", CHARACTER_CONFIG_CACHE.size());
@@ -398,6 +438,7 @@ public class GameConfigCache implements CommandLineRunner {
             log.info("PVE副本详情配置数量: {}", PVE_DETAIL_CACHE.size());
             log.info("PVE副本Boss配置数量: {}", PVE_BOSS_DETAIL_CACHE.size());
             log.info("PVE副本奖励配置数量: {}", PVE_REWARD_CACHE.size());
+            log.info("装备宝石配置数量: {}", CRAFT_EQ_CACHE.size());
         } catch (Exception e) {
             log.error("加载游戏配置数据失败", e);
             throw e;
