@@ -3458,7 +3458,7 @@ public class GameServiceServiceImpl implements GameServiceService {
             baseResp.setSuccess(1);
             baseResp.setErrorMsg("发送成功");
             ValueOperations opsForValue = redisTemplate.opsForValue();
-            opsForValue.set(mail.getToEmails(), String.valueOf(idcode), 60, TimeUnit.SECONDS);
+            opsForValue.set(mail.getToEmails(), String.valueOf(idcode),  600, TimeUnit.SECONDS);
         } catch (MessagingException e) {
             baseResp.setSuccess(0);
             baseResp.setErrorMsg("邮件发送失败: " + e.getMessage());
@@ -7838,7 +7838,7 @@ public class GameServiceServiceImpl implements GameServiceService {
         } else if (n2 + 1 <= 6) {
             n2++;
             n3 = 1;
-        } else if (n1 + 1 <= 9) {
+        } else if (n1 + 1 <= 10) {
             n1++;
             n2 = 1;
             n3 = 1;
