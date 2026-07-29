@@ -56,6 +56,8 @@ public class EqCard {
     private Integer fdDef;
     @TableField("zl_def")
     private Integer zlDef;
+    @TableField("zl_atk")
+    private Integer zlAtk;
     @TableField(exist = false)
     private String img;
     @TableField(exist = false)

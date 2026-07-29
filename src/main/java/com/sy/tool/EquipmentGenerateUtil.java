@@ -29,7 +29,7 @@ public class EquipmentGenerateUtil {
     // 【核心更新】8个合法星级（新增4.5、5星）
     public static final Set<Double> ALLOW_STARS = new HashSet<>(Arrays.asList(1.0, 2.0,1.5, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0));
     // 阵营/职业（无改动）
-    public static final String[] CAMP_LIST = {"dark", "sacred"};
+    public static final String[] CAMP_LIST = {"dark","sacred","ordinary","nature","machine"};
     public static final String[] PROFESSION_LIST = {"武圣", "神将", "仙灵"};
 
     // 装备全配置：类型名、前缀、ID起始数、名称数组、总数量（完全匹配要求）
@@ -176,6 +176,7 @@ public class EquipmentGenerateUtil {
             case "飞弹": eqCard.setFdAtk(value); break;
             case "弹抗": eqCard.setFdDef(value); break;
             case "治愈": eqCard.setZlDef(value); break;
+            case "受愈": eqCard.setZlAtk(value); break;
         }
     }
 

@@ -80,5 +80,7 @@ public class EqCharacters {
     @TableField(exist = false)
     private Integer zlDef;
     @TableField(exist = false)
+    private Integer zlAtk;
+    @TableField(exist = false)
     private List<GameEquipInlay> gemList;
 }

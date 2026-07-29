@@ -11,12 +11,20 @@ public class EffectInstance {
     private int remainRound;        // 剩余回合
     private String casterId;          // 谁放的（A还是B）
 
+    private Boolean isSkill=false;          // 是否是技能效果
+    // ... 现有代码 ...
 
-    public EffectInstance(EffectType type, int value, int remainRound, String casterId) {
+
+    // 添加isSkill的getter方法
+    public Boolean getIsSkill() { return isSkill; }
+
+
+    public EffectInstance(EffectType type, int value, int remainRound, String casterId, Boolean isSkill) {
         this.type = type;
         this.value = value;
         this.remainRound = remainRound;
         this.casterId = casterId;
+        this.isSkill = isSkill;
     }
 
     // 每回合-1

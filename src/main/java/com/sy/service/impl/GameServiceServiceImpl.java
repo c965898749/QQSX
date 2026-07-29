@@ -396,6 +396,7 @@ public class GameServiceServiceImpl implements GameServiceService {
             eqCharacters.setDsDef(eqCharacters.getDsDef() * eqCharacters.getLv());
             eqCharacters.setFdDef(eqCharacters.getFdDef() * eqCharacters.getLv());
             eqCharacters.setZlDef(eqCharacters.getZlDef() * eqCharacters.getLv());
+            eqCharacters.setZlAtk(eqCharacters.getZlAtk() * eqCharacters.getLv());
         }
         return characterList;
     }
@@ -3795,6 +3796,7 @@ public class GameServiceServiceImpl implements GameServiceService {
             map2.put("ds_def", drawnCard.getDsAtk());
             map2.put("fd_def", drawnCard.getFdDef());
             map2.put("zl_def", drawnCard.getZlDef());
+            map2.put("zl_atk", drawnCard.getZlAtk());
             List<EqCard> eqCards = eqCardMapper.selectByMap(map2);
             if (Xtool.isNotNull(eqCards)) {
                 drawnCard.setId(eqCards.get(0).getId());
@@ -5378,6 +5380,7 @@ public class GameServiceServiceImpl implements GameServiceService {
         map2.put("ds_def", drawnCard.getDsAtk());
         map2.put("fd_def", drawnCard.getFdDef());
         map2.put("zl_def", drawnCard.getZlDef());
+        map2.put("zl_atk", drawnCard.getZlAtk());
         List<EqCard> eqCards = eqCardMapper.selectByMap(map2);
         if (Xtool.isNotNull(eqCards)) {
             drawnCard.setId(eqCards.get(0).getId());
@@ -10041,6 +10044,7 @@ public class GameServiceServiceImpl implements GameServiceService {
         character.setDsDef(0);
         character.setFdDef(0);
         character.setZlDef(0);
+        character.setZlAtk(0);
         //TODO 装备属性
         if (Xtool.isNotNull(characters.getEqCharactersList())) {
             List<EqCharacters> eqCharacters = characters.getEqCharactersList();
@@ -10118,6 +10122,18 @@ public class GameServiceServiceImpl implements GameServiceService {
                         double rate = 1 + gemLv * 0.01;
                         eqCharacter.setWlDef((int) Math.round(eqCharacter.getWlDef() * rate));
                     }
+                    if (eqCharacter.getZlAtk()>0){
+                        List<Integer> itemIds = gemList.stream()
+                                .filter(gem -> gem.getItemId()<=448&&gem.getItemId()>398).map(GameEquipInlay::getItemId)
+                                .collect(Collectors.toList());
+                        // 当前装备上所有太阳石总等级
+                        int gemLv = craftEqList.stream()
+                                .filter(inlay -> itemIds.contains(inlay.getItemId()))
+                                .mapToInt(CraftEq::getLevel)
+                                .sum();
+                        double rate = 1 + gemLv * 0.01;
+                        eqCharacter.setZlAtk((int) Math.round(eqCharacter.getZlAtk() * rate));
+                    }
                 }
             }
             //攻击
@@ -10131,6 +10147,7 @@ public class GameServiceServiceImpl implements GameServiceService {
             character.setDsDef(eqCharacters.stream().map(EqCharacters::getDsDef).mapToInt(dsDef -> Objects.isNull(dsDef) ? 0 : dsDef).sum());
             character.setFdDef(eqCharacters.stream().map(EqCharacters::getFdDef).mapToInt(fdDef -> Objects.isNull(fdDef) ? 0 : fdDef).sum());
             character.setZlDef(eqCharacters.stream().map(EqCharacters::getZlDef).mapToInt(zlDef -> Objects.isNull(zlDef) ? 0 : zlDef).sum());
+            character.setZlAtk(eqCharacters.stream().map(EqCharacters::getZlAtk).mapToInt(zlAtk -> Objects.isNull(zlAtk) ? 0 : zlAtk).sum());
         }
         //TODO 再叠加协同属性
         if (Xtool.isNotNull(charactersList)) {
@@ -10462,6 +10479,7 @@ public class GameServiceServiceImpl implements GameServiceService {
                     character.getDsDef(),
                     character.getFdDef(),
                     character.getZlDef(),
+                    character.getZlAtk(),
                     Xtool.isNotNull(characters.getFlyup()) ? characters.getFlyup() : 0, characters.getSex()));
             character.setUuid("A" + character.getId());
             copyCampA.add(character);
@@ -10482,6 +10500,7 @@ public class GameServiceServiceImpl implements GameServiceService {
                     character.getDsDef(),
                     character.getFdDef(),
                     character.getZlDef(),
+                    character.getZlAtk(),
                     Xtool.isNotNull(characters.getFlyup()) ? characters.getFlyup() : 0, characters.getSex()));
             character.setUuid("B" + character.getId());
             copyCampB.add(character);

@@ -49,6 +49,7 @@ public class Guardian {
     private int dsDef;
     private int fdDef;
     private int zlDef;
+    private int zlAtk;
     private int sex;
     private int flyup;
 
@@ -68,7 +69,7 @@ public class Guardian {
                     String name, Camp camp, int position, Profession profession, Race race,
                     int maxHp, int attack, int speed, int level, BigDecimal star,
                     int wlAtk, int hyAtk, int dsAtk, int fdAtk,
-                    int wlDef, int hyDef, int dsDef, int fdDef, int zlDef,int flyup,int sex) {
+                    int wlDef, int hyDef, int dsDef, int fdDef, int zlDef,int zlAtk,int flyup,int sex) {
         this.id = id;  // 初始化ID
         this.name = name;
         this.camp = camp;
@@ -95,6 +96,7 @@ public class Guardian {
         this.dsDef = dsDef;
         this.fdDef = fdDef;
         this.zlDef = zlDef;
+        this.zlAtk = zlAtk;
         this.sex = sex;
         this.flyup = flyup;
     }
@@ -135,14 +137,14 @@ public class Guardian {
 
         // 如果没有 → 直接加
         if (existing == null) {
-            effects.add(new EffectInstance(type, 1, totalRound, casterId));
+            effects.add(new EffectInstance(type, 1, totalRound, casterId, false));
             return;
         }
 
         // 如果有 → 比较回合：新回合更长才替换
         if (totalRound > existing.getRemainRound()) {
             effects.remove(existing);
-            effects.add(new EffectInstance(type, 1, totalRound, casterId));
+            effects.add(new EffectInstance(type, 1, totalRound, casterId, false));
         }
     }
     // ========== 新增：ID的GETTER/SETTER ==========
@@ -192,8 +194,12 @@ public class Guardian {
         return sum;
     }
 
+    public void addEffect(EffectType type, int value, int round, String casterId, Boolean isSkill) {
+        effects.add(new EffectInstance(type, value, round, casterId, isSkill));
+    }
+
     public void addEffect(EffectType type, int value, int round, String casterId) {
-        effects.add(new EffectInstance(type, value, round, casterId));
+        effects.add(new EffectInstance(type, value, round, casterId, false));
     }
 
     public void tickAllEffects() {
@@ -265,6 +271,7 @@ public class Guardian {
     public int getDsDef() { return dsDef; }
     public int getFdDef() { return fdDef; }
     public int getZlDef() { return zlDef; }
+    public int getZlAtk() { return zlAtk; }
     public int getSex() { return sex; }
 
     public void setWlAtk(int wlAtk) { this.wlAtk = wlAtk; }
@@ -276,6 +283,7 @@ public class Guardian {
     public void setDsDef(int dsDef) { this.dsDef = dsDef; }
     public void setFdDef(int fdDef) { this.fdDef = fdDef; }
     public void setZlDef(int zlDef) { this.zlDef = zlDef; }
+    public void setZlAtk(int zlAtk) { this.zlAtk = zlAtk; }
     public void setSex(int sex) { this.sex = sex; }
 
     public String getName() { return name; }

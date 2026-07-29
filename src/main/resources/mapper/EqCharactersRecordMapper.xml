@@ -25,7 +25,8 @@
         ec.camp,
         ec.introduce,
         ec.profession,
-        ec.zl_def
+        ec.zl_def,
+        ec.zl_atk,
          from eq_characters_record ecr
         LEFT JOIN eq_card ec on ec.id=ecr.id
         ORDER BY get_time desc LIMIT 100
