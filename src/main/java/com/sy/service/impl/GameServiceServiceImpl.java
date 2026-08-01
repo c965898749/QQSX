@@ -6,6 +6,7 @@ import com.alibaba.fastjson.JSONObject;
 import com.alibaba.fastjson.TypeReference;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.sy.controller.game.AliyunSmsHelper;
 import com.sy.mapper.game.*;
 import com.sy.mapper.UserMapper;
 import com.sy.model.DailyContentVO;
@@ -190,6 +191,10 @@ public class GameServiceServiceImpl implements GameServiceService {
     private LivelyGiftMapper livelyGiftMapper;
     @Resource
     private LivelyGiftRecordMapper livelyGiftRecordMapper;
+    @Autowired
+    private AliyunSmsHelper aliyunSmsHelper;
+//    @Autowired
+//    private ThreadPoolTaskExecutor threadPoolTaskExecutor;
     // 最大体力值
     private static final int MAX_STAMINA = 1500;
     // 每10分钟恢复1点体力
@@ -3312,9 +3317,14 @@ public class GameServiceServiceImpl implements GameServiceService {
             return baseResp;
         }
         if (redisTemplate.hasKey(to)) {
-            Long time = redisTemplate.getExpire(to, TimeUnit.MINUTES);
+            // 使用 TimeUnit.SECONDS 获取剩余秒数，和提示文字保持一致
+            Long remainSecond = redisTemplate.getExpire(to, TimeUnit.SECONDS);
+            // 兜底：防止-1永久key异常展示
+            if (remainSecond < 0) {
+                remainSecond = 0L;
+            }
             baseResp.setSuccess(0);
-            baseResp.setErrorMsg(time + "秒后重新发送邮件");
+            baseResp.setErrorMsg(remainSecond + "秒后重新发送邮件");
             return baseResp;
         }
         MailModel mail = new MailModel();
@@ -3353,6 +3363,42 @@ public class GameServiceServiceImpl implements GameServiceService {
         mail.setToEmails(to);
         mail.setSubject("YIMEM网站账号激活");
         baseResp = sendEmail(mail, idcode);
+        return baseResp;
+    }
+
+    @Override
+    public BaseResp mobilecode(TokenDto token, HttpServletRequest request) throws Exception {
+        String to = token.getStr();
+        BaseResp baseResp = new BaseResp();
+        // 添加 null 和空字符串检查
+        if (to == null || to.trim().isEmpty()) {
+            baseResp.setSuccess(0);
+            baseResp.setErrorMsg("手机号不能为空");
+            return baseResp;
+        }
+        if (redisTemplate.hasKey(to)) {
+            Long time = redisTemplate.getExpire(to, TimeUnit.SECONDS);
+            // 防极端-1兜底
+            if(time < 0) time = 0L;
+            baseResp.setSuccess(0);
+            baseResp.setErrorMsg(time + "秒后重新发送验证码");
+            return baseResp;
+        }
+//        MailModel mail = new MailModel();
+        int idcode = (int) (Math.random() * 1000000);
+        // 调用第三方短信发送服务
+//        threadPoolTaskExecutor.submit(() -> {
+            String signName = "阿里云短信测试";
+            String templateCode = "SMS_154950909";
+            String templateParam = String.format("{\"code\":\"%s\"}", idcode);
+            aliyunSmsHelper.sendMessage(signName, templateCode, to, templateParam);
+//        });
+
+        ValueOperations opsForValue = redisTemplate.opsForValue();
+        opsForValue.set(to, String.valueOf(idcode),  600, TimeUnit.SECONDS);
+
+        baseResp.setSuccess(1);
+        baseResp.setErrorMsg("发送成功");
         return baseResp;
     }
 

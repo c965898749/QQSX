@@ -192,7 +192,14 @@
       <artifactId>hutool-all</artifactId>
       <version>5.8.22</version>
     </dependency>
-    
+
+    <!-- 阿里云MNS SDK -->
+    <dependency>
+      <groupId>com.aliyun</groupId>
+      <artifactId>dysmsapi20170525</artifactId>
+      <!-- 请将 'the-latest-version' 替换为最新版本号：https://mvnrepository.com/artifact/com.aliyun/dysmsapi20170525 -->
+      <version>3.1.1</version>
+    </dependency>
     <!-- Baidu AI -->
     <dependency>
       <groupId>com.baidu.aip</groupId>

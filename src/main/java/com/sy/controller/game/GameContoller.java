@@ -1757,6 +1757,21 @@ public class GameContoller {
         }
     }
 
+    //发送手机验证码
+    @PostMapping("sendVerificationMobileCode")
+    @CrossOrigin
+    public BaseResp mobilecode(@RequestBody TokenDto token, HttpServletRequest request) {
+        BaseResp baseResp = new BaseResp();
+        try {
+            baseResp = gameServiceService.mobilecode(token, request);
+            return baseResp;
+        } catch (Exception e) {
+            e.printStackTrace();
+            baseResp.setSuccess(0);
+            return baseResp;
+        }
+    }
+
     @PostMapping("getUserMine")
     @CrossOrigin
     public BaseResp getUserMine(@RequestBody TokenDto token, HttpServletRequest request) {
