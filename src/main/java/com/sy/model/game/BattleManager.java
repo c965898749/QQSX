@@ -474,45 +474,50 @@ public class BattleManager {
             }
 
         }
+        if (1==1){
+            Guardian guardian=campA.stream().filter(g->g.getName().equals("玄武")&&!g.isDead()).findFirst().orElse(null);
+            // 托塔天王仙塔庇护
+            if (guardian != null) {
+                int[] skillLevel = CardSkillLevelUtil.calculateSkillLevels(guardian.getLevel(), guardian.getStar().doubleValue());
+                if (skillLevel[1] > 0) {
+                    int heal = (int)(guardian.getMaxHp()*0.4);
+                    guardian.setCurrentHp(guardian.getCurrentHp() + heal);
+                    addLog("愈合",
+                            guardian.getId(),
+                            guardian.getMaxHp(), guardian.getCurrentHp(),
+                            heal,
+                            guardian.isOnField(),
+                            guardian.getId(),
+                            guardian.getMaxHp(), guardian.getCurrentHp(),
+                            heal, guardian.isOnField(), EffectType.HEAL,
+                            DamageType.MAGIC,
+                            "+" + heal);
+                }
 
-        // 托塔天王仙塔庇护
-        if (fieldA != null && !fieldA.isDead() && fieldA.getName().equals("玄武")) {
-            int[] skillLevel = CardSkillLevelUtil.calculateSkillLevels(fieldA.getLevel(), fieldA.getStar().doubleValue());
-            if (skillLevel[1] > 0) {
-                int heal = 25 * skillLevel[1]+ fieldA.getZlAtk();
-                fieldA.setCurrentHp(fieldA.getCurrentHp() + heal);
-                addLog("静岳",
-                        fieldA.getId(),
-                        fieldA.getMaxHp(), fieldA.getCurrentHp(),
-                        heal,
-                        fieldA.isOnField(),
-                        fieldA.getId(),
-                        fieldA.getMaxHp(), fieldA.getCurrentHp(),
-                        heal, fieldA.isOnField(), EffectType.HEAL,
-                        DamageType.MAGIC,
-                        "+" + heal);
             }
-
         }
 
-        if (fieldB != null && !fieldB.isDead() && fieldB.getName().equals("托塔天王")) {
-            int[] skillLevel = CardSkillLevelUtil.calculateSkillLevels(fieldB.getLevel(), fieldB.getStar().doubleValue());
-            if (skillLevel[1] > 0) {
-                int heal = 25 * skillLevel[1]+ fieldB.getZlAtk();
-                fieldB.setCurrentHp(fieldB.getCurrentHp() + heal);
+        if (1==1){
+            Guardian guardian=campB.stream().filter(g->g.getName().equals("玄武")&&!g.isDead()).findFirst().orElse(null);
+            // 托塔天王仙塔庇护
+            if (guardian != null) {
+                int[] skillLevel = CardSkillLevelUtil.calculateSkillLevels(guardian.getLevel(), guardian.getStar().doubleValue());
+                if (skillLevel[1] > 0) {
+                    int heal = (int)(guardian.getMaxHp()*0.4);
+                    guardian.setCurrentHp(guardian.getCurrentHp() + heal);
+                    addLog("愈合",
+                            guardian.getId(),
+                            guardian.getMaxHp(), guardian.getCurrentHp(),
+                            heal,
+                            guardian.isOnField(),
+                            guardian.getId(),
+                            guardian.getMaxHp(), guardian.getCurrentHp(),
+                            heal, guardian.isOnField(), EffectType.HEAL,
+                            DamageType.MAGIC,
+                            "+" + heal);
+                }
 
-                addLog("仙塔庇护",
-                        fieldB.getId(),
-                        fieldB.getMaxHp(), fieldB.getCurrentHp(),
-                        heal,
-                        fieldB.isOnField(),
-                        fieldB.getId(),
-                        fieldB.getMaxHp(), fieldB.getCurrentHp(),
-                        heal, fieldB.isOnField(), EffectType.HEAL,
-                        DamageType.MAGIC,
-                        "+" + heal);
             }
-
         }
         List<Guardian> allUnits = new ArrayList<>();
         allUnits.addAll(campA);
@@ -709,12 +714,12 @@ public class BattleManager {
         List<Guardian> defenders = defender.getCamp() == Camp.A ?
                 campA.stream().filter(g -> !g.isDead()&&g.getName().equals("玄武")).collect(Collectors.toList()) :
                 campB.stream().filter(g -> !g.isDead()&&g.getName().equals("玄武")).collect(Collectors.toList());
-            if (Xtool.isNotNull(defenders)){
+            if (Xtool.isNotNull(defenders)&&!defender.getName().equals("玄武")&&effectType == EffectType.DAMAGE && defender.isOnField()){
                 Guardian guardian=defenders.get(0);
                 int[] skillLevelC = CardSkillLevelUtil.calculateSkillLevels(guardian.getLevel(), guardian.getStar().doubleValue());
                 if (skillLevelC[1]>0){
                     guardian.setCurrentHp(guardian.getCurrentHp() - burnDamage);
-                    addLog("静岳",
+                    addLog("守卫",
                             guardian.getId(),
                             guardian.getMaxHp(),
                             guardian.getCurrentHp(),
@@ -1089,7 +1094,7 @@ public class BattleManager {
                 if (1 == 1) {
                     Guardian enemy = guardian.getCamp() == Camp.A ? fieldB : fieldA;
                     if (enemy != null) {
-                        int damage = (int) (enemy.getCurrentHp() * 0.04 * skillLevel[0]);
+                        int damage = (int) (enemy.getMaxHp() * 0.04 * skillLevel[0]);
                         Integer logIndex=battleLogs.size();
                         damage=triggerOnAttackedSkills(enemy,damage,EffectType.DAMAGE);
                         enemy.setCurrentHp(enemy.getCurrentHp() - damage);
@@ -6359,7 +6364,7 @@ public class BattleManager {
             allUnits.addAll(campB);
 
             List<Guardian> aliveUnits = allUnits.stream()
-                    .filter(g -> !g.isDead()&&!g.isFixedSoul())
+                    .filter(g -> g.isDead()&&!g.isFixedSoul())
                     .collect(Collectors.toList());
             if (ProbabilityBooleanUtils.randomByProbability(1.0 * skillLevel[0])&&Xtool.isNotNull(aliveUnits)) {
                 Guardian randomGuardian = getRandomAliveGuardian(aliveUnits);
@@ -6413,7 +6418,7 @@ public class BattleManager {
             allUnits.addAll(campB);
 
             List<Guardian> aliveUnits = allUnits.stream()
-                    .filter(g -> !g.isDead()&&!g.isFixedSoul())
+                    .filter(g -> g.isDead()&&!g.isFixedSoul())
                     .collect(Collectors.toList());
             if (ProbabilityBooleanUtils.randomByProbability(1.0 * skillLevel[0])&&Xtool.isNotNull(aliveUnits)) {
                 Guardian randomGuardian = getRandomAliveGuardian(aliveUnits);
