@@ -474,6 +474,46 @@ public class BattleManager {
             }
 
         }
+
+        // 托塔天王仙塔庇护
+        if (fieldA != null && !fieldA.isDead() && fieldA.getName().equals("玄武")) {
+            int[] skillLevel = CardSkillLevelUtil.calculateSkillLevels(fieldA.getLevel(), fieldA.getStar().doubleValue());
+            if (skillLevel[1] > 0) {
+                int heal = 25 * skillLevel[1]+ fieldA.getZlAtk();
+                fieldA.setCurrentHp(fieldA.getCurrentHp() + heal);
+                addLog("静岳",
+                        fieldA.getId(),
+                        fieldA.getMaxHp(), fieldA.getCurrentHp(),
+                        heal,
+                        fieldA.isOnField(),
+                        fieldA.getId(),
+                        fieldA.getMaxHp(), fieldA.getCurrentHp(),
+                        heal, fieldA.isOnField(), EffectType.HEAL,
+                        DamageType.MAGIC,
+                        "+" + heal);
+            }
+
+        }
+
+        if (fieldB != null && !fieldB.isDead() && fieldB.getName().equals("托塔天王")) {
+            int[] skillLevel = CardSkillLevelUtil.calculateSkillLevels(fieldB.getLevel(), fieldB.getStar().doubleValue());
+            if (skillLevel[1] > 0) {
+                int heal = 25 * skillLevel[1]+ fieldB.getZlAtk();
+                fieldB.setCurrentHp(fieldB.getCurrentHp() + heal);
+
+                addLog("仙塔庇护",
+                        fieldB.getId(),
+                        fieldB.getMaxHp(), fieldB.getCurrentHp(),
+                        heal,
+                        fieldB.isOnField(),
+                        fieldB.getId(),
+                        fieldB.getMaxHp(), fieldB.getCurrentHp(),
+                        heal, fieldB.isOnField(), EffectType.HEAL,
+                        DamageType.MAGIC,
+                        "+" + heal);
+            }
+
+        }
         List<Guardian> allUnits = new ArrayList<>();
         allUnits.addAll(campA);
         allUnits.addAll(campB);
@@ -666,6 +706,57 @@ public class BattleManager {
                     break;
             }
             //触发场下技能
+        List<Guardian> defenders = defender.getCamp() == Camp.A ?
+                campA.stream().filter(g -> !g.isDead()&&g.getName().equals("玄武")).collect(Collectors.toList()) :
+                campB.stream().filter(g -> !g.isDead()&&g.getName().equals("玄武")).collect(Collectors.toList());
+            if (Xtool.isNotNull(defenders)){
+                Guardian guardian=defenders.get(0);
+                int[] skillLevelC = CardSkillLevelUtil.calculateSkillLevels(guardian.getLevel(), guardian.getStar().doubleValue());
+                if (skillLevelC[1]>0){
+                    guardian.setCurrentHp(guardian.getCurrentHp() - burnDamage);
+                    addLog("静岳",
+                            guardian.getId(),
+                            guardian.getMaxHp(),
+                            guardian.getCurrentHp(),
+                            0,
+                            guardian.isOnField(),
+                            guardian.getId(),
+                            guardian.getMaxHp(),
+                            guardian.getCurrentHp(),
+                            burnDamage,
+                            guardian.isOnField(),
+                            EffectType.DAMAGE,
+                            DamageType.TRUE,
+                            "-" + burnDamage);
+                    Map<String, TargetBattleData> deadUnits = new HashMap<>();
+
+                    if (guardian.getCurrentHp() <= 0) {
+                        guardian.setDead(true);
+                        guardian.setOnField(false);
+                        TargetBattleData data = new TargetBattleData(guardian.getMaxHp(), guardian.getCurrentHp(), burnDamage, guardian.isOnField());
+                        deadUnits.put(guardian.getId(), data);
+                    }
+                    // 死亡日志
+                    if (!deadUnits.isEmpty()) {
+                        addMultiTargetLog("UNIT_DEATH",
+                                null,
+                                0,
+                                0,
+                                false,
+                                deadUnits,
+                                null,
+                                null,
+                                "死亡");
+                        //触发死亡技能
+                        triggerOnDeathSkills(guardian);
+
+                    } else {
+                        //触发受击技能
+                        triggerOnAttackedSkills(guardian, defender);
+                    }
+                    burnDamage=0;
+                }
+            }
 
         return burnDamage;
     }
@@ -6140,7 +6231,14 @@ public class BattleManager {
         }
 
     }
-
+    public Guardian getRandomAliveGuardian(List<Guardian> aliveUnits) {
+        if (aliveUnits == null || aliveUnits.isEmpty()) {
+            return null;
+        }
+        Random random = new Random();
+        int idx = random.nextInt(aliveUnits.size());
+        return aliveUnits.get(idx);
+    }
     // 处理回合开始效果
     private void processRoundStartEffects() {
         // 场下中毒效果（批量处理）
@@ -6251,6 +6349,113 @@ public class BattleManager {
                         EffectType.HP_UP,
                         DamageType.BUFF,
                         "生命上限+" + hel + "，攻击+" + value);
+            }
+        }
+
+        if (!fieldA.isSilence() && !fieldA.isDead() && fieldA != null && fieldA.getName().equals("玄武")) {
+            int[] skillLevel = CardSkillLevelUtil.calculateSkillLevels(fieldA.getLevel(), fieldA.getStar().doubleValue());
+            List<Guardian> allUnits = new ArrayList<>();
+            allUnits.addAll(campA);
+            allUnits.addAll(campB);
+
+            List<Guardian> aliveUnits = allUnits.stream()
+                    .filter(g -> !g.isDead()&&!g.isFixedSoul())
+                    .collect(Collectors.toList());
+            if (ProbabilityBooleanUtils.randomByProbability(1.0 * skillLevel[0])&&Xtool.isNotNull(aliveUnits)) {
+                Guardian randomGuardian = getRandomAliveGuardian(aliveUnits);
+                int hel = (int)(randomGuardian.getMaxHp()*0.1);
+                if (duoBaoGuanHuan()) {
+                    fieldA.setCurrentHp(fieldA.getCurrentHp() + hel);
+                } else {
+                    fieldA.setMaxHp(fieldA.getMaxHp() + hel);
+                    fieldA.setCurrentHp(fieldA.getCurrentHp() + hel);
+                }
+                int value =  (int)(randomGuardian.getAttack()*0.1);;
+                fieldA.addEffect(EffectType.ATTACK_UP, value, 99, fieldA.getId());
+                randomGuardian.addEffect(EffectType.FIXED_SOUL, 0, 99, fieldA.getId());
+
+                addLog("吞噬",
+                        fieldA.getId(),
+                        fieldA.getMaxHp(),
+                        fieldA.getCurrentHp(),
+                        hel,
+                        fieldA.isOnField(),
+                        fieldA.getId(),
+                        fieldA.getMaxHp(),
+                        fieldA.getCurrentHp(),
+                        hel,
+                        fieldA.isOnField(),
+                        EffectType.HP_UP,
+                        DamageType.BUFF,
+                        "生命上限+" + hel + "，攻击+" + value);
+                addLog("固魂",
+                        randomGuardian.getId(),
+                        randomGuardian.getMaxHp(),
+                        randomGuardian.getCurrentHp(),
+                        0,
+                        randomGuardian.isOnField(),
+                        randomGuardian.getId(),
+                        randomGuardian.getMaxHp(),
+                        randomGuardian.getCurrentHp(),
+                        0,
+                        randomGuardian.isOnField(),
+                        EffectType.FIXED_SOUL,
+                        DamageType.BUFF,
+                        "固魂");
+            }
+
+        }
+
+        if (!fieldB.isSilence() && !fieldB.isDead() && fieldB != null && fieldB.getName().equals("玄武")) {
+            int[] skillLevel = CardSkillLevelUtil.calculateSkillLevels(fieldB.getLevel(), fieldB.getStar().doubleValue());
+            List<Guardian> allUnits = new ArrayList<>();
+            allUnits.addAll(campA);
+            allUnits.addAll(campB);
+
+            List<Guardian> aliveUnits = allUnits.stream()
+                    .filter(g -> !g.isDead()&&!g.isFixedSoul())
+                    .collect(Collectors.toList());
+            if (ProbabilityBooleanUtils.randomByProbability(1.0 * skillLevel[0])&&Xtool.isNotNull(aliveUnits)) {
+                Guardian randomGuardian = getRandomAliveGuardian(aliveUnits);
+                int hel = (int)(randomGuardian.getMaxHp()*0.1);
+                if (duoBaoGuanHuan()) {
+                    fieldB.setCurrentHp(fieldB.getCurrentHp() + hel);
+                } else {
+                    fieldB.setMaxHp(fieldB.getMaxHp() + hel);
+                    fieldB.setCurrentHp(fieldB.getCurrentHp() + hel);
+                }
+                int value =  (int)(randomGuardian.getAttack()*0.1);;
+                fieldB.addEffect(EffectType.ATTACK_UP, value, 99, fieldB.getId());
+                randomGuardian.addEffect(EffectType.FIXED_SOUL, 0, 99, fieldB.getId());
+
+                addLog("吞噬",
+                        fieldB.getId(),
+                        fieldB.getMaxHp(),
+                        fieldB.getCurrentHp(),
+                        hel,
+                        fieldB.isOnField(),
+                        fieldB.getId(),
+                        fieldB.getMaxHp(),
+                        fieldB.getCurrentHp(),
+                        hel,
+                        fieldB.isOnField(),
+                        EffectType.HP_UP,
+                        DamageType.BUFF,
+                        "生命上限+" + hel + "，攻击+" + value);
+                addLog("固魂",
+                        randomGuardian.getId(),
+                        randomGuardian.getMaxHp(),
+                        randomGuardian.getCurrentHp(),
+                        0,
+                        randomGuardian.isOnField(),
+                        randomGuardian.getId(),
+                        randomGuardian.getMaxHp(),
+                        randomGuardian.getCurrentHp(),
+                        0,
+                        randomGuardian.isOnField(),
+                        EffectType.FIXED_SOUL,
+                        DamageType.BUFF,
+                        "固魂");
             }
         }
 

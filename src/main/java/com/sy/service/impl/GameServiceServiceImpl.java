@@ -518,7 +518,7 @@ public class GameServiceServiceImpl implements GameServiceService {
             BeanUtils.copyProperties(card, characters);
             characters.setUuid(null);
             characters.setId("1002");
-            characters.setLv(10);
+            characters.setLv(25);
             characters.setGoIntoNum(1);
             characters.setStackCount(0);
             characters.setUserId(Integer.parseInt(emp.getUserId() + ""));
@@ -3320,12 +3320,12 @@ public class GameServiceServiceImpl implements GameServiceService {
             // 使用 TimeUnit.SECONDS 获取剩余秒数，和提示文字保持一致
             Long remainSecond = redisTemplate.getExpire(to, TimeUnit.SECONDS);
             // 兜底：防止-1永久key异常展示
-            if (remainSecond < 0) {
-                remainSecond = 0L;
+            if (remainSecond > 540) {
+                baseResp.setSuccess(0);
+                baseResp.setErrorMsg(remainSecond + "秒后重新发送邮件");
+                return baseResp;
             }
-            baseResp.setSuccess(0);
-            baseResp.setErrorMsg(remainSecond + "秒后重新发送邮件");
-            return baseResp;
+
         }
         MailModel mail = new MailModel();
         int idcode = (int) (Math.random() * 1000000);
@@ -3379,17 +3379,18 @@ public class GameServiceServiceImpl implements GameServiceService {
         if (redisTemplate.hasKey(to)) {
             Long time = redisTemplate.getExpire(to, TimeUnit.SECONDS);
             // 防极端-1兜底
-            if(time < 0) time = 0L;
-            baseResp.setSuccess(0);
-            baseResp.setErrorMsg(time + "秒后重新发送验证码");
-            return baseResp;
+            if(time > 540){
+                baseResp.setSuccess(0);
+                baseResp.setErrorMsg(time + "秒后重新发送验证码");
+                return baseResp;
+            }
         }
 //        MailModel mail = new MailModel();
         int idcode = (int) (Math.random() * 1000000);
         // 调用第三方短信发送服务
 //        threadPoolTaskExecutor.submit(() -> {
-            String signName = "阿里云短信测试";
-            String templateCode = "SMS_154950909";
+            String signName = "江苏依梦梦";
+            String templateCode = "SMS_511395001";
             String templateParam = String.format("{\"code\":\"%s\"}", idcode);
             aliyunSmsHelper.sendMessage(signName, templateCode, to, templateParam);
 //        });

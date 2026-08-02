@@ -118,6 +118,10 @@ public class Guardian {
     public boolean isPoison() {
         return hasEffect(EffectType.POISON);
     }
+
+    public boolean isFixedSoul() {
+        return hasEffect(EffectType.FIXED_SOUL);
+    }
     public boolean isFireBoost() {
         return hasEffect(EffectType.FIRE_BOOST);
     }

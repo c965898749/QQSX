@@ -11,6 +11,7 @@ public enum EffectType {
     CHARGE_UP("蓄力"),
     DRAIN("吸血"),
     TRUE_DAMAGE("真实伤害"),
+    FIXED_SOUL("固魂"),
 
     //治疗类
     HP_RECOVER("生命恢复"),
