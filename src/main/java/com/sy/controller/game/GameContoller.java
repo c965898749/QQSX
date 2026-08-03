@@ -656,6 +656,12 @@ public class GameContoller {
         }
     }
 
+    /**
+     * 竞技场排名
+     * @param token
+     * @param request
+     * @return
+     */
     @PostMapping("ranking100")
     @CrossOrigin
     public BaseResp ranking100(@RequestBody TokenDto token, HttpServletRequest request) {
@@ -670,6 +676,12 @@ public class GameContoller {
         }
     }
 
+    /**
+     * 刷图排名
+     * @param token
+     * @param request
+     * @return
+     */
     @PostMapping("mapRanking100")
     @CrossOrigin
     public BaseResp mapRanking100(@RequestBody TokenDto token, HttpServletRequest request) {
@@ -683,6 +695,13 @@ public class GameContoller {
             return baseResp;
         }
     }
+
+    /**
+     * 擂台排名
+     * @param token
+     * @param request
+     * @return
+     */
     @PostMapping("arenaRanking100")
     @CrossOrigin
     public BaseResp arenaRanking100(@RequestBody TokenDto token, HttpServletRequest request) {

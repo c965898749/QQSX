@@ -593,19 +593,29 @@
     </select>
     <select id="getMapRanking100" resultType="com.sy.model.User">
         SELECT
-        userId,
-          chapter,
+            userId,
+            chapter,
             nickname,
             lv,
             game_img,
             pd.title_name,
             pd.jie_name,
             pd.guan_name,
-          RANK() OVER (ORDER BY chapter DESC,chapter_time asc) AS game_ranking
+            RANK() OVER (
+              ORDER BY
+                  -- 拆分主章并转为数值排序（降序）
+                  CAST(SUBSTRING_INDEX(COALESCE(ur.chapter, '0-0-0'), '-', 1) AS UNSIGNED) DESC,
+                  -- 拆分节并转为数值排序（降序）
+                  CAST(SUBSTRING_INDEX(SUBSTRING_INDEX(COALESCE(ur.chapter, '0-0-0'), '-', 2), '-', -1) AS UNSIGNED) DESC,
+                  -- 拆分关并转为数值排序（降序）
+                  CAST(SUBSTRING_INDEX(COALESCE(ur.chapter, '0-0-0'), '-', -1) AS UNSIGNED) DESC,
+                  -- 最后按章节时间升序
+                  chapter_time asc
+          ) AS game_ranking
         FROM `user` ur
-        left join pve_detail pd on pd.id=ur.chapter
+                 left join pve_detail pd on pd.id=ur.chapter
         order by game_ranking asc
-        limit 100
+            limit 100
     </select>
 
 

@@ -6994,7 +6994,7 @@ public class BattleManager {
         // A玄冥
 //            任意位置，若场上敌方有疾病则每回合令其中毒，受到40点毒素伤害
         if (campA.stream().anyMatch(g -> g.getName().equals("金钩大王") && !g.isDead() && !g.isOnField() && !g.isSilence())) {
-            if (!fieldB.isDead() && fieldB.getEffects() != null) {
+            if (!fieldB.isDead() && fieldB.isHealDown()) {
                 Guardian daji = campA.stream()
                         .filter(g -> g.getName().equals("金钩大王") && !g.isDead() && !g.isOnField())
                         .findFirst().get();
@@ -7036,7 +7036,7 @@ public class BattleManager {
 
         // B队玄冥
         if (campB.stream().anyMatch(g -> g.getName().equals("金钩大王") && !g.isDead() && !g.isOnField() && !g.isSilence())) {
-            if (!fieldA.isDead() && fieldA.getEffects() != null) {
+            if (!fieldA.isDead() && fieldA.isHealDown()) {
                 Guardian daji = campB.stream()
                         .filter(g -> g.getName().equals("金钩大王") && !g.isDead() && !g.isOnField())
                         .findFirst().get();
