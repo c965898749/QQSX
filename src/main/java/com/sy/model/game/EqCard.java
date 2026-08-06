@@ -20,8 +20,7 @@ public class EqCard {
     private BigDecimal star;
     @TableField("id")
     private String id;
-    @TableField("camp")
-    private String camp;
+
     @TableField("passive_introduce_one")
     private String passiveIntroduceOne;
     @TableField("passive_introduce_two")

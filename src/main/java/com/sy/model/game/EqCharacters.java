@@ -49,8 +49,8 @@ public class EqCharacters {
     private Integer projectileGrowth;
     @TableField(exist = false)
     private String img;
-    @TableField(exist = false)
-    private String camp;
+//    @TableField(exist = false)
+//    private String camp;
     @TableField(exist = false)
     private BigDecimal star;
     @TableField(exist = false)

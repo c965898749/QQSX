@@ -807,9 +807,9 @@ public class GameServiceServiceImpl implements GameServiceService {
             baseResp.setErrorMsg("装备不存在");
             return baseResp;
         }
-        if (!characters.getCamp().equals(eqCharacters.getCamp()) || !characters.getProfession().equals(eqCharacters.getProfession())) {
+        if (!characters.getProfession().equals(eqCharacters.getProfession())) {
             baseResp.setSuccess(0);
-            baseResp.setErrorMsg("装备和护法的种族职业不一致");
+            baseResp.setErrorMsg("装备和英雄职业不一致");
             return baseResp;
         }
         eqCharactersMapper.changeEqState2(userId, token.getId(), token.getStr());
@@ -3838,7 +3838,6 @@ public class GameServiceServiceImpl implements GameServiceService {
             Map map2 = new HashMap();
             map2.put("name", drawnCard.getName());
             map2.put("star", drawnCard.getStar());
-            map2.put("camp", drawnCard.getCamp());
             map2.put("profession", drawnCard.getProfession());
             map2.put("eq_type", drawnCard.getEqType());
             map2.put("eq_type2", drawnCard.getEqType2());
@@ -5422,7 +5421,6 @@ public class GameServiceServiceImpl implements GameServiceService {
         Map map2 = new HashMap();
         map2.put("name", drawnCard.getName());
         map2.put("star", drawnCard.getStar());
-        map2.put("camp", drawnCard.getCamp());
         map2.put("profession", drawnCard.getProfession());
         map2.put("eq_type", drawnCard.getEqType());
         map2.put("eq_type2", drawnCard.getEqType2());

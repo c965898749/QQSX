@@ -61,8 +61,8 @@ public class EqCharactersRecord {
     private String profession;
     @TableField(exist = false)
     private String introduce;
-    @TableField(exist = false)
-    private String camp;
+//    @TableField(exist = false)
+//    private String camp;
     @TableField(exist = false)
     private String name;
     @TableField(exist = false)
