@@ -949,6 +949,12 @@ public class GameServiceServiceImpl implements GameServiceService {
         }
         for (ActivityDetail detail : details) {
             List<ActivityReward> rewardList = rewardMapper.getByCodde(detail.getDetailCode());
+            for (ActivityReward activityReward : rewardList) {
+                if (activityReward.getRewardType().equals("6")) {
+                    GameItemBase itemFromCache = GameConfigCache.getItemBase(activityReward.getItemId());
+                    activityReward.setImg(itemFromCache.getIcon());
+                }
+            }
             List<UserActivityRecords> records = recordMapper.listTodayRecords(userId, detail.getDetailCode());
             detail.setRewardList(rewardList);
             detail.setRecords(records);
@@ -1392,6 +1398,8 @@ public class GameServiceServiceImpl implements GameServiceService {
                 } else if ("5".equals(content.getRewardType() + "") || "6".equals(content.getRewardType() + "")) {
                     Map itemMap = new HashMap();
                     itemMap.put("item_id", content.getItemId());
+                    GameItemBase gameItemBase = GameConfigCache.getItemBase(content.getItemId());
+                    content.setImg(gameItemBase.getIcon());
                     itemMap.put("user_id", userId);
                     itemMap.put("is_delete", "0");
                     List<GamePlayerBag> playerBagList = gamePlayerBagMapper.selectByMap(itemMap);

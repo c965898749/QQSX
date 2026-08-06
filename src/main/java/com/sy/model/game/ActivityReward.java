@@ -26,4 +26,8 @@ public class ActivityReward {
     private Date updateTime;
 
     private Integer itemId;
+
+    private String img;
+
+//    private String icon;
 }
