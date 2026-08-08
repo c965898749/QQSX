@@ -9691,6 +9691,27 @@ public class GameServiceServiceImpl implements GameServiceService {
     }
 
     @Override
+    public BaseResp xilianCard(TokenDto token, HttpServletRequest request) throws Exception {
+        //先获取当前用户战队
+        BaseResp baseResp = new BaseResp();
+        if (token == null || Xtool.isNull(token.getToken())) {
+            baseResp.setSuccess(0);
+            baseResp.setErrorMsg("登录过期");
+            return baseResp;
+        }
+//        String userId = (String) redisTemplate.opsForValue().get(token.getToken());
+        String userId = token.getUserId();
+        if (Xtool.isNull(userId)) {
+            baseResp.setSuccess(0);
+            baseResp.setErrorMsg("登录过期");
+            return baseResp;
+        }
+        baseResp.setSuccess(1);
+        baseResp.setErrorMsg("更新成功");
+        return baseResp;
+    }
+
+    @Override
     public BaseResp savePlay(TokenDto token, HttpServletRequest request) throws Exception {
         //先获取当前用户战队
         BaseResp baseResp = new BaseResp();

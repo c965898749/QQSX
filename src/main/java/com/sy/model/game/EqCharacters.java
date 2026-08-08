@@ -83,4 +83,7 @@ public class EqCharacters {
     private Integer zlAtk;
     @TableField(exist = false)
     private List<GameEquipInlay> gemList;
+
+    @TableField("xilian")
+    private Integer xilian;
 }

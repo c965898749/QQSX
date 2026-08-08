@@ -2016,4 +2016,17 @@ public class GameContoller {
             return baseResp;
         }
     }
+    @PostMapping("xilianCard")
+    @CrossOrigin
+    public BaseResp xilianCard(@RequestBody TokenDto token, HttpServletRequest request) {
+        BaseResp baseResp = new BaseResp();
+        try {
+            baseResp = gameServiceService.xilianCard(token, request);
+            return baseResp;
+        } catch (Exception e) {
+            e.printStackTrace();
+            baseResp.setSuccess(0);
+            return baseResp;
+        }
+    }
 }

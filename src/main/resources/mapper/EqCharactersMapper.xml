@@ -30,6 +30,7 @@
     cd.passive_introduce_one,
     cd.passive_introduce_two,
     cs.is_delete,
+    cs.xilian,
     cd.passive_introduce_three
     from   eq_characters cs
     left  join eq_card cd on cd.id=cs.id
@@ -64,6 +65,7 @@
             cd.passive_introduce_one,
             cd.passive_introduce_two,
             cs.is_delete,
+            cs.xilian,
             cd.passive_introduce_three
         from   eq_characters cs
         left  join eq_card cd on cd.id=cs.id
@@ -98,6 +100,7 @@
     cd.passive_introduce_one,
     cd.passive_introduce_two,
     cs.is_delete,
+    cs.xilian,
     cd.passive_introduce_three
     from   eq_characters cs
     left  join eq_card cd on cd.id=cs.id
@@ -133,6 +136,7 @@
     cd.passive_introduce_one,
     cd.passive_introduce_two,
     cs.is_delete,
+    cs.xilian,
     cd.passive_introduce_three
     from   eq_characters cs
     left  join eq_card cd on cd.id=cs.id
@@ -159,6 +163,7 @@
       go_into_num = #{goIntoNum,jdbcType=INTEGER},
       exp = #{exp,jdbcType=INTEGER},
       is_delete = #{isDelete},
+      xilian = #{xilian,jdbcType=INTEGER},
       update_time= now()
     where uuid = #{uuid,jdbcType=INTEGER} and is_delete='0'
   </update>
