@@ -32,54 +32,54 @@ public class ForgeMaterialUtil {
                 break;
             case 1:
                 // 法器
-                costMap.put(13, new BigDecimal("1000000"));
+                costMap.put(13, new BigDecimal("100000"));
                 break;
             case 2:
                 // 灵器
-                costMap.put(13, new BigDecimal("1200000"));
+                costMap.put(13, new BigDecimal("120000"));
                 break;
             case 3:
                 // 法宝
-                costMap.put(13, new BigDecimal("1500000"));
-                costMap.put(14, new BigDecimal("1000000"));
+                costMap.put(13, new BigDecimal("150000"));
+                costMap.put(14, new BigDecimal("100000"));
                 break;
             case 4:
                 // 古宝
-                costMap.put(13, new BigDecimal("1800000"));
-                costMap.put(14, new BigDecimal("1200000"));
+                costMap.put(13, new BigDecimal("180000"));
+                costMap.put(14, new BigDecimal("120000"));
                 break;
             case 5:
                 // 造物
-                costMap.put(13, new BigDecimal("2200000"));
-                costMap.put(14, new BigDecimal("1500000"));
-                costMap.put(15, new BigDecimal("1000000"));
+                costMap.put(13, new BigDecimal("220000"));
+                costMap.put(14, new BigDecimal("150000"));
+                costMap.put(15, new BigDecimal("100000"));
                 break;
             case 6:
                 // 灵宝
-                costMap.put(13, new BigDecimal("2600000"));
-                costMap.put(14, new BigDecimal("1800000"));
-                costMap.put(15, new BigDecimal("1300000"));
+                costMap.put(13, new BigDecimal("260000"));
+                costMap.put(14, new BigDecimal("180000"));
+                costMap.put(15, new BigDecimal("130000"));
                 break;
             case 7:
                 // 通天
-                costMap.put(13, new BigDecimal("3100000"));
-                costMap.put(14, new BigDecimal("2200000"));
-                costMap.put(15, new BigDecimal("1600000"));
-                costMap.put(16, new BigDecimal("1000000"));
+                costMap.put(13, new BigDecimal("310000"));
+                costMap.put(14, new BigDecimal("220000"));
+                costMap.put(15, new BigDecimal("160000"));
+                costMap.put(16, new BigDecimal("100000"));
                 break;
             case 8:
                 // 玄天
-                costMap.put(13, new BigDecimal("3600000"));
-                costMap.put(14, new BigDecimal("2600000"));
-                costMap.put(15, new BigDecimal("1900000"));
-                costMap.put(16, new BigDecimal("1300000"));
+                costMap.put(13, new BigDecimal("360000"));
+                costMap.put(14, new BigDecimal("260000"));
+                costMap.put(15, new BigDecimal("190000"));
+                costMap.put(16, new BigDecimal("130000"));
                 break;
             case 9:
                 // 仙器
-                costMap.put(13, new BigDecimal("4200000"));
-                costMap.put(14, new BigDecimal("3000000"));
-                costMap.put(15, new BigDecimal("2300000"));
-                costMap.put(16, new BigDecimal("1600000"));
+                costMap.put(13, new BigDecimal("420000"));
+                costMap.put(14, new BigDecimal("300000"));
+                costMap.put(15, new BigDecimal("230000"));
+                costMap.put(16, new BigDecimal("160000"));
                 break;
             default:
                 throw new IllegalArgumentException("品级编号只能是0-9");
