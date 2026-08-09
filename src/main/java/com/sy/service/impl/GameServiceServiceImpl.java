@@ -10382,8 +10382,22 @@ public class GameServiceServiceImpl implements GameServiceService {
         //TODO 装备属性
         if (Xtool.isNotNull(characters.getEqCharactersList())) {
             List<EqCharacters> eqCharacters = characters.getEqCharactersList();
+            // 飞升加成：每级flyup增加3%属性
             List<CraftEq> craftEqList = GameConfigCache.getAllCraftEqs();
             for (EqCharacters eqCharacter : eqCharacters) {
+                if (Xtool.isNotNull(eqCharacter.getFlyup())) {
+                    BigDecimal flyupRate = new BigDecimal("1").add(new BigDecimal(eqCharacter.getFlyup()).multiply(new BigDecimal("0.03")));
+                    eqCharacter.setWlAtk((new BigDecimal(eqCharacter.getWlAtk())).multiply(flyupRate).intValue());
+                    eqCharacter.setHyAtk((new BigDecimal(eqCharacter.getHyAtk())).multiply(flyupRate).intValue());
+                    eqCharacter.setDsAtk((new BigDecimal(eqCharacter.getDsAtk())).multiply(flyupRate).intValue());
+                    eqCharacter.setFdAtk((new BigDecimal(eqCharacter.getFdAtk())).multiply(flyupRate).intValue());
+                    eqCharacter.setWlDef((new BigDecimal(eqCharacter.getWlDef())).multiply(flyupRate).intValue());
+                    eqCharacter.setHyDef((new BigDecimal(eqCharacter.getHyDef())).multiply(flyupRate).intValue());
+                    eqCharacter.setDsDef((new BigDecimal(eqCharacter.getDsDef())).multiply(flyupRate).intValue());
+                    eqCharacter.setFdDef((new BigDecimal(eqCharacter.getFdDef())).multiply(flyupRate).intValue());
+                    eqCharacter.setZlDef((new BigDecimal(eqCharacter.getZlDef())).multiply(flyupRate).intValue());
+                    eqCharacter.setZlAtk((new BigDecimal(eqCharacter.getZlAtk())).multiply(flyupRate).intValue());
+                }
                 if (Xtool.isNotNull(eqCharacter.getGemList())) {
                     List<GameEquipInlay> gemList = eqCharacter.getGemList();
                     if (eqCharacter.getWlAtk() > 0) {
