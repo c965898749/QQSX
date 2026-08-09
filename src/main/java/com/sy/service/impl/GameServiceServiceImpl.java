@@ -53,6 +53,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 import static com.sy.tool.Constants.*;
+import static com.sy.tool.ForgeMaterialUtil.getForgeCost;
 import static com.sy.tool.SuitRandomUtil.randomOneSuitCode;
 
 
@@ -9710,6 +9711,7 @@ public class GameServiceServiceImpl implements GameServiceService {
 
     @Override
     @Transactional
+    @NoRepeatSubmit(limitSeconds = 1)
     public BaseResp xilianCard(TokenDto token, HttpServletRequest request) throws Exception {
         //先获取当前用户战队
         BaseResp baseResp = new BaseResp();
@@ -9828,6 +9830,142 @@ public class GameServiceServiceImpl implements GameServiceService {
             eqCharacters.setGemList(gemList);
         }
         baseResp.setData(eqCharactersList);
+        baseResp.setSuccess(1);
+        baseResp.setErrorMsg("更新成功");
+        return baseResp;
+    }
+
+    @Override
+    @Transactional
+    @NoRepeatSubmit(limitSeconds = 1)
+    public BaseResp tianJianInfo(TokenDto token, HttpServletRequest request) throws Exception {
+        //先获取当前用户战队
+        BaseResp baseResp = new BaseResp();
+        if (token == null || Xtool.isNull(token.getToken())) {
+            baseResp.setSuccess(0);
+            baseResp.setErrorMsg("登录过期");
+            return baseResp;
+        }
+//        String userId = (String) redisTemplate.opsForValue().get(token.getToken());
+        String userId = token.getUserId();
+        if (Xtool.isNull(userId)) {
+            baseResp.setSuccess(0);
+            baseResp.setErrorMsg("登录过期");
+            return baseResp;
+        }
+        EqCharacters eqCharacter = eqCharactersMapper.selectById(token.getId());
+        if (eqCharacter == null) {
+            baseResp.setSuccess(0);
+            baseResp.setErrorMsg("洗炼装备不存在");
+            return baseResp;
+        }
+        UserInfo info = new UserInfo();
+        List<GamePlayerBag> playerBagList = gamePlayerBagMapper.selectList(new LambdaQueryWrapper<GamePlayerBag>()
+                .eq(GamePlayerBag::getUserId, Integer.parseInt(userId))
+                .in(GamePlayerBag::getItemId, Arrays.asList(13, 14, 15, 16)));
+        List<GamePlayerBag> bronzeList = playerBagList.stream().filter(x -> x.getItemId() == 13).collect(Collectors.toList());
+        List<GamePlayerBag> darkSteelList = playerBagList.stream().filter(x -> x.getItemId() == 14).collect(Collectors.toList());
+        List<GamePlayerBag> purpleGoldList = playerBagList.stream().filter(x -> x.getItemId() == 15).collect(Collectors.toList());
+        List<GamePlayerBag> crystalList = playerBagList.stream().filter(x -> x.getItemId() == 16).collect(Collectors.toList());
+        if (eqCharacter.getFlyup()+1>9){
+            baseResp.setSuccess(0);
+            baseResp.setErrorMsg("装备天匠品质已达上限");
+            return baseResp;
+        }
+        Map<Integer, BigDecimal> cost = getForgeCost(eqCharacter.getFlyup()+1);
+        if (Xtool.isNull(bronzeList) || bronzeList.get(0).getItemCount().compareTo(cost.get(13)) < 0) {
+            baseResp.setSuccess(0);
+            baseResp.setErrorMsg("青铜矿不足");
+            return baseResp;
+        }
+        if (cost.get(14)!=null && ( Xtool.isNull(darkSteelList) || darkSteelList.get(0).getItemCount().compareTo(cost.get(14)) < 0)) {
+            baseResp.setSuccess(0);
+            baseResp.setErrorMsg("玄铁矿不足");
+            return baseResp;
+        }
+        if (cost.get(15)!=null && ( Xtool.isNull(purpleGoldList) || purpleGoldList.get(0).getItemCount().compareTo(cost.get(15)) < 0)) {
+            baseResp.setSuccess(0);
+            baseResp.setErrorMsg("紫金矿不足");
+            return baseResp;
+        }
+        if (cost.get(16)!=null && ( Xtool.isNull(crystalList) || crystalList.get(0).getItemCount().compareTo(cost.get(16)) < 0)) {
+            baseResp.setSuccess(0);
+            baseResp.setErrorMsg("月华晶石不足");
+            return baseResp;
+        }
+        GamePlayerBag bronze = bronzeList.get(0);
+        // 扣减物品数量
+        if (bronze.getItemCount().subtract(cost.get(13)).compareTo(BigDecimal.ZERO) > 0) {
+            bronze.setItemCount(bronze.getItemCount().subtract(cost.get(13)));
+        } else {
+            bronze.setIsDelete("1");
+        }
+        gamePlayerBagMapper.updateById(bronze);
+        // 扣减物品数量
+        if (cost.get(14)!=null){
+            GamePlayerBag darkStee = darkSteelList.get(0);
+            if (darkStee.getItemCount().subtract(cost.get(14)).compareTo(BigDecimal.ZERO) > 0) {
+                darkStee.setItemCount(darkStee.getItemCount().subtract(cost.get(14)));
+            } else {
+                darkStee.setIsDelete("1");
+            }
+            gamePlayerBagMapper.updateById(darkStee);
+        }
+        if (cost.get(15)!=null){
+            GamePlayerBag purpleGold = purpleGoldList.get(0);
+            // 扣减物品数量
+            if (purpleGold.getItemCount().subtract(cost.get(15)).compareTo(BigDecimal.ZERO) > 0) {
+                purpleGold.setItemCount(purpleGold.getItemCount().subtract(cost.get(15)));
+            } else {
+                purpleGold.setIsDelete("1");
+            }
+            gamePlayerBagMapper.updateById(purpleGold);
+        }
+        if (cost.get(16)!=null){
+            GamePlayerBag crystal = crystalList.get(0);
+            // 扣减物品数量
+            if (crystal.getItemCount().subtract(cost.get(16)).compareTo(BigDecimal.ZERO) > 0) {
+                crystal.setItemCount(crystal.getItemCount().subtract(cost.get(16)));
+            } else {
+                crystal.setIsDelete("1");
+            }
+            gamePlayerBagMapper.updateById(crystal);
+        }
+        eqCharacter.setFlyup(eqCharacter.getFlyup()+1);
+        eqCharacter.setMaxLv(eqCharacter.getMaxLv() + 5); // 核心：更新maxLv
+        eqCharactersMapper.updateById(eqCharacter);
+
+
+        List<EqCharacters> characterEqList = eqCharactersMapper.selectByUserId(Integer.parseInt(userId));
+        List<GameEquipInlay> inlayList = gameEquipInlayMapper.selectList(new LambdaQueryWrapper<GameEquipInlay>()
+                .eq(GameEquipInlay::getUserId, userId));
+        for (EqCharacters eqCharacters : characterEqList) {
+            List<GameEquipInlay> gemList = inlayList.stream().filter(x -> (x.getEquipUniqueId() + "").equals(eqCharacters.getUuid() + "")).collect(Collectors.toList());
+            eqCharacters.setGemList(gemList);
+        }
+        info.setBronze(BigDecimal.ZERO);
+        info.setDarkSteel(BigDecimal.ZERO);
+        info.setPurpleGold(BigDecimal.ZERO);
+        info.setCrystal(BigDecimal.ZERO);
+        GamePlayerBag playerBag = gamePlayerBagMapper.goIntoListByIdAndItemId(userId, 13);
+        if (playerBag != null) {
+            info.setBronze(playerBag.getItemCount());
+        }
+        GamePlayerBag playerBag1 = gamePlayerBagMapper.goIntoListByIdAndItemId(userId, 14);
+        if (playerBag1 != null) {
+            info.setDarkSteel(playerBag1.getItemCount());
+        }
+        GamePlayerBag playerBag2 = gamePlayerBagMapper.goIntoListByIdAndItemId(userId, 15);
+        if (playerBag2 != null) {
+            info.setPurpleGold(playerBag2.getItemCount());
+        }
+        GamePlayerBag playerBag3 = gamePlayerBagMapper.goIntoListByIdAndItemId(userId, 16);
+        if (playerBag3 != null) {
+            info.setCrystal(playerBag3.getItemCount());
+        }
+        info.setEqCharactersList(formateEqCharacter(characterEqList));
+        //卡池数量 - 从缓存获取
+        baseResp.setData(info);
         baseResp.setSuccess(1);
         baseResp.setErrorMsg("更新成功");
         return baseResp;

@@ -2029,4 +2029,18 @@ public class GameContoller {
             return baseResp;
         }
     }
+
+    @PostMapping("tianJianInfo")
+    @CrossOrigin
+    public BaseResp tianJianInfo(@RequestBody TokenDto token, HttpServletRequest request) {
+        BaseResp baseResp = new BaseResp();
+        try {
+            baseResp = gameServiceService.tianJianInfo(token, request);
+            return baseResp;
+        } catch (Exception e) {
+            e.printStackTrace();
+            baseResp.setSuccess(0);
+            return baseResp;
+        }
+    }
 }

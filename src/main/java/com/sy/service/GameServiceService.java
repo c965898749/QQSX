@@ -105,6 +105,7 @@ public interface GameServiceService {
     BaseResp bosList(TokenDto token, HttpServletRequest request) throws Exception;
     BaseResp toggleGem(TokenDto token, HttpServletRequest request) throws Exception;
     BaseResp xilianCard(TokenDto token, HttpServletRequest request) throws Exception;
+    BaseResp tianJianInfo(TokenDto token, HttpServletRequest request) throws Exception;
     BaseResp savePlay(TokenDto token, HttpServletRequest request) throws Exception;
     BaseResp deleteVideo(TokenDto token, HttpServletRequest request) throws Exception;
     BaseResp saveChatMsg(ChatMsg chatMsg) throws Exception;
