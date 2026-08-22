@@ -18,7 +18,7 @@
         <!--jdbc的数据库连接 -->
         <jdbcConnection
                 driverClass="com.mysql.cj.jdbc.Driver"
-                connectionURL="jdbc:mysql://192.168.0.104:3307/yimem?useUnicode=true&amp;characterEncoding=utf8&amp;allowMultiQueries=true&amp;serverTimezone=Asia/Shanghai"
+                connectionURL="jdbc:mysql://192.168.0.106:3307/yimem?useUnicode=true&amp;characterEncoding=utf8&amp;allowMultiQueries=true&amp;serverTimezone=Asia/Shanghai"
                 userId="root"
                 password="c866971331@C">
         </jdbcConnection>
@@ -63,7 +63,7 @@
         <!--<table tableName="bns_ce_change_yanshou_info" domainObjectName="BnsCeChangeYanshouInfo" enableCountByExample="false" enableUpdateByExample="false" enableDeleteByExample="false" enableSelectByExample="false" selectByExampleQueryId="false"></table>-->
         <!--<table tableName="bns_ce_data_change_info" domainObjectName="BnsCeDataChangeInfo" enableCountByExample="false" enableUpdateByExample="false" enableDeleteByExample="false" enableSelectByExample="false" selectByExampleQueryId="false"></table>-->
 <!--        <table tableName="user" domainObjectName="cUser" enableCountByExample="false" enableUpdateByExample="false" enableDeleteByExample="false" enableSelectByExample="false" selectByExampleQueryId="false"></table>-->
-        <table tableName="game_equip_inlay" domainObjectName="GameEquipInlay" enableCountByExample="false" enableUpdateByExample="false" enableDeleteByExample="false" enableSelectByExample="false" selectByExampleQueryId="false"></table>
+        <table tableName="xilian" domainObjectName="Xilian" enableCountByExample="false" enableUpdateByExample="false" enableDeleteByExample="false" enableSelectByExample="false" selectByExampleQueryId="false"></table>
 
         <!-- <table tableName="proc_business" domainObjectName="ProcBusiness" enableCountByExample="false" enableUpdateByExample="false" enableDeleteByExample="false" enableSelectByExample="false" selectByExampleQueryId="false"></table>
         <table tableName="proc_business_transinnew" domainObjectName="ProcBusinessTransInNew" enableCountByExample="false" enableUpdateByExample="false" enableDeleteByExample="false" enableSelectByExample="false" selectByExampleQueryId="false"></table>
