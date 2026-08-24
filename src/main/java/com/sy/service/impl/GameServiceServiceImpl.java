@@ -810,6 +810,9 @@ public class GameServiceServiceImpl implements GameServiceService {
         for (EqCharacters eqs : eqCharactersList) {
             List<GameEquipInlay> gemList = inlayList.stream().filter(x -> (x.getEquipUniqueId() + "").equals(eqs.getUuid() + "")).collect(Collectors.toList());
             eqs.setGemList(gemList);
+            List<Xilian> xilianList = xilianMapper.selectList(new LambdaQueryWrapper<Xilian>()
+                    .eq(Xilian::getEqId,eqs.getUuid()));
+            eqs.setXilianList(xilianList);
         }
         info.setEqCharactersList(formateEqCharacter(eqCharactersList));
 //        List<Characters> characterList = charactersMapper.selectByUserId(user.getUserId());
@@ -1118,6 +1121,9 @@ public class GameServiceServiceImpl implements GameServiceService {
             for (EqCharacters eqCharacters1 : eqCharacters) {
                 List<GameEquipInlay> gemList = inlayList.stream().filter(x -> (x.getEquipUniqueId() + "").equals(eqCharacters1.getUuid() + "")).collect(Collectors.toList());
                 eqCharacters1.setGemList(gemList);
+                List<Xilian> xilianList = xilianMapper.selectList(new LambdaQueryWrapper<Xilian>()
+                        .eq(Xilian::getEqId,eqCharacters1.getUuid()));
+                eqCharacters1.setXilianList(xilianList);
             }
             if (Xtool.isNotNull(eqCharacters)) {
                 characters.setEqCharactersList(formateEqCharacter(eqCharacters));
@@ -1318,6 +1324,9 @@ public class GameServiceServiceImpl implements GameServiceService {
             for (EqCharacters eqCharacters1 : eqCharacters) {
                 List<GameEquipInlay> gemList = inlayList.stream().filter(x -> (x.getEquipUniqueId() + "").equals(eqCharacters1.getUuid() + "")).collect(Collectors.toList());
                 eqCharacters1.setGemList(gemList);
+                List<Xilian> xilianList = xilianMapper.selectList(new LambdaQueryWrapper<Xilian>()
+                        .eq(Xilian::getEqId,eqCharacters1.getUuid()));
+                eqCharacters1.setXilianList(xilianList);
             }
             if (Xtool.isNotNull(eqCharacters)) {
                 characters.setEqCharactersList(formateEqCharacter(eqCharacters));
@@ -5995,6 +6004,9 @@ public class GameServiceServiceImpl implements GameServiceService {
             for (EqCharacters eqCharacters1 : eqCharacters) {
                 List<GameEquipInlay> gemList = inlayList2.stream().filter(x -> (x.getEquipUniqueId() + "").equals(eqCharacters1.getUuid() + "")).collect(Collectors.toList());
                 eqCharacters1.setGemList(gemList);
+                List<Xilian> xilianList = xilianMapper.selectList(new LambdaQueryWrapper<Xilian>()
+                        .eq(Xilian::getEqId,eqCharacters1.getUuid()));
+                eqCharacters1.setXilianList(xilianList);
             }
             if (Xtool.isNotNull(eqCharacters)) {
                 characters.setEqCharactersList(formateEqCharacter(eqCharacters));
@@ -6029,6 +6041,9 @@ public class GameServiceServiceImpl implements GameServiceService {
             for (EqCharacters eqCharacters1 : eqCharacters) {
                 List<GameEquipInlay> gemList = inlayList.stream().filter(x -> (x.getEquipUniqueId() + "").equals(eqCharacters1.getUuid() + "")).collect(Collectors.toList());
                 eqCharacters1.setGemList(gemList);
+                List<Xilian> xilianList = xilianMapper.selectList(new LambdaQueryWrapper<Xilian>()
+                        .eq(Xilian::getEqId,eqCharacters1.getUuid()));
+                eqCharacters1.setXilianList(xilianList);
             }
             if (Xtool.isNotNull(eqCharacters)) {
                 characters.setEqCharactersList(formateEqCharacter(eqCharacters));
@@ -6332,6 +6347,9 @@ public class GameServiceServiceImpl implements GameServiceService {
             for (EqCharacters eqCharacters1 : eqCharacters) {
                 List<GameEquipInlay> gemList = inlayList2.stream().filter(x -> (x.getEquipUniqueId() + "").equals(eqCharacters1.getUuid() + "")).collect(Collectors.toList());
                 eqCharacters1.setGemList(gemList);
+                List<Xilian> xilianList = xilianMapper.selectList(new LambdaQueryWrapper<Xilian>()
+                        .eq(Xilian::getEqId,eqCharacters1.getUuid()));
+                eqCharacters1.setXilianList(xilianList);
             }
             if (Xtool.isNotNull(eqCharacters)) {
                 characters.setEqCharactersList(formateEqCharacter(eqCharacters));
@@ -6353,6 +6371,9 @@ public class GameServiceServiceImpl implements GameServiceService {
             for (EqCharacters eqCharacters1 : eqCharacters) {
                 List<GameEquipInlay> gemList = inlayList.stream().filter(x -> (x.getEquipUniqueId() + "").equals(eqCharacters1.getUuid() + "")).collect(Collectors.toList());
                 eqCharacters1.setGemList(gemList);
+                List<Xilian> xilianList = xilianMapper.selectList(new LambdaQueryWrapper<Xilian>()
+                        .eq(Xilian::getEqId,eqCharacters1.getUuid()));
+                eqCharacters1.setXilianList(xilianList);
             }
             if (Xtool.isNotNull(eqCharacters)) {
                 characters.setEqCharactersList(formateEqCharacter(eqCharacters));
@@ -7856,6 +7877,9 @@ public class GameServiceServiceImpl implements GameServiceService {
             for (EqCharacters eqCharacters1 : eqList) {
                 List<GameEquipInlay> gemList = inlayList.stream().filter(x -> (x.getEquipUniqueId() + "").equals(eqCharacters1.getUuid() + "")).collect(Collectors.toList());
                 eqCharacters1.setGemList(gemList);
+                List<Xilian> xilianList = xilianMapper.selectList(new LambdaQueryWrapper<Xilian>()
+                        .eq(Xilian::getEqId,eqCharacters1.getUuid()));
+                eqCharacters1.setXilianList(xilianList);
             }
             if (!CollectionUtils.isEmpty(eqList)) {
                 ch.setEqCharactersList(formateEqCharacter(eqList));
@@ -8944,6 +8968,9 @@ public class GameServiceServiceImpl implements GameServiceService {
             for (EqCharacters eqCharacters1 : eqCharacters) {
                 List<GameEquipInlay> gemList = inlayList2.stream().filter(x -> (x.getEquipUniqueId() + "").equals(eqCharacters1.getUuid() + "")).collect(Collectors.toList());
                 eqCharacters1.setGemList(gemList);
+                List<Xilian> xilianList = xilianMapper.selectList(new LambdaQueryWrapper<Xilian>()
+                        .eq(Xilian::getEqId,eqCharacters1.getUuid()));
+                eqCharacters1.setXilianList(xilianList);
             }
             if (Xtool.isNotNull(eqCharacters)) {
                 characters.setEqCharactersList(formateEqCharacter(eqCharacters));
@@ -8974,6 +9001,9 @@ public class GameServiceServiceImpl implements GameServiceService {
             for (EqCharacters eqCharacters1 : eqCharacters) {
                 List<GameEquipInlay> gemList = inlayList.stream().filter(x -> (x.getEquipUniqueId() + "").equals(eqCharacters1.getUuid() + "")).collect(Collectors.toList());
                 eqCharacters1.setGemList(gemList);
+                List<Xilian> xilianList = xilianMapper.selectList(new LambdaQueryWrapper<Xilian>()
+                        .eq(Xilian::getEqId,eqCharacters1.getUuid()));
+                eqCharacters1.setXilianList(xilianList);
             }
             if (Xtool.isNotNull(eqCharacters)) {
                 characters.setEqCharactersList(formateEqCharacter(eqCharacters));
@@ -9102,6 +9132,9 @@ public class GameServiceServiceImpl implements GameServiceService {
             for (EqCharacters eqCharacters1 : eqCharacters) {
                 List<GameEquipInlay> gemList = inlayList2.stream().filter(x -> (x.getEquipUniqueId() + "").equals(eqCharacters1.getUuid() + "")).collect(Collectors.toList());
                 eqCharacters1.setGemList(gemList);
+                List<Xilian> xilianList = xilianMapper.selectList(new LambdaQueryWrapper<Xilian>()
+                        .eq(Xilian::getEqId,eqCharacters1.getUuid()));
+                eqCharacters1.setXilianList(xilianList);
             }
             if (Xtool.isNotNull(eqCharacters)) {
                 characters.setEqCharactersList(formateEqCharacter(eqCharacters));
@@ -9141,6 +9174,9 @@ public class GameServiceServiceImpl implements GameServiceService {
             for (EqCharacters eqCharacters1 : eqCharacters) {
                 List<GameEquipInlay> gemList = inlayList.stream().filter(x -> (x.getEquipUniqueId() + "").equals(eqCharacters1.getUuid() + "")).collect(Collectors.toList());
                 eqCharacters1.setGemList(gemList);
+                List<Xilian> xilianList = xilianMapper.selectList(new LambdaQueryWrapper<Xilian>()
+                        .eq(Xilian::getEqId,eqCharacters1.getUuid()));
+                eqCharacters1.setXilianList(xilianList);
             }
             if (Xtool.isNotNull(eqCharacters)) {
                 characters.setEqCharactersList(formateEqCharacter(eqCharacters));
@@ -10889,7 +10925,7 @@ public class GameServiceServiceImpl implements GameServiceService {
         for (Characters characters : leftCharacters) {
             // 设置角色
             Character character = reasonableData(characters, leftCharacters);
-            campA.add(new Guardian("A" + character.getId(), character.getName(), Camp.A, character.getGoIntoNum(), Profession.fromName(characters.getProfession()),
+            Guardian guardianA = new Guardian("A" + character.getId(), character.getName(), Camp.A, character.getGoIntoNum(), Profession.fromName(characters.getProfession()),
                     Race.fromName(characters.getCamp()), character.getMaxHp(), character.getAttack(), character.getSpeed(), character.getLv(), character.getStar(),
                     character.getWlAtk(),
                     character.getHyAtk(),
@@ -10901,7 +10937,14 @@ public class GameServiceServiceImpl implements GameServiceService {
                     character.getFdDef(),
                     character.getZlDef(),
                     character.getZlAtk(),
-                    Xtool.isNotNull(characters.getFlyup()) ? characters.getFlyup() : 0, characters.getSex()));
+                    Xtool.isNotNull(characters.getFlyup()) ? characters.getFlyup() : 0, characters.getSex());
+            // 应用装备洗练属性
+            if (Xtool.isNotNull(characters.getEqCharactersList())) {
+                for (EqCharacters eq : characters.getEqCharactersList()) {
+                    guardianA.applyXilianBonuses(eq.getXilianList());
+                }
+            }
+            campA.add(guardianA);
             character.setUuid("A" + character.getId());
             copyCampA.add(character);
         }
@@ -10910,7 +10953,7 @@ public class GameServiceServiceImpl implements GameServiceService {
         for (Characters characters : rightCharacters) {
             // 设置角色
             Character character = reasonableData(characters, rightCharacters);
-            campB.add(new Guardian("B" + character.getId(), character.getName(), Camp.B, character.getGoIntoNum(), Profession.fromName(characters.getProfession()),
+            Guardian guardianB = new Guardian("B" + character.getId(), character.getName(), Camp.B, character.getGoIntoNum(), Profession.fromName(characters.getProfession()),
                     Race.fromName(characters.getCamp()), character.getMaxHp(), character.getAttack(), character.getSpeed(), character.getLv(), character.getStar(),
                     character.getWlAtk(),
                     character.getHyAtk(),
@@ -10922,7 +10965,14 @@ public class GameServiceServiceImpl implements GameServiceService {
                     character.getFdDef(),
                     character.getZlDef(),
                     character.getZlAtk(),
-                    Xtool.isNotNull(characters.getFlyup()) ? characters.getFlyup() : 0, characters.getSex()));
+                    Xtool.isNotNull(characters.getFlyup()) ? characters.getFlyup() : 0, characters.getSex());
+            // 应用装备洗练属性
+            if (Xtool.isNotNull(characters.getEqCharactersList())) {
+                for (EqCharacters eq : characters.getEqCharactersList()) {
+                    guardianB.applyXilianBonuses(eq.getXilianList());
+                }
+            }
+            campB.add(guardianB);
             character.setUuid("B" + character.getId());
             copyCampB.add(character);
         }
@@ -12635,6 +12685,9 @@ public class GameServiceServiceImpl implements GameServiceService {
             for (EqCharacters eqCharacters1 : eqCharacters) {
                 List<GameEquipInlay> gemList = inlayList2.stream().filter(x -> (x.getEquipUniqueId() + "").equals(eqCharacters1.getUuid() + "")).collect(Collectors.toList());
                 eqCharacters1.setGemList(gemList);
+                List<Xilian> xilianList = xilianMapper.selectList(new LambdaQueryWrapper<Xilian>()
+                        .eq(Xilian::getEqId,eqCharacters1.getUuid()));
+                eqCharacters1.setXilianList(xilianList);
             }
             if (Xtool.isNotNull(eqCharacters)) {
                 characters.setEqCharactersList(formateEqCharacter(eqCharacters));
@@ -12674,6 +12727,9 @@ public class GameServiceServiceImpl implements GameServiceService {
             for (EqCharacters eqCharacters1 : eqCharacters) {
                 List<GameEquipInlay> gemList = inlayList.stream().filter(x -> (x.getEquipUniqueId() + "").equals(eqCharacters1.getUuid() + "")).collect(Collectors.toList());
                 eqCharacters1.setGemList(gemList);
+                List<Xilian> xilianList = xilianMapper.selectList(new LambdaQueryWrapper<Xilian>()
+                        .eq(Xilian::getEqId,eqCharacters1.getUuid()));
+                eqCharacters1.setXilianList(xilianList);
             }
             if (Xtool.isNotNull(eqCharacters)) {
                 characters.setEqCharactersList(formateEqCharacter(eqCharacters));

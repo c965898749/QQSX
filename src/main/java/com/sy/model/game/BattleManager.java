@@ -29,6 +29,17 @@ public class BattleManager {
         this.campB = campB;
     }
 
+    /**
+     * 灵能/御灵对元素伤害的修正（静态辅助方法）
+     * 攻击方灵能 > 防守方御灵：每点增加0.1%元素伤害
+     * 攻击方灵能 < 防守方御灵：每点降低0.1%元素伤害
+     */
+    private static int applyXilianElement(Guardian attacker, Guardian defender, int elementDamage) {
+        double diff = attacker.getXilianLingNeng() - defender.getXilianYuLing();
+        if (diff == 0) return elementDamage;
+        return (int) (elementDamage * (1 + diff * 0.001));
+    }
+
     //比较速度大小
     private Boolean getSpeed(Guardian guardianA, Guardian guardianB) {
         // 1. 计算所有中毒效果的总伤害（累加 POISON 类型的 value）
@@ -602,6 +613,32 @@ public class BattleManager {
         if (burnDamage < 0) {
             burnDamage = 0;
         }
+        // ========== 洗练属性：暴击/暴抗判定 ==========
+        boolean critted = false;
+        double critChance = Math.max(0, attacker.getXilianCrit() - defender.getXilianCritResist());
+        if (ProbabilityBooleanUtils.randomByProbability(critChance)) {
+            critted = true;
+            burnDamage = (int) (burnDamage * 1.5);
+        }
+        // ========== 洗练属性：闪避/命中判定 ==========
+        boolean dodged = false;
+        double dodgeChance = Math.max(0, defender.getXilianDodge() - attacker.getXilianAccuracy());
+        if (ProbabilityBooleanUtils.randomByProbability(dodgeChance)) {
+            dodged = true;
+            burnDamage = 0;
+        }
+        // 确定日志EffectType
+        EffectType attackEffectType;
+        if (critted && dodged) {
+            attackEffectType = EffectType.CRIT_DISP;
+        } else if (critted) {
+            attackEffectType = EffectType.CRIT;
+        } else if (dodged) {
+            attackEffectType = EffectType.DISP;
+        } else {
+            attackEffectType = EffectType.DAMAGE;
+        }
+
         Integer logIndex=battleLogs.size();
         burnDamage=triggerOnAttackedSkills(defender,burnDamage,EffectType.DAMAGE);
 
@@ -614,8 +651,8 @@ public class BattleManager {
                 defender.getId(),
                 defender.getMaxHp(), defender.getCurrentHp(),
                 burnDamage, defender.isOnField(),
-                EffectType.DAMAGE, DamageType.PHYSICAL,
-                "-" + defender.getName(),logIndex);
+                attackEffectType, DamageType.PHYSICAL,
+                "-" + burnDamage,logIndex);
         // 检查阵亡
         if (defender.getCurrentHp() <= 0) {
             defender.setDead(true);
@@ -795,6 +832,7 @@ public class BattleManager {
                         double resistDownPret = calculateTotalDownPretVaule(guardian, EffectType.POISON_DOWN_PRET);
 
                         int poisonValue = (int) (totalPoisonDamage * resistUpPret * resistDownPret + (resistUp + guardian.getDsAtk() - resistDown));
+                        poisonValue = applyXilianElement(guardian, g, poisonValue);
                         // 计算本次中毒伤害
                         g.addEffect(EffectType.POISON, poisonValue, 99, guardian.getId());
                         TargetBattleData data = new TargetBattleData(g.getMaxHp(), g.getCurrentHp(), poisonValue, g.isOnField());
@@ -928,6 +966,7 @@ public class BattleManager {
 
                             int burnDamage = (int) (totalPoisonDamage * resistUpPret * resistDownPret * targetUpPret * targetDownPret
                                     + (resistUp - resistDown + guardian.getHyAtk() - g.getHyDef() - targetUp + targetDown));
+                                    burnDamage = applyXilianElement(guardian, g, burnDamage);
 
                             if (burnDamage < 0) {
                                 burnDamage = 0;
@@ -1017,6 +1056,7 @@ public class BattleManager {
 
                         int burnDamage = (int) (totalPoisonDamage * resistUpPret * resistDownPret * targetUpPret * targetDownPret
                                 + (resistUp - resistDown + guardian.getHyAtk() - g.getHyDef() - targetUp + targetDown));
+                                burnDamage = applyXilianElement(guardian, g, burnDamage);
 
                         if (burnDamage < 0) {
                             burnDamage = 0;
@@ -1205,6 +1245,7 @@ public class BattleManager {
 
                             int burnDamage = (int) (totalPoisonDamage * resistUpPret * resistDownPret * targetUpPret * targetDownPret
                                     + (resistUp - resistDown + enemy.getFdAtk() - guardian1.getFdDef() - targetUp + targetDown));
+                                    burnDamage = applyXilianElement(enemy, guardian1, burnDamage);
 
                             if (burnDamage < 0) {
                                 burnDamage = 0;
@@ -1429,6 +1470,7 @@ public class BattleManager {
 
                             int burnDamage = (int) (totalPoisonDamage * resistUpPret * resistDownPret * targetUpPret * targetDownPret
                                     + (resistUp - resistDown + enemy.getFdAtk() - guardian2.getFdDef() - targetUp + targetDown));
+                                    burnDamage = applyXilianElement(enemy, guardian2, burnDamage);
 
                             if (burnDamage < 0) {
                                 burnDamage = 0;
@@ -1794,6 +1836,7 @@ public class BattleManager {
 
                     int burnDamage = (int) (totalPoisonDamage * resistUpPret * resistDownPret * targetUpPret * targetDownPret
                             + (resistUp - resistDown + attacker.getHyAtk() - defender.getHyDef() - targetUp + targetDown));
+                            burnDamage = applyXilianElement(attacker, defender, burnDamage);
 
                     if (burnDamage < 0) {
                         burnDamage = 0;
@@ -1876,6 +1919,7 @@ public class BattleManager {
 
                         int burnDamage = (int) (totalPoisonDamage * resistUpPret * resistDownPret * targetUpPret * targetDownPret
                                 + (resistUp - resistDown + attacker.getHyAtk() - defender.getHyDef() - targetUp + targetDown));
+                                burnDamage = applyXilianElement(attacker, defender, burnDamage);
 
                         if (burnDamage < 0) {
                             burnDamage = 0;
@@ -2104,6 +2148,7 @@ public class BattleManager {
                     double resistDownPret = calculateTotalDownPretVaule(defender, EffectType.POISON_DOWN_PRET);
 
                     int poisonValue = (int) (totalPoisonDamage * resistUpPret * resistDownPret + (resistUp + defender.getDsAtk() - resistDown));
+                    poisonValue = applyXilianElement(defender, attacker, poisonValue);
                     attacker.addEffect(EffectType.POISON, poisonValue, 99, defender.getId());
                     addLog("幽灵毒击",
                             defender.getId(),
@@ -2137,6 +2182,7 @@ public class BattleManager {
                     double resistDownPret = calculateTotalDownPretVaule(defender, EffectType.POISON_DOWN_PRET);
 
                     int poisonValue = (int) (totalPoisonDamage * resistUpPret * resistDownPret + (resistUp + defender.getDsAtk() - resistDown));
+                    poisonValue = applyXilianElement(defender, attacker, poisonValue);
                     attacker.addEffect(EffectType.POISON, poisonValue, 99, defender.getId());
                     addLog("幽灵毒击",
                             defender.getId(),
@@ -2197,6 +2243,7 @@ public class BattleManager {
 
                             int finalDamage = (int) (totalPoisonDamage * resistUpPret * resistDownPret * targetUpPret * targetDownPret
                                     + (resistUp - resistDown + defender.getHyAtk() - g.getHyDef() - targetUp + targetDown));
+                                    finalDamage = applyXilianElement(defender, g, finalDamage);
 
                             if (finalDamage < 0) {
                                 finalDamage = 0;
@@ -2292,6 +2339,7 @@ public class BattleManager {
 
                             int finalDamage = (int) (totalPoisonDamage * resistUpPret * resistDownPret * targetUpPret * targetDownPret
                                     + (resistUp - resistDown + defender.getHyAtk() - g.getHyDef() - targetUp + targetDown));
+                                    finalDamage = applyXilianElement(defender, g, finalDamage);
 
                             if (finalDamage < 0) {
                                 finalDamage = 0;
@@ -2365,6 +2413,7 @@ public class BattleManager {
                         double resistDownPret = calculateTotalDownPretVaule(defender, EffectType.POISON_DOWN_PRET);
 
                         int poisonValue = (int) (totalPoisonDamage * resistUpPret * resistDownPret + (resistUp + defender.getDsAtk() - resistDown));
+                        poisonValue = applyXilianElement(defender, randomEnemy, poisonValue);
                         randomEnemy.addEffect(EffectType.POISON, poisonValue, 99, defender.getId());
                         addLog("剧毒皮肤",
                                 defender.getId(),
@@ -2399,6 +2448,7 @@ public class BattleManager {
                     double resistDownPret = calculateTotalDownPretVaule(attacker, EffectType.POISON_DOWN_PRET);
 
                     int poisonValue = (int) (totalPoisonDamage * resistUpPret * resistDownPret + (resistUp + attacker.getDsAtk() - resistDown));
+                    poisonValue = applyXilianElement(attacker, attacker, poisonValue);
                     attacker.addEffect(EffectType.POISON, poisonValue, 99, defender.getId());
                     addLog("幽灵毒击",
                             attacker.getId(),
@@ -2437,6 +2487,7 @@ public class BattleManager {
                         double resistDownPret = calculateTotalDownPretVaule(defender, EffectType.POISON_DOWN_PRET);
 
                         int poisonValue = (int) (totalPoisonDamage * resistUpPret * resistDownPret + (resistUp + defender.getDsAtk() - resistDown));
+                        poisonValue = applyXilianElement(defender, randomEnemy, poisonValue);
                         randomEnemy.addEffect(EffectType.POISON, poisonValue, 99, defender.getId());
                         addLog("毒素反击",
                                 defender.getId(),
@@ -2651,6 +2702,7 @@ public class BattleManager {
 
                         int burnDamage = (int) (totalPoisonDamage * resistUpPret * resistDownPret * targetUpPret * targetDownPret
                                 + (resistUp - resistDown + defender.getFdAtk() - enemy.getFdDef() - targetUp + targetDown));
+                                burnDamage = applyXilianElement(defender, enemy, burnDamage);
 
                         if (burnDamage < 0) {
                             burnDamage = 0;
@@ -2734,6 +2786,7 @@ public class BattleManager {
 
                         int burnDamage = (int) (totalPoisonDamage * resistUpPret * resistDownPret * targetUpPret * targetDownPret
                                 + (resistUp - resistDown + defender.getFdAtk() - enemy.getFdDef() - targetUp + targetDown));
+                                burnDamage = applyXilianElement(defender, enemy, burnDamage);
 
                         if (burnDamage < 0) {
                             burnDamage = 0;
@@ -2846,6 +2899,7 @@ public class BattleManager {
 
                             int finalDamage = (int) (totalPoisonDamage * resistUpPret * resistDownPret * targetUpPret * targetDownPret
                                     + (resistUp - resistDown + defender.getHyAtk() - g.getHyDef() - targetUp + targetDown));
+                                    finalDamage = applyXilianElement(defender, g, finalDamage);
 
                             if (finalDamage < 0) {
                                 finalDamage = 0;
@@ -2944,6 +2998,7 @@ public class BattleManager {
 
                             int finalDamage = (int) (totalPoisonDamage * resistUpPret * resistDownPret * targetUpPret * targetDownPret
                                     + (resistUp - resistDown + defender.getHyAtk() - g.getHyDef() - targetUp + targetDown));
+                                    finalDamage = applyXilianElement(defender, g, finalDamage);
 
                             if (finalDamage < 0) {
                                 finalDamage = 0;
@@ -3016,6 +3071,7 @@ public class BattleManager {
                         double resistDownPret = calculateTotalDownPretVaule(defender, EffectType.POISON_DOWN_PRET);
 
                         int poisonValue = (int) (totalPoisonDamage * resistUpPret * resistDownPret + (resistUp + defender.getDsAtk() - resistDown));
+                        poisonValue = applyXilianElement(defender, randomEnemy, poisonValue);
                         randomEnemy.addEffect(EffectType.POISON, poisonValue, 99, defender.getId());
                         addLog("剧毒皮肤",
                                 defender.getId(),
@@ -3056,6 +3112,7 @@ public class BattleManager {
                         double resistDownPret = calculateTotalDownPretVaule(defender, EffectType.POISON_DOWN_PRET);
 
                         int poisonValue = (int) (totalPoisonDamage * resistUpPret * resistDownPret + (resistUp + defender.getDsAtk() - resistDown));
+                        poisonValue = applyXilianElement(defender, randomEnemy, poisonValue);
                         randomEnemy.addEffect(EffectType.POISON, poisonValue, 99, defender.getId());
                         addLog("燥热蛇毒",
                                 defender.getId(),
@@ -3350,6 +3407,7 @@ public class BattleManager {
                         double resistDownPret = calculateTotalDownPretVaule(attacker, EffectType.POISON_DOWN_PRET);
 
                         int poisonValue = (int) (totalPoisonDamage * resistUpPret * resistDownPret + (resistUp + defender.getDsAtk() - resistDown));
+                        poisonValue = applyXilianElement(defender, attacker, poisonValue);
                         attacker.addEffect(EffectType.POISON, poisonValue, 99, defender.getId());
                         addLog("剧毒加深",
                                 attacker.getId(),
@@ -3464,6 +3522,7 @@ public class BattleManager {
 
                             int finalDamage = (int) (totalPoisonDamage * resistUpPret * resistDownPret * targetUpPret * targetDownPret
                                     + (resistUp - resistDown + attacker.getHyAtk() - g.getHyDef() - targetUp + targetDown));
+                                    finalDamage = applyXilianElement(attacker, g, finalDamage);
 
                             if (finalDamage < 0) {
                                 finalDamage = 0;
@@ -3691,6 +3750,7 @@ public class BattleManager {
 
                     int finalDamage = (int) (totalPoisonDamage * resistUpPret * resistDownPret * targetUpPret * targetDownPret
                             + (resistUp - resistDown + attacker.getHyAtk() - defender.getHyDef() - targetUp + targetDown));
+                            finalDamage = applyXilianElement(attacker, defender, finalDamage);
 
                     if (finalDamage < 0) {
                         finalDamage = 0;
@@ -3776,6 +3836,7 @@ public class BattleManager {
 
                         int fireDamage = (int) (totalPoisonDamage * resistUpPret * resistDownPret * targetUpPret * targetDownPret
                                 + (resistUp - resistDown + attacker.getHyAtk() - attacker.getHyDef() - targetUp + targetDown));
+                                fireDamage = applyXilianElement(attacker, attacker, fireDamage);
 
                         if (fireDamage < 0) {
                             fireDamage = 0;
@@ -3850,6 +3911,7 @@ public class BattleManager {
 
                         int fireDamage = (int) (totalPoisonDamage * resistUpPret * resistDownPret * targetUpPret * targetDownPret
                                 + (resistUp - resistDown + attacker.getHyAtk() - defender.getHyDef() - targetUp + targetDown));
+                                fireDamage = applyXilianElement(attacker, defender, fireDamage);
 
                         if (fireDamage < 0) {
                             fireDamage = 0;
@@ -3979,6 +4041,7 @@ public class BattleManager {
                         double resistDownPret = calculateTotalDownPretVaule(attacker, EffectType.POISON_DOWN_PRET);
 
                         int poisonValue = (int) (totalPoisonDamage * resistUpPret * resistDownPret + (resistUp + attacker.getDsAtk() - resistDown));
+                        poisonValue = applyXilianElement(attacker, randomEnemy, poisonValue);
                         randomEnemy.addEffect(EffectType.POISON, poisonValue, 99, attacker.getId());
                         addLog("毒气阻碍",
                                 attacker.getId(),
@@ -4013,6 +4076,7 @@ public class BattleManager {
                     double resistDownPret = calculateTotalDownPretVaule(attacker, EffectType.POISON_DOWN_PRET);
 
                     int poisonValue = (int) (totalPoisonDamage * resistUpPret * resistDownPret + (resistUp + attacker.getDsAtk() - resistDown));
+                    poisonValue = applyXilianElement(attacker, defender, poisonValue);
                     defender.addEffect(EffectType.POISON, poisonValue, 99, attacker.getId());
                     addLog("毒素打击",
                             attacker.getId(),
@@ -4427,6 +4491,7 @@ public class BattleManager {
 
                             int finalDamage = (int) (totalPoisonDamage * resistUpPret * resistDownPret * targetUpPret * targetDownPret
                                     + (resistUp - resistDown + attacker.getHyAtk() - g.getHyDef() - targetUp + targetDown));
+                                    finalDamage = applyXilianElement(attacker, g, finalDamage);
 
                             if (finalDamage < 0) {
                                 finalDamage = 0;
@@ -4524,6 +4589,7 @@ public class BattleManager {
 
                             int finalDamage = (int) (totalPoisonDamage * resistUpPret * resistDownPret * targetUpPret * targetDownPret
                                     + (resistUp - resistDown + attacker.getHyAtk() - g.getHyDef() - targetUp + targetDown));
+                                    finalDamage = applyXilianElement(attacker, g, finalDamage);
 
                             if (finalDamage < 0) {
                                 finalDamage = 0;
@@ -4618,6 +4684,7 @@ public class BattleManager {
 
                             int finalDamage = (int) (totalPoisonDamage * resistUpPret * resistDownPret * targetUpPret * targetDownPret
                                     + (resistUp - resistDown + attacker.getHyAtk() - g.getHyDef() - targetUp + targetDown));
+                                    finalDamage = applyXilianElement(attacker, g, finalDamage);
 
                             if (finalDamage < 0) {
                                 finalDamage = 0;
@@ -4719,6 +4786,7 @@ public class BattleManager {
 
                             int finalDamage = (int) (totalPoisonDamage * resistUpPret * resistDownPret * targetUpPret * targetDownPret
                                     + (resistUp - resistDown + attacker.getHyAtk() - g.getHyDef() - targetUp + targetDown));
+                                    finalDamage = applyXilianElement(attacker, g, finalDamage);
 
                             if (finalDamage < 0) {
                                 finalDamage = 0;
@@ -4811,6 +4879,7 @@ public class BattleManager {
 
                             int finalDamage = (int) (totalPoisonDamage * resistUpPret * resistDownPret * targetUpPret * targetDownPret
                                     + (resistUp - resistDown + attacker.getHyAtk() - g.getHyDef() - targetUp + targetDown));
+                                    finalDamage = applyXilianElement(attacker, g, finalDamage);
 
                             if (finalDamage < 0) {
                                 finalDamage = 0;
@@ -4906,6 +4975,7 @@ public class BattleManager {
 
                             int finalDamage = (int) (totalPoisonDamage * resistUpPret * resistDownPret * targetUpPret * targetDownPret
                                     + (resistUp - resistDown + attacker.getHyAtk() - g.getHyDef() - targetUp + targetDown));
+                                    finalDamage = applyXilianElement(attacker, g, finalDamage);
 
                             if (finalDamage < 0) {
                                 finalDamage = 0;
@@ -5003,6 +5073,7 @@ public class BattleManager {
 
                             int finalDamage = (int) (totalPoisonDamage * resistUpPret * resistDownPret * targetUpPret * targetDownPret
                                     + (resistUp - resistDown + attacker.getHyAtk() - g.getHyDef() - targetUp + targetDown));
+                                    finalDamage = applyXilianElement(attacker, g, finalDamage);
 
                             if (finalDamage < 0) {
                                 finalDamage = 0;
@@ -5105,6 +5176,7 @@ public class BattleManager {
 
                     int burnDamage = (int) (totalPoisonDamage * resistUpPret * resistDownPret * targetUpPret * targetDownPret
                             + (resistUp - resistDown + v.getFdAtk() - minHpPerson.getFdDef() - targetUp + targetDown));
+                            burnDamage = applyXilianElement(v, minHpPerson, burnDamage);
 
                     if (burnDamage < 0) {
                         burnDamage = 0;
@@ -5181,6 +5253,7 @@ public class BattleManager {
                     double resistDownPret = calculateTotalDownPretVaule(v, EffectType.POISON_DOWN_PRET);
 
                     int poisonValue = (int) (totalPoisonDamage * resistUpPret * resistDownPret + (resistUp + v.getDsAtk() - resistDown));
+                    poisonValue = applyXilianElement(v, g, poisonValue);
                     g.addEffect(EffectType.POISON, poisonValue, 99, v.getId());
                     TargetBattleData data = new TargetBattleData(g.getMaxHp(), g.getCurrentHp(), poisonValue, g.isOnField());
 
@@ -5212,6 +5285,7 @@ public class BattleManager {
                     double resistDownPret = calculateTotalDownPretVaule(v, EffectType.POISON_DOWN_PRET);
 
                     int poisonValue = (int) (totalPoisonDamage * resistUpPret * resistDownPret + (resistUp + v.getDsAtk() - resistDown));
+                    poisonValue = applyXilianElement(v, enemie, poisonValue);
                     enemie.addEffect(EffectType.POISON, poisonValue, 99, v.getId());
                     addLog("死亡徘徊",
                             v.getId(),
@@ -5253,6 +5327,7 @@ public class BattleManager {
                     double resistDownPret = calculateTotalDownPretVaule(v, EffectType.POISON_DOWN_PRET);
 
                     int poisonValue = (int) (totalPoisonDamage * resistUpPret * resistDownPret + (resistUp + v.getDsAtk() - resistDown));
+                    poisonValue = applyXilianElement(v, g, poisonValue);
 
                     g.addEffect(EffectType.POISON, poisonValue, 99, v.getId());
                     TargetBattleData data = new TargetBattleData(g.getMaxHp(), g.getCurrentHp(), poisonValue, g.isOnField());
@@ -5297,6 +5372,7 @@ public class BattleManager {
                     double resistDownPret = calculateTotalDownPretVaule(v, EffectType.POISON_DOWN_PRET);
 
                     int poisonValue = (int) (totalPoisonDamage * resistUpPret * resistDownPret + (resistUp + v.getDsAtk() - resistDown));
+                    poisonValue = applyXilianElement(v, g, poisonValue);
 
                     g.addEffect(EffectType.POISON, poisonValue, 99, v.getId());
                     TargetBattleData data = new TargetBattleData(g.getMaxHp(), g.getCurrentHp(), poisonValue, g.isOnField());
@@ -5485,6 +5561,7 @@ public class BattleManager {
 
                     int burnDamage = (int) (totalPoisonDamage * resistUpPret * resistDownPret * targetUpPret * targetDownPret
                             + (resistUp - resistDown + v.getFdAtk() - minHpPerson.getFdDef() - targetUp + targetDown));
+                            burnDamage = applyXilianElement(v, minHpPerson, burnDamage);
 
                     if (burnDamage < 0) {
                         burnDamage = 0;
@@ -5580,6 +5657,7 @@ public class BattleManager {
 
                     int burnDamage = (int) (totalPoisonDamage * resistUpPret * resistDownPret * targetUpPret * targetDownPret
                             + (resistUp - resistDown + v.getFdAtk() - minHpPerson.getFdDef() - targetUp + targetDown));
+                            burnDamage = applyXilianElement(v, minHpPerson, burnDamage);
 
                     if (burnDamage < 0) {
                         burnDamage = 0;
@@ -6091,6 +6169,7 @@ public class BattleManager {
 
                         int burnDamage = (int) (totalPoisonDamage * resistUpPret * resistDownPret * targetUpPret * targetDownPret
                                 + (resistUp - resistDown + changsheng.getFdAtk() - fieldB.getFdDef() - targetUp + targetDown));
+                                burnDamage = applyXilianElement(changsheng, fieldB, burnDamage);
 
                         if (burnDamage < 0) {
                             burnDamage = 0;
@@ -6180,6 +6259,7 @@ public class BattleManager {
 
                     int burnDamage = (int) (totalPoisonDamage * resistUpPret * resistDownPret * targetUpPret * targetDownPret
                             + (resistUp - resistDown + changsheng.getFdAtk() - fieldA.getFdDef() - targetUp + targetDown));
+                            burnDamage = applyXilianElement(changsheng, fieldA, burnDamage);
 
                     if (burnDamage < 0) {
                         burnDamage = 0;
@@ -6925,6 +7005,7 @@ public class BattleManager {
                 double resistDownPret = calculateTotalDownPretVaule(daji, EffectType.POISON_DOWN_PRET);
 
                 int poisonValue = (int) (totalPoisonDamage * resistUpPret * resistDownPret + (resistUp + daji.getDsAtk() - resistDown));
+                poisonValue = applyXilianElement(daji, randomEnemy, poisonValue);
                 randomEnemy.addEffect(EffectType.POISON, poisonValue, 99, daji.getId());
 
                 addLog("毒入骨髓",
@@ -6972,6 +7053,7 @@ public class BattleManager {
                 double resistDownPret = calculateTotalDownPretVaule(daji, EffectType.POISON_DOWN_PRET);
 
                 int poisonValue = (int) (totalPoisonDamage * resistUpPret * resistDownPret + (resistUp + daji.getDsAtk() - resistDown));
+                poisonValue = applyXilianElement(daji, randomEnemy, poisonValue);
                 randomEnemy.addEffect(EffectType.POISON, poisonValue, 99, daji.getId());
 
                 addLog("毒入骨髓",
@@ -7013,6 +7095,7 @@ public class BattleManager {
                     double resistDownPret = calculateTotalDownPretVaule(daji, EffectType.POISON_DOWN_PRET);
 
                     int poisonValue = (int) (totalPoisonDamage * resistUpPret * resistDownPret + (resistUp + daji.getDsAtk() - resistDown));
+                    poisonValue = applyXilianElement(daji, fieldB, poisonValue);
                     fieldB.addEffect(EffectType.POISON, poisonValue, 99, daji.getId());
                     addLog("疾病传染",
                             daji.getId(),
@@ -7055,6 +7138,7 @@ public class BattleManager {
                     double resistDownPret = calculateTotalDownPretVaule(daji, EffectType.POISON_DOWN_PRET);
 
                     int poisonValue = (int) (totalPoisonDamage * resistUpPret * resistDownPret + (resistUp + daji.getDsAtk() - resistDown));
+                    poisonValue = applyXilianElement(daji, fieldA, poisonValue);
                     fieldA.addEffect(EffectType.POISON, poisonValue, 99, daji.getId());
                     addLog("疾病传染",
                             daji.getId(),
@@ -7111,6 +7195,7 @@ public class BattleManager {
 
                     int burnDamage = (int) (totalPoisonDamage * resistUpPret * resistDownPret * targetUpPret * targetDownPret
                             + (resistUp - resistDown + guardian.getFdAtk() - fieldB.getFdDef() - targetUp + targetDown));
+                            burnDamage = applyXilianElement(guardian, fieldB, burnDamage);
 
                     if (burnDamage < 0) {
                         burnDamage = 0;
@@ -7200,6 +7285,7 @@ public class BattleManager {
 
                     int burnDamage = (int) (totalPoisonDamage * resistUpPret * resistDownPret * targetUpPret * targetDownPret
                             + (resistUp - resistDown + guardian.getFdAtk() - fieldA.getFdDef() - targetUp + targetDown));
+                            burnDamage = applyXilianElement(guardian, fieldA, burnDamage);
 
                     if (burnDamage < 0) {
                         burnDamage = 0;
@@ -7292,6 +7378,7 @@ public class BattleManager {
 
                     int burnDamage = (int) (totalPoisonDamage * resistUpPret * resistDownPret * targetUpPret * targetDownPret
                             + (resistUp - resistDown + guardian.getFdAtk() - defender.getFdDef() - targetUp + targetDown));
+                            burnDamage = applyXilianElement(guardian, defender, burnDamage);
 
                     if (burnDamage < 0) {
                         burnDamage = 0;
@@ -7385,6 +7472,7 @@ public class BattleManager {
 
                     int burnDamage = (int) (totalPoisonDamage * resistUpPret * resistDownPret * targetUpPret * targetDownPret
                             + (resistUp - resistDown + guardian.getFdAtk() - defender.getFdDef() - targetUp + targetDown));
+                            burnDamage = applyXilianElement(guardian, defender, burnDamage);
 
                     if (burnDamage < 0) {
                         burnDamage = 0;
@@ -7879,6 +7967,7 @@ public class BattleManager {
 
                     int burnDamage = (int) (totalPoisonDamage * resistUpPret * resistDownPret * targetUpPret * targetDownPret
                             + (resistUp - resistDown + guardian.getFdAtk() - defender.getFdDef() - targetUp + targetDown));
+                            burnDamage = applyXilianElement(guardian, defender, burnDamage);
 
                     if (burnDamage < 0) {
                         burnDamage = 0;
@@ -7975,6 +8064,7 @@ public class BattleManager {
 
                     int burnDamage = (int) (totalPoisonDamage * resistUpPret * resistDownPret * targetUpPret * targetDownPret
                             + (resistUp - resistDown + guardian.getFdAtk() - defender.getFdDef() - targetUp + targetDown));
+                            burnDamage = applyXilianElement(guardian, defender, burnDamage);
 
                     if (burnDamage < 0) {
                         burnDamage = 0;
@@ -8076,6 +8166,7 @@ public class BattleManager {
 
                         int burnDamage = (int) (totalPoisonDamage * resistUpPret * resistDownPret * targetUpPret * targetDownPret
                                 + (resistUp - resistDown + guardian.getHyAtk() - g.getHyDef() - targetUp + targetDown));
+                                burnDamage = applyXilianElement(guardian, g, burnDamage);
 
                         if (burnDamage < 0) {
                             burnDamage = 0;
@@ -8190,6 +8281,7 @@ public class BattleManager {
 
                         int burnDamage = (int) (totalPoisonDamage * resistUpPret * resistDownPret * targetUpPret * targetDownPret
                                 + (resistUp - resistDown + guardian.getHyAtk() - g.getHyDef() - targetUp + targetDown));
+                                burnDamage = applyXilianElement(guardian, g, burnDamage);
 
                         if (burnDamage < 0) {
                             burnDamage = 0;
@@ -8306,6 +8398,7 @@ public class BattleManager {
                 double resistDownPret = calculateTotalDownPretVaule(daji, EffectType.POISON_DOWN_PRET);
 
                 int poisonValue = (int) (totalPoisonDamage * resistUpPret * resistDownPret + (resistUp + daji.getDsAtk() - resistDown));
+                poisonValue = applyXilianElement(daji, randomEnemy, poisonValue);
                 randomEnemy.addEffect(EffectType.POISON, poisonValue, 99, daji.getId());
                 addLog("谄媚噬魂",
                         daji.getId(),
@@ -8371,6 +8464,7 @@ public class BattleManager {
                 double resistDownPret = calculateTotalDownPretVaule(daji, EffectType.POISON_DOWN_PRET);
 
                 int poisonValue = (int) (totalPoisonDamage * resistUpPret * resistDownPret + (resistUp + daji.getDsAtk() - resistDown));
+                poisonValue = applyXilianElement(daji, randomEnemy, poisonValue);
                 randomEnemy.addEffect(EffectType.POISON, poisonValue, 99, daji.getId());
                 addLog("谄媚噬魂",
                         daji.getId(),
@@ -8418,6 +8512,7 @@ public class BattleManager {
                 double resistDownPret = calculateTotalDownPretVaule(daji, EffectType.POISON_DOWN_PRET);
 
                 int poisonValue = (int) (totalPoisonDamage * resistUpPret * resistDownPret + (resistUp + daji.getDsAtk() - resistDown));
+                poisonValue = applyXilianElement(daji, randomEnemy, poisonValue);
                 randomEnemy.addEffect(EffectType.POISON, poisonValue, 99, daji.getId());
                 addLog("谄媚噬魂",
                         daji.getId(),
@@ -8464,6 +8559,7 @@ public class BattleManager {
                 double resistDownPret = calculateTotalDownPretVaule(daji, EffectType.POISON_DOWN_PRET);
 
                 int poisonValue = (int) (totalPoisonDamage * resistUpPret * resistDownPret + (resistUp + daji.getDsAtk() - resistDown));
+                poisonValue = applyXilianElement(daji, randomEnemy, poisonValue);
                 randomEnemy.addEffect(EffectType.POISON, poisonValue, 99, daji.getId());
                 addLog("谄媚噬魂",
                         daji.getId(),
@@ -8647,6 +8743,7 @@ public class BattleManager {
                         double resistDownPret = calculateTotalDownPretVaule(guardian, EffectType.POISON_DOWN_PRET);
 
                         int poisonValue = (int) (totalPoisonDamage * resistUpPret * resistDownPret + (resistUp + guardian.getDsAtk() - resistDown));
+                        poisonValue = applyXilianElement(guardian, randomEnemy, poisonValue);
                         randomEnemy.addEffect(EffectType.POISON, poisonValue, 99, guardian.getId());
                         addLog("幽冥审判",
                                 guardian.getId(),
@@ -8691,6 +8788,7 @@ public class BattleManager {
                         double resistDownPret = calculateTotalDownPretVaule(guardian, EffectType.POISON_DOWN_PRET);
 
                         int poisonValue = (int) (totalPoisonDamage * resistUpPret * resistDownPret + (resistUp + guardian.getDsAtk() - resistDown));
+                        poisonValue = applyXilianElement(guardian, randomEnemy, poisonValue);
                         randomEnemy.addEffect(EffectType.POISON, poisonValue, 99, guardian.getId());
                         addLog("幽冥审判",
                                 guardian.getId(),
@@ -8735,6 +8833,7 @@ public class BattleManager {
                     double resistDownPret = calculateTotalDownPretVaule(guardian, EffectType.POISON_DOWN_PRET);
 
                     int poisonValue = (int) (totalPoisonDamage * resistUpPret * resistDownPret + (resistUp + guardian.getDsAtk() - resistDown));
+                    poisonValue = applyXilianElement(guardian, randomEnemy, poisonValue);
                     randomEnemy.addEffect(EffectType.POISON, poisonValue, 99, guardian.getId());
                     addLog("玉净瓶",
                             guardian.getId(),
@@ -8776,6 +8875,7 @@ public class BattleManager {
                     double resistDownPret = calculateTotalDownPretVaule(guardian, EffectType.POISON_DOWN_PRET);
 
                     int poisonValue = (int) (totalPoisonDamage * resistUpPret * resistDownPret + (resistUp + guardian.getDsAtk() - resistDown));
+                    poisonValue = applyXilianElement(guardian, randomEnemy, poisonValue);
                     randomEnemy.addEffect(EffectType.POISON, poisonValue, 99, guardian.getId());
                     addLog("玉净瓶",
                             guardian.getId(),
@@ -8819,6 +8919,7 @@ public class BattleManager {
                         double resistDownPret = calculateTotalDownPretVaule(guardian, EffectType.POISON_DOWN_PRET);
 
                         int poisonValue = (int) (totalPoisonDamage * resistUpPret * resistDownPret + (resistUp + guardian.getDsAtk() - resistDown));
+                        poisonValue = applyXilianElement(guardian, randomEnemy, poisonValue);
                         randomEnemy.addEffect(EffectType.POISON, poisonValue, 99, guardian.getId());
                         addLog("幽冥审判",
                                 guardian.getId(),
@@ -8863,6 +8964,7 @@ public class BattleManager {
                         double resistDownPret = calculateTotalDownPretVaule(guardian, EffectType.POISON_DOWN_PRET);
 
                         int poisonValue = (int) (totalPoisonDamage * resistUpPret * resistDownPret + (resistUp + guardian.getDsAtk() - resistDown));
+                        poisonValue = applyXilianElement(guardian, randomEnemy, poisonValue);
                         randomEnemy.addEffect(EffectType.POISON, poisonValue, 99, guardian.getId());
                         addLog("幽冥审判",
                                 guardian.getId(),
@@ -8907,6 +9009,7 @@ public class BattleManager {
                     double resistDownPret = calculateTotalDownPretVaule(guardian, EffectType.FIRE_DOWN_PRET);
 
                     int poisonValue = (int) (totalPoisonDamage * resistUpPret * resistDownPret + (resistUp + guardian.getDsAtk() - resistDown));
+                    poisonValue = applyXilianElement(guardian, randomEnemy, poisonValue);
                     randomEnemy.addEffect(EffectType.POISON, poisonValue, 99, guardian.getId());
                     addLog("玉净瓶",
                             guardian.getId(),
@@ -8949,6 +9052,7 @@ public class BattleManager {
                     double resistDownPret = calculateTotalDownPretVaule(guardian, EffectType.FIRE_DOWN_PRET);
 
                     int poisonValue = (int) (totalPoisonDamage * resistUpPret * resistDownPret + (resistUp + guardian.getDsAtk() - resistDown));
+                    poisonValue = applyXilianElement(guardian, randomEnemy, poisonValue);
                     randomEnemy.addEffect(EffectType.POISON, poisonValue, 99, guardian.getId());
                     addLog("玉净瓶",
                             guardian.getId(),
@@ -9111,6 +9215,7 @@ public class BattleManager {
 
                     int burnDamage = (int) (totalPoisonDamage * resistUpPret * resistDownPret * targetUpPret * targetDownPret
                             + (resistUp - resistDown + guardian.getFdAtk() - fieldB.getFdDef() - targetUp + targetDown));
+                            burnDamage = applyXilianElement(guardian, fieldB, burnDamage);
 
                     if (burnDamage < 0) {
                         burnDamage = 0;
@@ -9221,6 +9326,7 @@ public class BattleManager {
 
                     int burnDamage = (int) (totalPoisonDamage * resistUpPret * resistDownPret * targetUpPret * targetDownPret
                             + (resistUp - resistDown + guardian.getFdAtk() - fieldA.getFdDef() - targetUp + targetDown));
+                            burnDamage = applyXilianElement(guardian, fieldA, burnDamage);
 
                     if (burnDamage < 0) {
                         burnDamage = 0;
@@ -9331,6 +9437,7 @@ public class BattleManager {
 
                     int burnDamage = (int) (totalPoisonDamage * resistUpPret * resistDownPret * targetUpPret * targetDownPret
                             + (resistUp - resistDown + guardian.getFdAtk() - fieldB.getFdDef() - targetUp + targetDown));
+                            burnDamage = applyXilianElement(guardian, fieldB, burnDamage);
 
                     if (burnDamage < 0) {
                         burnDamage = 0;
@@ -9415,6 +9522,7 @@ public class BattleManager {
 
                     int burnDamage = (int) (totalPoisonDamage * resistUpPret * resistDownPret * targetUpPret * targetDownPret
                             + (resistUp - resistDown + guardian.getFdAtk() - fieldA.getFdDef() - targetUp + targetDown));
+                            burnDamage = applyXilianElement(guardian, fieldA, burnDamage);
 
                     if (burnDamage < 0) {
                         burnDamage = 0;
@@ -9501,6 +9609,7 @@ public class BattleManager {
 
                     int burnDamage = (int) (totalPoisonDamage * resistUpPret * resistDownPret * targetUpPret * targetDownPret
                             + (resistUp - resistDown + guardian.getFdAtk() - fieldB.getFdDef() - targetUp + targetDown));
+                            burnDamage = applyXilianElement(guardian, fieldB, burnDamage);
 
                     if (burnDamage < 0) {
                         burnDamage = 0;
@@ -9585,6 +9694,7 @@ public class BattleManager {
 
                     int burnDamage = (int) (totalPoisonDamage * resistUpPret * resistDownPret * targetUpPret * targetDownPret
                             + (resistUp - resistDown + guardian.getFdAtk() - fieldA.getFdDef() - targetUp + targetDown));
+                            burnDamage = applyXilianElement(guardian, fieldA, burnDamage);
 
                     if (burnDamage < 0) {
                         burnDamage = 0;
@@ -9670,6 +9780,7 @@ public class BattleManager {
 
                     int burnDamage = (int) (totalPoisonDamage * resistUpPret * resistDownPret * targetUpPret * targetDownPret
                             + (resistUp - resistDown + guardian.getFdAtk() - fieldB.getFdDef() - targetUp + targetDown));
+                            burnDamage = applyXilianElement(guardian, fieldB, burnDamage);
 
                     if (burnDamage < 0) {
                         burnDamage = 0;
@@ -9754,6 +9865,7 @@ public class BattleManager {
 
                     int burnDamage = (int) (totalPoisonDamage * resistUpPret * resistDownPret * targetUpPret * targetDownPret
                             + (resistUp - resistDown + guardian.getFdAtk() - fieldA.getFdDef() - targetUp + targetDown));
+                            burnDamage = applyXilianElement(guardian, fieldA, burnDamage);
 
                     if (burnDamage < 0) {
                         burnDamage = 0;
@@ -9839,6 +9951,7 @@ public class BattleManager {
 
                     int burnDamage = (int) (totalPoisonDamage * resistUpPret * resistDownPret * targetUpPret * targetDownPret
                             + (resistUp - resistDown + guardian.getFdAtk() - fieldB.getFdDef() - targetUp + targetDown));
+                            burnDamage = applyXilianElement(guardian, fieldB, burnDamage);
 
                     if (burnDamage < 0) {
                         burnDamage = 0;
@@ -9923,6 +10036,7 @@ public class BattleManager {
 
                     int burnDamage = (int) (totalPoisonDamage * resistUpPret * resistDownPret * targetUpPret * targetDownPret
                             + (resistUp - resistDown + guardian.getFdAtk() - fieldA.getFdDef() - targetUp + targetDown));
+                            burnDamage = applyXilianElement(guardian, fieldA, burnDamage);
 
                     if (burnDamage < 0) {
                         burnDamage = 0;
@@ -10008,6 +10122,7 @@ public class BattleManager {
 
                     int burnDamage = (int) (totalPoisonDamage * resistUpPret * resistDownPret * targetUpPret * targetDownPret
                             + (resistUp - resistDown + guardian.getFdAtk() - fieldB.getFdDef() - targetUp + targetDown));
+                            burnDamage = applyXilianElement(guardian, fieldB, burnDamage);
 
                     if (burnDamage < 0) {
                         burnDamage = 0;
@@ -10092,6 +10207,7 @@ public class BattleManager {
 
                     int burnDamage = (int) (totalPoisonDamage * resistUpPret * resistDownPret * targetUpPret * targetDownPret
                             + (resistUp - resistDown + guardian.getFdAtk() - fieldA.getFdDef() - targetUp + targetDown));
+                            burnDamage = applyXilianElement(guardian, fieldA, burnDamage);
 
                     if (burnDamage < 0) {
                         burnDamage = 0;
@@ -10177,6 +10293,7 @@ public class BattleManager {
 
                     int burnDamage = (int) (totalPoisonDamage * resistUpPret * resistDownPret * targetUpPret * targetDownPret
                             + (resistUp - resistDown + guardian.getFdAtk() - fieldB.getFdDef() - targetUp + targetDown));
+                            burnDamage = applyXilianElement(guardian, fieldB, burnDamage);
 
                     if (burnDamage < 0) {
                         burnDamage = 0;
@@ -10261,6 +10378,7 @@ public class BattleManager {
 
                     int burnDamage = (int) (totalPoisonDamage * resistUpPret * resistDownPret * targetUpPret * targetDownPret
                             + (resistUp - resistDown + guardian.getFdAtk() - fieldA.getFdDef() - targetUp + targetDown));
+                            burnDamage = applyXilianElement(guardian, fieldA, burnDamage);
 
                     if (burnDamage < 0) {
                         burnDamage = 0;
@@ -10346,6 +10464,7 @@ public class BattleManager {
 
                     int burnDamage = (int) (totalPoisonDamage * resistUpPret * resistDownPret * targetUpPret * targetDownPret
                             + (resistUp - resistDown + guardian.getFdAtk() - fieldB.getFdDef() - targetUp + targetDown));
+                            burnDamage = applyXilianElement(guardian, fieldB, burnDamage);
 
                     if (burnDamage < 0) {
                         burnDamage = 0;
@@ -10430,6 +10549,7 @@ public class BattleManager {
 
                     int burnDamage = (int) (totalPoisonDamage * resistUpPret * resistDownPret * targetUpPret * targetDownPret
                             + (resistUp - resistDown + guardian.getFdAtk() - fieldA.getFdDef() - targetUp + targetDown));
+                            burnDamage = applyXilianElement(guardian, fieldA, burnDamage);
 
                     if (burnDamage < 0) {
                         burnDamage = 0;
@@ -10515,6 +10635,7 @@ public class BattleManager {
 
                     int burnDamage = (int) (totalPoisonDamage * resistUpPret * resistDownPret * targetUpPret * targetDownPret
                             + (resistUp - resistDown + guardian.getFdAtk() - fieldB.getFdDef() - targetUp + targetDown));
+                            burnDamage = applyXilianElement(guardian, fieldB, burnDamage);
 
                     if (burnDamage < 0) {
                         burnDamage = 0;
@@ -10599,6 +10720,7 @@ public class BattleManager {
 
                     int burnDamage = (int) (totalPoisonDamage * resistUpPret * resistDownPret * targetUpPret * targetDownPret
                             + (resistUp - resistDown + guardian.getFdAtk() - fieldA.getFdDef() - targetUp + targetDown));
+                            burnDamage = applyXilianElement(guardian, fieldA, burnDamage);
 
                     if (burnDamage < 0) {
                         burnDamage = 0;
@@ -10685,6 +10807,7 @@ public class BattleManager {
 
                     int burnDamage = (int) (totalPoisonDamage * resistUpPret * resistDownPret * targetUpPret * targetDownPret
                             + (resistUp - resistDown + guardian.getFdAtk() - fieldB.getFdDef() - targetUp + targetDown));
+                            burnDamage = applyXilianElement(guardian, fieldB, burnDamage);
 
                     if (burnDamage < 0) {
                         burnDamage = 0;
@@ -10769,6 +10892,7 @@ public class BattleManager {
 
                     int burnDamage = (int) (totalPoisonDamage * resistUpPret * resistDownPret * targetUpPret * targetDownPret
                             + (resistUp - resistDown + guardian.getFdAtk() - fieldA.getFdDef() - targetUp + targetDown));
+                            burnDamage = applyXilianElement(guardian, fieldA, burnDamage);
 
                     if (burnDamage < 0) {
                         burnDamage = 0;

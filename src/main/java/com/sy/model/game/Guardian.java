@@ -4,6 +4,7 @@ import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
+import com.sy.model.game.Xilian;
 
 public class Guardian {
     // ========== 新增：唯一ID（标识释放者） ==========
@@ -52,6 +53,16 @@ public class Guardian {
     private int zlAtk;
     private int sex;
     private int flyup;
+    // 洗练属性：百分比类（暴击/暴抗/闪避/命中）
+    private double xilianCrit;
+    private double xilianCritResist;
+    private double xilianDodge;
+    private double xilianAccuracy;
+    // 洗练属性：原始值（用于战斗动态计算）
+    private double xilianTuji;    // 0突击 - 增加物理伤害
+    private double xilianLingNeng; // 1灵能 - 增加元素伤害
+    private double xilianFangHu;   // 2防护 - 降低物理伤害
+    private double xilianYuLing;   // 3御灵 - 降低元素伤害
 
     public int getFlyup() {
         return flyup;
@@ -321,4 +332,87 @@ public class Guardian {
     public void setBuffYuRongWans(int buffYuRongWans) { this.buffYuRongWans = buffYuRongWans; }
     public void setBuffTianLuos(int buffTianLuos) { this.buffTianLuos = buffTianLuos; }
     public void setBuffDongyues(int buffDongyues) { this.buffDongyues = buffDongyues; }
+
+    // ========== 洗练属性 getter/setter ==========
+    public double getXilianTuji() { return xilianTuji; }
+    public void setXilianTuji(double xilianTuji) { this.xilianTuji = xilianTuji; }
+    public double getXilianLingNeng() { return xilianLingNeng; }
+    public void setXilianLingNeng(double xilianLingNeng) { this.xilianLingNeng = xilianLingNeng; }
+    public double getXilianFangHu() { return xilianFangHu; }
+    public void setXilianFangHu(double xilianFangHu) { this.xilianFangHu = xilianFangHu; }
+    public double getXilianYuLing() { return xilianYuLing; }
+    public void setXilianYuLing(double xilianYuLing) { this.xilianYuLing = xilianYuLing; }
+    public double getXilianCrit() { return xilianCrit; }
+    public void setXilianCrit(double xilianCrit) { this.xilianCrit = xilianCrit; }
+    public double getXilianCritResist() { return xilianCritResist; }
+    public void setXilianCritResist(double xilianCritResist) { this.xilianCritResist = xilianCritResist; }
+    public double getXilianDodge() { return xilianDodge; }
+    public void setXilianDodge(double xilianDodge) { this.xilianDodge = xilianDodge; }
+    public double getXilianAccuracy() { return xilianAccuracy; }
+    public void setXilianAccuracy(double xilianAccuracy) { this.xilianAccuracy = xilianAccuracy; }
+
+    /**
+     * 计算灵能/御灵对元素伤害的修正
+     * 灵能 > 敌方御灵：每点增加0.1%元素伤害
+     * 御灵 > 敌方灵能：每点降低0.1%元素伤害
+     * @param enemyYuLing 敌方的御灵值
+     * @return 修正后的元素伤害
+     */
+    public int applyXilianElementModifier(int elementDamage, double enemyYuLing) {
+        double diff = this.xilianLingNeng - enemyYuLing;
+        if (diff > 0) {
+            return (int) (elementDamage * (1 + diff * 0.001));
+        } else if (diff < 0) {
+            return (int) (elementDamage * (1 + diff * 0.001));
+        }
+        return elementDamage;
+    }
+
+    /**
+     * 应用装备洗练属性加成到战斗属性
+     * 0突击→存储原始值(物理伤害加成) 1灵能→存储原始值(元素伤害加成)
+     * 2防护→存储原始值(物理减伤) 3御灵→存储原始值(元素减伤)
+     * 4暴击 5暴抗 6闪避 7命中 8速度 9生命
+     */
+    public void applyXilianBonuses(List<Xilian> xilianList) {
+        if (xilianList == null || xilianList.isEmpty()) return;
+        for (Xilian x : xilianList) {
+            if (x.getXilian() == null || x.getValue() == null) continue;
+            double val;
+            try { val = Double.parseDouble(x.getValue()); } catch (NumberFormatException e) { continue; }
+            switch (x.getXilian()) {
+                case 0: // 突击 → 存储原始值，战斗时动态对比敌方防护
+                    this.xilianTuji += val;
+                    break;
+                case 1: // 灵能 → 存储原始值，战斗时动态对比敌方御灵
+                    this.xilianLingNeng += val;
+                    break;
+                case 2: // 防护 → 存储原始值，战斗时动态减伤
+                    this.xilianFangHu += val;
+                    break;
+                case 3: // 御灵 → 存储原始值，战斗时动态减伤
+                    this.xilianYuLing += val;
+                    break;
+                case 4: // 暴击
+                    this.xilianCrit += val;
+                    break;
+                case 5: // 暴抗
+                    this.xilianCritResist += val;
+                    break;
+                case 6: // 闪避
+                    this.xilianDodge += val;
+                    break;
+                case 7: // 命中
+                    this.xilianAccuracy += val;
+                    break;
+                case 8: // 速度
+                    this.speed += (int) val;
+                    break;
+                case 9: // 生命
+                    this.maxHp += (int) val;
+                    this.currentHp += (int) val;
+                    break;
+            }
+        }
+    }
 }

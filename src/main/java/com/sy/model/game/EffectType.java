@@ -2,6 +2,9 @@ package com.sy.model.game;
 
 public enum EffectType {
     DISPEL("驱散"),
+    DISP("闪避"),
+    CRIT("暴击"),
+    CRIT_DISP("暴击闪避"),
     SILENCE("沉默"),
     SILENCE_IMMUNE("沉默免疫"),
     STUN("眩晕"),
