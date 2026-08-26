@@ -10635,6 +10635,22 @@ public class GameServiceServiceImpl implements GameServiceService {
             character.setFdDef(eqCharacters.stream().map(EqCharacters::getFdDef).mapToInt(fdDef -> Objects.isNull(fdDef) ? 0 : fdDef).sum());
             character.setZlDef(eqCharacters.stream().map(EqCharacters::getZlDef).mapToInt(zlDef -> Objects.isNull(zlDef) ? 0 : zlDef).sum());
             character.setZlAtk(eqCharacters.stream().map(EqCharacters::getZlAtk).mapToInt(zlAtk -> Objects.isNull(zlAtk) ? 0 : zlAtk).sum());
+            // 洗练属性：速度和生命直接加到面板
+            for (EqCharacters eq : eqCharacters) {
+                if (Xtool.isNotNull(eq.getXilianList())) {
+                    for (Xilian x : eq.getXilianList()) {
+                        if (x.getXilian() == null || x.getValue() == null) continue;
+                        double val;
+                        try { val = Double.parseDouble(x.getValue()); } catch (NumberFormatException e) { continue; }
+                        if (x.getXilian() == 8) { // 速度
+                            character.setSpeed(character.getSpeed() + (int) val);
+                        } else if (x.getXilian() == 9) { // 生命
+                            character.setMaxHp(character.getMaxHp() + (int) val);
+                            character.setHp(character.getHp() + (int) val);
+                        }
+                    }
+                }
+            }
         }
         //TODO 再叠加协同属性
         if (Xtool.isNotNull(charactersList)) {

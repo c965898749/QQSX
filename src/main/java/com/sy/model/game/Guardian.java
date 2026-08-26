@@ -405,12 +405,9 @@ public class Guardian {
                 case 7: // 命中
                     this.xilianAccuracy += val;
                     break;
-                case 8: // 速度
-                    this.speed += (int) val;
+                case 8: // 速度 → 已加载到面板属性
                     break;
-                case 9: // 生命
-                    this.maxHp += (int) val;
-                    this.currentHp += (int) val;
+                case 9: // 生命 → 已加载到面板属性
                     break;
             }
         }
