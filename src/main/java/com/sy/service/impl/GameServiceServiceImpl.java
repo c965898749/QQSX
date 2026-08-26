@@ -7069,6 +7069,39 @@ public class GameServiceServiceImpl implements GameServiceService {
             case 30:
                 user.setDuoCount(user.getDuoCount() + 1);
                 break;
+            case 450:
+                addBagItem(userId, 89, 10);
+                addBagItem(userId, 90, 10);
+                addBagItem(userId, 91, 10);
+                addBagItem(userId, 92, 10);
+                addBagItem(userId, 93, 10);
+                addBagItem(userId, 94, 10);
+                break;
+            case 451:
+                addBagItem(userId, 89, 50);
+                addBagItem(userId, 90, 50);
+                addBagItem(userId, 91, 50);
+                addBagItem(userId, 92, 50);
+                addBagItem(userId, 93, 50);
+                addBagItem(userId, 94, 50);
+                break;
+            case 452:
+                addBagItem(userId, 89, 500);
+                addBagItem(userId, 90, 500);
+                addBagItem(userId, 91, 500);
+                addBagItem(userId, 92, 500);
+                addBagItem(userId, 93, 500);
+                addBagItem(userId, 94, 500);
+                break;
+            case 453:
+                addBagItem(userId, 89, 2500);
+                addBagItem(userId, 90, 2500);
+                addBagItem(userId, 91, 2500);
+                addBagItem(userId, 92, 2500);
+                addBagItem(userId, 93, 2500);
+                addBagItem(userId, 94, 2500);
+                user.setGold(user.getGold().add(new BigDecimal("5000000")));
+                break;
             default:
                 throw new IllegalArgumentException("不支持的物品ID：" + itemId);
         }
