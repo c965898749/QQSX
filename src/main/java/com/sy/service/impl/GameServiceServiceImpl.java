@@ -9902,53 +9902,82 @@ public class GameServiceServiceImpl implements GameServiceService {
         if (Xtool.isNull(eqCharacter.getXilian())){
             eqCharacter.setXilian(0);
         }
-        if (eqCharacter.getXilian()>50) {
-            if (Xtool.isNull(token.getStr())) {
-                num = 2;
-            }else {
-                User user = userMapper.selectUserByUserId(Integer.parseInt(userId));
-                BigDecimal diamond = user.getDiamond().subtract(new BigDecimal(100));
-                if (diamond.compareTo(BigDecimal.ZERO) < 0) {
-                    baseResp.setSuccess(0);
-                    baseResp.setErrorMsg("灵石不足");
-                    return baseResp;
+        // 先解析锁定属性ID（逗号分隔，支持多锁定）
+        Set<Integer> excludeAttrs = new HashSet<>();
+        List<Long> lockedIds = new ArrayList<>();
+        if (Xtool.isNotNull(token.getStr())) {
+            String[] idArr = token.getStr().split(",");
+            for (String idStr : idArr) {
+                String trimmed = idStr.trim();
+                if (trimmed.isEmpty()) continue;
+                try {
+                    Long lid = Long.parseLong(trimmed);
+                    lockedIds.add(lid);
+                    Xilian lockedXilian = xilianMapper.selectById(lid);
+                    if (lockedXilian != null && lockedXilian.getXilian() != null) {
+                        excludeAttrs.add(lockedXilian.getXilian());
+                    }
+                } catch (NumberFormatException ignored) {
                 }
-                user.setDiamond(diamond);
-                userMapper.updateuser(user);
-                UserInfo info = new UserInfo();
-                BeanUtils.copyProperties(user, info);
-                map.put("info",info);
             }
         }
-        List<Xilian> refineList;
-        if (Xtool.isNotNull(token.getStr())){
-            // 锁定属性：获取锁定属性的code，新生成的属性不能和锁定属性重复
-            Xilian lockedXilian = xilianMapper.selectById(token.getStr());
-            Set<Integer> excludeAttrs = new HashSet<>();
-            if (lockedXilian != null && lockedXilian.getXilian() != null){
-                excludeAttrs.add(lockedXilian.getXilian());
+        // 灵石费用：每多锁一个翻倍（1个=100, 2个=200, 3个=400）
+        int lockCount = lockedIds.size();
+        BigDecimal lockCost = BigDecimal.ZERO;
+        if (lockCount > 0) {
+            lockCost = new BigDecimal(100).multiply(new BigDecimal(Math.pow(2, lockCount - 1)));
+        }
+        // 基础条数：洗练>1000→3条，>50→2条，其余→1条；每锁定1个减1条，最少1条
+        int baseNum;
+        if (eqCharacter.getXilian() > 1000) {
+            baseNum = 3;
+        } else if (eqCharacter.getXilian() > 50) {
+            baseNum = 2;
+        } else {
+            baseNum = 1;
+        }
+        num = Math.max(baseNum - lockCount, 1);
+        // 有锁定时扣灵石
+        if (lockCount > 0) {
+            User user = userMapper.selectUserByUserId(Integer.parseInt(userId));
+            BigDecimal diamond = user.getDiamond().subtract(lockCost);
+            if (diamond.compareTo(BigDecimal.ZERO) < 0) {
+                baseResp.setSuccess(0);
+                baseResp.setErrorMsg("灵石不足");
+                return baseResp;
             }
+            user.setDiamond(diamond);
+            userMapper.updateuser(user);
+            UserInfo info = new UserInfo();
+            BeanUtils.copyProperties(user, info);
+            map.put("info", info);
+        }
+        List<Xilian> refineList;
+        if (!excludeAttrs.isEmpty()) {
             refineList = genEquipRefine(num, excludeAttrs);
         } else {
             refineList = genEquipRefine(num);
         }
-        //先删后增
-        if (Xtool.isNotNull(token.getStr())){
+        //先删后增：删除非锁定的洗练属性
+        if (!lockedIds.isEmpty()) {
             xilianMapper.delete(new LambdaQueryWrapper<Xilian>()
-                    .ne(Xilian::getId,token.getStr())
-                    .eq(Xilian::getEqId,eqCharacter.getUuid()));
-        }else {
+                    .notIn(Xilian::getId, lockedIds)
+                    .eq(Xilian::getEqId, eqCharacter.getUuid()));
+        } else {
             xilianMapper.delete(new LambdaQueryWrapper<Xilian>()
-                    .eq(Xilian::getEqId,eqCharacter.getUuid()));
+                    .eq(Xilian::getEqId, eqCharacter.getUuid()));
         }
         for (Xilian xilian : refineList) {
             xilian.setEqId(eqCharacter.getUuid());
             xilianMapper.insert(xilian);
         }
-        if (Xtool.isNotNull(token.getStr())){
-            Xilian xilian=xilianMapper.selectById(token.getStr());
-            if (xilian!=null){
-                refineList.add(xilian);
+        // 追加所有锁定属性到返回列表
+        if (!lockedIds.isEmpty()) {
+            for (Long lid : lockedIds) {
+                Xilian xilian = xilianMapper.selectById(lid);
+                if (xilian != null) {
+                    refineList.add(xilian);
+                }
             }
         }
         eqCharacter.setXilian(eqCharacter.getXilian()+1);
