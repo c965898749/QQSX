@@ -9980,7 +9980,25 @@ public class GameServiceServiceImpl implements GameServiceService {
                 }
             }
         }
-        eqCharacter.setXilian(eqCharacter.getXilian()+1);
+        // 洗练次数概率跃升：小于50时10%概率变1000、30%概率变50；小于1000时10%概率变1000
+        int currentXilian = eqCharacter.getXilian();
+        if (currentXilian < 50) {
+            if (ProbabilityBooleanUtils.randomByProbability(0.1)) {
+                eqCharacter.setXilian(1000);
+            } else if (ProbabilityBooleanUtils.randomByProbability(0.3)) {
+                eqCharacter.setXilian(50);
+            } else {
+                eqCharacter.setXilian(currentXilian + 1);
+            }
+        } else if (currentXilian < 1000) {
+            if (ProbabilityBooleanUtils.randomByProbability(0.1)) {
+                eqCharacter.setXilian(1000);
+            } else {
+                eqCharacter.setXilian(currentXilian + 1);
+            }
+        } else {
+            eqCharacter.setXilian(currentXilian + 1);
+        }
         map.put("xilian",refineList);
         eqCharactersMapper.updateById(eqCharacter);
         List<EqCharacters> eqCharactersList = eqCharactersMapper.selectByUserId(Integer.parseInt(userId));
