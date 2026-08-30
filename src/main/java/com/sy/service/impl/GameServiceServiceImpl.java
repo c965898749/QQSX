@@ -3252,10 +3252,9 @@ public class GameServiceServiceImpl implements GameServiceService {
 
         if (playerBag.getItemCount().subtract(totalMaterialUsed).compareTo(BigDecimal.ZERO) > 0) {
             playerBag.setItemCount(playerBag.getItemCount().subtract(totalMaterialUsed));
-            baseResp.setData(playerBag.getItemCount());
         } else {
+            playerBag.setItemCount(BigDecimal.ZERO);
             playerBag.setIsDelete("1");
-            baseResp.setData(0);
         }
         gamePlayerBagMapper.updateById(playerBag);
 

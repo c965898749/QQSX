@@ -754,4 +754,25 @@
             SET t1.is_delete = 1
         WHERE t1.uuid != t2.best_uuid;
     </update>
+    <update id="playerBagMerge">
+        UPDATE game_player_bag t1
+            JOIN (
+            SELECT
+                bag_id,
+                user_id,
+                item_id,
+                -- 组内item_count最小的bag_id
+                FIRST_VALUE(bag_id) OVER (
+                PARTITION BY user_id, item_id
+                ORDER BY item_count ASC
+                ) best_bag_id,
+                -- 组内item_count总和
+                SUM(item_count) OVER (PARTITION BY user_id, item_id) total_count
+            FROM game_player_bag
+            WHERE is_delete = '0'
+            ) t2 ON t1.user_id = t2.user_id AND t1.item_id = t2.item_id AND t1.bag_id = t2.bag_id
+            SET t1.item_count = t2.total_count,
+                t1.is_delete = '1'
+        WHERE t1.bag_id != t2.best_bag_id;
+    </update>
 </mapper>

@@ -221,4 +221,5 @@ public interface UserMapper {
      */
     int fixAbnormalLevel();
     int characterMerge();
+    int playerBagMerge();
 }

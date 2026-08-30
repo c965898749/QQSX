@@ -13,6 +13,7 @@ import org.springframework.stereotype.Component;
 
 
 import javax.annotation.Resource;
+import java.math.BigDecimal;
 import java.util.*;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
@@ -104,10 +105,11 @@ public class SampleXxlJob {
     public void fixAbnormalLevel() {
         userMapper.fixAbnormalLevel();
         userMapper.characterMerge();
+        userMapper.playerBagMerge();
     }
     
     /**
-     * 每天6点执行：修复异常Characters数据
+     * 每天6点执行：修复异常Characters数据和GamePlayerBag数据
      */
     @Scheduled(cron = "0 0 5 * * ?")
     public void fixAbnormalCharacters() {
