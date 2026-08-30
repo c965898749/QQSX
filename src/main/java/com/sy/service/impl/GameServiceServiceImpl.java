@@ -176,7 +176,7 @@ public class GameServiceServiceImpl implements GameServiceService {
     //    @Autowired
 //    private ThreadPoolTaskExecutor threadPoolTaskExecutor;
     // 最大体力值
-    private static final int MAX_STAMINA = 1500;
+    private static final int MAX_STAMINA = 2000;
     // 每10分钟恢复1点体力
     private static final long RECOVER_INTERVAL_MINUTES = 10;
 
