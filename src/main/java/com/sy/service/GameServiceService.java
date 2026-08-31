@@ -125,6 +125,7 @@ public interface GameServiceService {
     BaseResp collectAllSilver(TokenDto token, HttpServletRequest request) throws Exception;
     BaseResp robMine(TokenDto token, HttpServletRequest request) throws Exception;
     BaseResp queryBeRobLog(TokenDto token, HttpServletRequest request) throws Exception;
+    BaseResp getArenaCards(TokenDto token, HttpServletRequest request) throws Exception;
     void sendRawrd();
     void executeMothlyTask();
     void deleteAll();

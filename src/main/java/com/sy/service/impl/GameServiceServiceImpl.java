@@ -11256,15 +11256,60 @@ public class GameServiceServiceImpl implements GameServiceService {
         signup.setWeekStartDate(weekStartDate);
         signup.setWeekEndDate(weekEndDate);
         gameArenaSignupMapper.insert(signup);
-        List<Characters> leftCharacter = charactersMapper.goIntoListById(user.getUserId() + "");
-        for (Characters characters : leftCharacter) {
-            GameArenaBattlecharacters battlecharacters = new GameArenaBattlecharacters();
-            BeanUtils.copyProperties(characters, battlecharacters);
-            battlecharacters.setUuid(null);
-            battlecharacters.setWeekNum(arenaWeek);
-            battlecharacters.setArenaLevel(token.getFinalLevel() + "");
-            battlecharacters.setCreateTime(new Date());
-            gameArenaBattlecharactersMapper.insert(battlecharacters);
+        // 根据传递的difficultyLevel（卡牌id逗号拼接）拆解并查询卡牌
+        String difficultyLevel = token.getDifficultyLevel();
+        if (Xtool.isNotNull(difficultyLevel)) {
+            String[] cardIds = difficultyLevel.split(",");
+            int goIntoNum = 1;
+            for (String cardId : cardIds) {
+                if (Xtool.isNull(cardId) || goIntoNum > 5) {
+                    continue;
+                }
+                String trimmedId = cardId.trim();
+                // 先查用户是否拥有该卡牌
+                Characters characters = charactersMapper.listById(userId, trimmedId);
+                if (characters == null) {
+                    // 用户没有该卡牌，从配置缓存获取基础数据
+                    Card cardConfig = GameConfigCache.getCard(trimmedId);
+                    if (cardConfig == null) {
+                        continue;
+                    }
+                    characters = new Characters();
+                    characters.setId(trimmedId);
+                    characters.setName(cardConfig.getName());
+                    characters.setStar(cardConfig.getStar());
+                    characters.setLv(1);
+                    characters.setStackCount(0);
+                    characters.setUserId(Integer.parseInt(userId));
+                    characters.setMaxLv(CardMaxLevelUtils.getMaxLevel(cardConfig.getName(), cardConfig.getStar().doubleValue()));
+                    characters.setCamp(cardConfig.getCamp());
+                    characters.setProfession(cardConfig.getProfession());
+                    characters.setHpGrowth(cardConfig.getHpGrowth());
+                    characters.setAttackGrowth(cardConfig.getAttackGrowth());
+                    characters.setDefenceGrowth(cardConfig.getDefenceGrowth());
+                    characters.setPierceGrowth(cardConfig.getPierceGrowth());
+                    characters.setSpeedGrowth(cardConfig.getSpeedGrowth());
+                    characters.setWlAtk(cardConfig.getWlAtk());
+                    characters.setHyAtk(cardConfig.getHyAtk());
+                    characters.setDsAtk(cardConfig.getDsAtk());
+                    characters.setFdAtk(cardConfig.getFdAtk());
+                    characters.setWlDef(cardConfig.getWlDef());
+                    characters.setHyDef(cardConfig.getHyDef());
+                    characters.setDsDef(cardConfig.getDsDef());
+                    characters.setFdDef(cardConfig.getFdDef());
+                    characters.setZlDef(cardConfig.getZlDef());
+                    characters.setSex(cardConfig.getSex());
+                }
+                GameArenaBattlecharacters battlecharacters = new GameArenaBattlecharacters();
+                BeanUtils.copyProperties(characters, battlecharacters);
+                battlecharacters.setUuid(null);
+                battlecharacters.setWeekNum(arenaWeek);
+                battlecharacters.setGoIntoNum(goIntoNum);
+                battlecharacters.setArenaLevel(token.getFinalLevel() + "");
+                battlecharacters.setCreateTime(new Date());
+                gameArenaBattlecharactersMapper.insert(battlecharacters);
+                goIntoNum++;
+            }
         }
         if (Xtool.isNotNull(token.getStr())) {
             Characters characters = charactersMapper.listById(userId, token.getStr());
@@ -12924,5 +12969,217 @@ public class GameServiceServiceImpl implements GameServiceService {
         return userMineMapper.selectOne(
                 new LambdaQueryWrapper<UserMine>().eq(UserMine::getUserId, userId)
         );
+    }
+
+    @Override
+    public BaseResp getArenaCards(TokenDto token, HttpServletRequest request) throws Exception {
+        BaseResp baseResp = new BaseResp();
+        
+        // 1. 基础参数校验
+        if (token == null || Xtool.isNull(token.getToken())) {
+            baseResp.setSuccess(0);
+            baseResp.setErrorMsg("登录过期");
+            return baseResp;
+        }
+        
+        String userId = token.getUserId();
+        if (Xtool.isNull(userId)) {
+            baseResp.setSuccess(0);
+            baseResp.setErrorMsg("登录过期");
+            return baseResp;
+        }
+        
+        // arenaId = 擂台等级: 1=初级, 2=中级, 3=高级
+        String arenaId = token.getStr();
+        if (Xtool.isNull(arenaId)) {
+            baseResp.setSuccess(0);
+            baseResp.setErrorMsg("擂台等级为空");
+            return baseResp;
+        }
+        
+        int arenaLevel;
+        try {
+            arenaLevel = Integer.parseInt(arenaId);
+        } catch (NumberFormatException e) {
+            baseResp.setSuccess(0);
+            baseResp.setErrorMsg("擂台等级格式错误");
+            return baseResp;
+        }
+        
+        if (arenaLevel < 1 || arenaLevel > 3) {
+            baseResp.setSuccess(0);
+            baseResp.setErrorMsg("擂台等级参数异常");
+            return baseResp;
+        }
+        
+        // 2. 获取用户信息
+        User user = userMapper.selectUserByUserId(Integer.parseInt(userId));
+        if (user == null) {
+            baseResp.setSuccess(0);
+            baseResp.setErrorMsg("用户不存在");
+            return baseResp;
+        }
+        
+        // 3. 查询用户当前拥有的卡牌
+        List<Characters> userCards = charactersMapper.selectByUserId(Integer.parseInt(userId));
+        Map<String, Characters> userCardMap = new HashMap<>();
+        if (Xtool.isNotNull(userCards)) {
+            for (Characters card : userCards) {
+                userCardMap.put(card.getId(), card);
+            }
+        }
+        
+        // 4. 查询用户在该擂台等级最近参加的擂台赛
+        List<GameArenaBattle> recentBattles = gameArenaBattleMapper.selectList(
+            new LambdaQueryWrapper<GameArenaBattle>()
+                .eq(GameArenaBattle::getUserId, Integer.parseInt(userId))
+                .eq(GameArenaBattle::getArenaLevel, arenaLevel)
+                .orderByDesc(GameArenaBattle::getCreatetime)
+                .last("limit 1")
+        );
+        
+        List<Characters> resultCards = new ArrayList<>();
+        
+        if (Xtool.isNotNull(recentBattles)) {
+            // 5a. 有最近参赛记录，获取该次参赛的卡牌
+            GameArenaBattle recentBattle = recentBattles.get(0);
+            Integer weekNum = recentBattle.getWeekNum();
+            
+            List<GameArenaBattlecharacters> battleChars = gameArenaBattlecharactersMapper.selectList(
+                new LambdaQueryWrapper<GameArenaBattlecharacters>()
+                    .eq(GameArenaBattlecharacters::getUserId, Integer.parseInt(userId))
+                    .eq(GameArenaBattlecharacters::getArenaLevel, arenaId)
+                    .eq(GameArenaBattlecharacters::getWeekNum, weekNum)
+                    .eq(GameArenaBattlecharacters::getIsDelete, "0")
+            );
+            
+            // 5b. 检查每张卡牌是否还存在
+            for (GameArenaBattlecharacters battleChar : battleChars) {
+                String cardId = battleChar.getId();
+                
+                // 检查卡牌配置是否存在
+                Card cardConfig = GameConfigCache.getCard(cardId);
+                if (cardConfig == null) {
+                    continue;
+                }
+                
+                // 检查用户是否还拥有这张卡牌
+                if (userCardMap.containsKey(cardId)) {
+                    resultCards.add(userCardMap.get(cardId));
+                } else {
+                    // 卡牌不存在，随机同星级卡牌
+                    Characters randomCard = getRandomCardByStar(cardConfig.getStar());
+                    if (randomCard != null) {
+                        resultCards.add(randomCard);
+                    }
+                }
+            }
+        } else {
+            // 6. 没有最近参赛记录，根据擂台等级随机生成卡牌
+            resultCards = generateRandomCardsByArenaLevel(arenaLevel);
+        }
+        
+        baseResp.setSuccess(1);
+        baseResp.setData(resultCards);
+        return baseResp;
+    }
+    
+    /**
+     * 根据星级随机获取一张卡牌（从id=1001开始）
+     */
+    private Characters getRandomCardByStar(BigDecimal star) {
+        List<Card> allCards = GameConfigCache.getAllCards();
+        List<Card> sameStarCards = new ArrayList<>();
+        
+        for (Card card : allCards) {
+            if (card.getStar().compareTo(star) == 0 && isValidArenaCardId(card.getId())) {
+                sameStarCards.add(card);
+            }
+        }
+        
+        if (sameStarCards.isEmpty()) {
+            return null;
+        }
+        
+        Random random = new Random();
+        Card selectedCard = sameStarCards.get(random.nextInt(sameStarCards.size()));
+        
+        // 构建Characters对象
+        Characters characters = new Characters();
+        characters.setId(selectedCard.getId());
+        characters.setName(selectedCard.getName());
+        characters.setStar(selectedCard.getStar());
+        characters.setLv(1);
+        characters.setStackCount(0);
+        characters.setMaxLv(CardMaxLevelUtils.getMaxLevel(selectedCard.getName(), selectedCard.getStar().doubleValue()));
+        
+        return characters;
+    }
+    
+    /**
+     * 根据擂台等级随机生成卡牌数组（从id=1001开始）
+     * 初级擂台(1): 3星及以下
+     * 中级擂台(2): 4星及以下
+     * 高级擂台(3): 无限制
+     */
+    private List<Characters> generateRandomCardsByArenaLevel(int arenaLevel) {
+        List<Card> allCards = GameConfigCache.getAllCards();
+        List<Card> eligibleCards = new ArrayList<>();
+        
+        BigDecimal maxStar;
+        if (arenaLevel == 1) {
+            maxStar = new BigDecimal(3);
+        } else if (arenaLevel == 2) {
+            maxStar = new BigDecimal(4);
+        } else {
+            maxStar = null; // 高级无限制
+        }
+        
+        for (Card card : allCards) {
+            if (!isValidArenaCardId(card.getId())) {
+                continue;
+            }
+            if (maxStar == null || card.getStar().compareTo(maxStar) <= 0) {
+                eligibleCards.add(card);
+            }
+        }
+        
+        List<Characters> result = new ArrayList<>();
+        Random random = new Random();
+        
+        // 随机生成5张卡牌
+        for (int i = 0; i < 5; i++) {
+            if (eligibleCards.isEmpty()) {
+                break;
+            }
+            
+            Card selectedCard = eligibleCards.get(random.nextInt(eligibleCards.size()));
+            
+            Characters characters = new Characters();
+            characters.setId(selectedCard.getId());
+            characters.setName(selectedCard.getName());
+            characters.setStar(selectedCard.getStar());
+            characters.setLv(1);
+            characters.setStackCount(0);
+            characters.setMaxLv(CardMaxLevelUtils.getMaxLevel(selectedCard.getName(), selectedCard.getStar().doubleValue()));
+            
+            result.add(characters);
+        }
+        
+        return result;
+    }
+    
+    /**
+     * 判断卡牌id是否为擂台可用卡牌（id >= 1001）
+     */
+    private boolean isValidArenaCardId(String cardId) {
+        if (Xtool.isNull(cardId)) {
+            return false;
+        }
+        try {
+            return Integer.parseInt(cardId) >= 1001;
+        } catch (NumberFormatException e) {
+            return false;
+        }
     }
 }

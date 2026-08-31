@@ -2043,4 +2043,24 @@ public class GameContoller {
             return baseResp;
         }
     }
+
+    /**
+     * 获取擂台卡牌数组
+     * @param token
+     * @param request
+     * @return
+     */
+    @PostMapping("getArenaCards")
+    @CrossOrigin
+    public BaseResp getArenaCards(@RequestBody TokenDto token, HttpServletRequest request) {
+        BaseResp baseResp = new BaseResp();
+        try {
+            baseResp = gameServiceService.getArenaCards(token, request);
+            return baseResp;
+        } catch (Exception e) {
+            e.printStackTrace();
+            baseResp.setSuccess(0);
+            return baseResp;
+        }
+    }
 }
