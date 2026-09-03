@@ -615,14 +615,14 @@ public class BattleManager {
         }
         // ========== 洗练属性：暴击/暴抗判定 ==========
         boolean critted = false;
-        double critChance = Math.max(0, attacker.getXilianCrit() - defender.getXilianCritResist());
+        double critChance = Math.max(0, attacker.getXilianCrit() - defender.getXilianCritResist()) / 100.0;
         if (ProbabilityBooleanUtils.randomByProbability(critChance)) {
             critted = true;
             burnDamage = (int) (burnDamage * 1.5);
         }
         // ========== 洗练属性：闪避/命中判定 ==========
         boolean dodged = false;
-        double dodgeChance = Math.max(0, defender.getXilianDodge() - attacker.getXilianAccuracy());
+        double dodgeChance = Math.max(0, defender.getXilianDodge() - attacker.getXilianAccuracy()) / 100.0;
         if (ProbabilityBooleanUtils.randomByProbability(dodgeChance)) {
             dodged = true;
             burnDamage = 0;
