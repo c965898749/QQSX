@@ -21,8 +21,20 @@ public class BattleManager {
     private int currentRound = 0;
     private List<BattleLog> battleLogs = new ArrayList<>();
     private Random random = new Random();
+    // 落日余晖已累计的暴击加成（战斗内有效，key为后羿id），用于封顶判定
+    private final Map<String, Integer> houYiCritBonus = new HashMap<>();
     // 新增递归深度常量（可根据业务调整）
     private static final int MAX_TRIGGER_DEPTH = 5;
+    // 后羿乾坤破（2技能）：蓄力满4层后，攻击时以30%攻击力对易死目标连射，箭数随2技能等级提升，封顶10箭
+    private static final int HOU_YI_CHARGE_MAX = 4;
+    private static final int HOU_YI_SHOT_MAX = 10;
+    // 人物最高等级：用于把2技能等级均分映射到箭数（满级时正好封顶10箭）
+    private static final int HOU_YI_MAX_CARD_LEVEL = 100;
+    private static final double HOU_YI_SHOT_ATTACK_PRET = 0.3;
+    // 后羿落日余晖（1技能）：位于场下时1技能每级每回合增加的暴击值（洗练暴击为百分比值，1 即 +1%）
+    private static final int HOU_YI_CRIT_PER_ROUND = 1;
+    // 落日余晖累计加成上限：技能累计暴击最多+50%（只封技能累计部分，装备洗练暴击范围为2.0~10.0）
+    private static final int HOU_YI_CRIT_BONUS_CAP = 50;
     public BattleManager(String battleId, List<Guardian> campA, List<Guardian> campB) {
         this.battleId = battleId;
         this.campA = campA;
@@ -530,6 +542,18 @@ public class BattleManager {
 
             }
         }
+        // 后羿场下：落日余晖（1技能）每回合暴击+1%×1技能等级；乾坤破（2技能）回合结束时位于场下蓄力+1
+        Guardian houyiA = campA.stream()
+                .filter(g -> g.getName().equals("后羿") && !g.isDead() && !g.isOnField())
+                .findFirst().orElse(null);
+        addHouYiCharge(houyiA);
+        triggerHouYiLuoRiYuHui(houyiA);
+        Guardian houyiB = campB.stream()
+                .filter(g -> g.getName().equals("后羿") && !g.isDead() && !g.isOnField())
+                .findFirst().orElse(null);
+        addHouYiCharge(houyiB);
+        triggerHouYiLuoRiYuHui(houyiB);
+
         List<Guardian> allUnits = new ArrayList<>();
         allUnits.addAll(campA);
         allUnits.addAll(campB);
@@ -1993,6 +2017,214 @@ public class BattleManager {
                             "眩晕2回合");
                 }
                 break;
+            case "后羿":
+                // 乾坤破（2技能）：蓄力满4层后，攻击时以30%攻击力对易死目标连射，箭数随2技能等级提升（封顶10箭）
+                triggerHouYiQianKunPo(attacker);
+                break;
+        }
+    }
+
+    /**
+     * 后羿乾坤破蓄力：受到/躲过伤害，或回合结束时位于场下，蓄力+1（上限4层）
+     * 蓄力满4层后由攻击时的 triggerHouYiQianKunPo 释放并清零
+     */
+    private void addHouYiCharge(Guardian houyi) {
+        if (houyi == null || houyi.isDead() || houyi.isSilence()) {
+            return;
+        }
+        int[] skillLevel = CardSkillLevelUtil.calculateSkillLevels(houyi.getLevel(), houyi.getStar().doubleValue());
+        // 乾坤破为2技能，未解锁不蓄力
+        if (skillLevel[1] <= 0) {
+            return;
+        }
+        // 蓄力已满，等待攻击时释放
+        if (houyi.getBuffStacks() >= HOU_YI_CHARGE_MAX) {
+            return;
+        }
+        int xuli = houyi.getBuffStacks();
+        houyi.setBuffStacks(xuli + 1);
+        String[] str = {"后羿蓄力·一", "后羿蓄力·二", "后羿蓄力·三", "后羿蓄力·四"};
+        addLog(str[xuli],
+                houyi.getId(),
+                houyi.getMaxHp(),
+                houyi.getCurrentHp(),
+                0,
+                houyi.isOnField(),
+                houyi.getId(),
+                houyi.getMaxHp(),
+                houyi.getCurrentHp(),
+                0,
+                houyi.isOnField(),
+                EffectType.fromChargeStacks(xuli + 1, HOU_YI_CHARGE_MAX),
+                DamageType.BUFF,
+                "");
+    }
+
+    /**
+     * 后羿落日余晖（1技能）：位于场下时每回合增加暴击，1技能每级+1%
+     * 直接累加洗练暴击值（百分比值），登场后依然生效
+     * 仅技能累计部分封顶（HOU_YI_CRIT_BONUS_CAP），不削减装备自带的洗练暴击
+     */
+    private void triggerHouYiLuoRiYuHui(Guardian houyi) {
+        if (houyi == null || houyi.isDead() || houyi.isSilence() || houyi.isOnField()) {
+            return;
+        }
+        int[] skillLevel = CardSkillLevelUtil.calculateSkillLevels(houyi.getLevel(), houyi.getStar().doubleValue());
+        // 落日余晖为1技能，未解锁不生效
+        if (skillLevel[0] <= 0) {
+            return;
+        }
+        // 每回合增加量：1技能每级+1%暴击
+        int critPerRound = HOU_YI_CRIT_PER_ROUND * skillLevel[0];
+        int bonus = houYiCritBonus.getOrDefault(houyi.getId(), 0);
+        // 累计加成已封顶，不再增加
+        if (bonus >= HOU_YI_CRIT_BONUS_CAP) {
+            return;
+        }
+        // 本次实际增加量：临界回合可能不足每回合增量
+        int gain = Math.min(critPerRound, HOU_YI_CRIT_BONUS_CAP - bonus);
+        houYiCritBonus.put(houyi.getId(), bonus + gain);
+        houyi.setXilianCrit(houyi.getXilianCrit() + gain);
+        addLog("落日余晖",
+                houyi.getId(),
+                houyi.getMaxHp(),
+                houyi.getCurrentHp(),
+                gain,
+                houyi.isOnField(),
+                houyi.getId(),
+                houyi.getMaxHp(),
+                houyi.getCurrentHp(),
+                gain,
+                houyi.isOnField(),
+                EffectType.CRIT_UP,
+                DamageType.BUFF,
+                "暴击+" + gain + "%");
+    }
+
+    /**
+     * 后羿乾坤破（2技能）：蓄力满4层后，攻击时以30%攻击力对易死（生命值最低）目标连射
+     * 连射箭数随2技能等级提升：以人物满级(100级)时的2技能等级为基准均分，封顶10箭
+     * 每一射属物理攻击，独立结算并可触发暴击与闪避，目标阵亡后自动锁定新的易死目标
+     */
+    private void triggerHouYiQianKunPo(Guardian attacker) {
+        int[] skillLevel = CardSkillLevelUtil.calculateSkillLevels(attacker.getLevel(), attacker.getStar().doubleValue());
+        // 乾坤破为2技能，未解锁不释放
+        if (skillLevel[1] <= 0) {
+            return;
+        }
+        // 蓄力未满4层不释放
+        if (attacker.getBuffStacks() < HOU_YI_CHARGE_MAX) {
+            return;
+        }
+        attacker.setBuffStacks(0);
+        // 连射箭数：2技能等级 / 满级(100级)的2技能等级 * 10，向上取整并封顶10箭
+        int maxSkillLevel = CardSkillLevelUtil.calculateSkillLevels(HOU_YI_MAX_CARD_LEVEL, attacker.getStar().doubleValue())[1];
+        int shotCount = (int) Math.ceil(HOU_YI_SHOT_MAX * (double) skillLevel[1] / maxSkillLevel);
+        if (shotCount < 1) {
+            shotCount = 1;
+        } else if (shotCount > HOU_YI_SHOT_MAX) {
+            shotCount = HOU_YI_SHOT_MAX;
+        }
+        List<Guardian> enemies = attacker.getCamp() == Camp.A ? campB : campA;
+        for (int i = 0; i < shotCount; i++) {
+            // 查找易死目标：敌方生命值最低的存活单位
+            Guardian defender = enemies.stream()
+                    .filter(g -> !g.isDead())
+                    // 按血量升序排序
+                    .sorted(Comparator.comparingInt(Guardian::getCurrentHp))
+                    .findFirst().orElse(null);
+            if (defender == null) {
+                break;
+            }
+            // 单射伤害：以30%攻击力套用物理伤害公式
+            // 物理攻击增益
+            int resistUp = calculateTotalVaule(attacker, EffectType.ATTACK_UP);
+            double resistUpPret = calculateTotalUpPretVaule(attacker, EffectType.ATTACK_UP_PRET);
+            // 物理攻击降低
+            int resistDown = calculateTotalVaule(attacker, EffectType.ATTACK_DOWN);
+            double resistDownPret = calculateTotalDownPretVaule(attacker, EffectType.ATTACK_DOWN_PRET);
+            // 物理抗性增益
+            int targetUp = calculateTotalVaule(defender, EffectType.ATTACK_RESIST_BOOST);
+            double targetUpPret = calculateTotalDownPretVaule(defender, EffectType.ATTACK_RESIST_BOOST_PRET);
+            // 物理抗性降低
+            int targetDown = calculateTotalVaule(defender, EffectType.ATTACK_RESIST_DOWN);
+            double targetDownPret = calculateTotalUpPretVaule(defender, EffectType.ATTACK_RESIST_DOWN_PRET);
+
+            int shotDamage = (int) (attacker.getAttack() * HOU_YI_SHOT_ATTACK_PRET * resistUpPret * resistDownPret * targetUpPret * targetDownPret
+                    + (resistUp - resistDown + attacker.getWlAtk() - defender.getWlDef() - targetUp + targetDown) * HOU_YI_SHOT_ATTACK_PRET);
+            shotDamage = applyXilianElement(attacker, defender, shotDamage);
+            if (shotDamage < 0) {
+                shotDamage = 0;
+            }
+            // ========== 洗练属性：暴击/暴抗判定（每一射独立判定） ==========
+            boolean critted = false;
+            double critChance = Math.max(0, attacker.getXilianCrit() - defender.getXilianCritResist()) / 100.0;
+            if (ProbabilityBooleanUtils.randomByProbability(critChance)) {
+                critted = true;
+                shotDamage = (int) (shotDamage * 1.5);
+            }
+            // ========== 洗练属性：闪避/命中判定（物理攻击，每一射独立判定） ==========
+            boolean dodged = false;
+            double dodgeChance = Math.max(0, defender.getXilianDodge() - attacker.getXilianAccuracy()) / 100.0;
+            if (ProbabilityBooleanUtils.randomByProbability(dodgeChance)) {
+                dodged = true;
+                shotDamage = 0;
+            }
+            // 确定日志EffectType
+            EffectType shotEffectType;
+            if (critted && dodged) {
+                shotEffectType = EffectType.CRIT_DISP;
+            } else if (critted) {
+                shotEffectType = EffectType.CRIT;
+            } else if (dodged) {
+                shotEffectType = EffectType.DISP;
+            } else {
+                shotEffectType = EffectType.DAMAGE;
+            }
+
+            Integer logIndex = battleLogs.size();
+            shotDamage = triggerOnAttackedSkills(defender, shotDamage, EffectType.DAMAGE);
+
+            // 扣除伤害
+            defender.setCurrentHp(defender.getCurrentHp() - shotDamage);
+            Map<String, TargetBattleData> deadUnits = new HashMap<>();
+            if (defender.getCurrentHp() <= 0) {
+                defender.setDead(true);
+                defender.setOnField(false);
+                TargetBattleData data = new TargetBattleData(defender.getMaxHp(), defender.getCurrentHp(), shotDamage, defender.isOnField());
+                deadUnits.put(defender.getId(), data);
+            }
+            addLog("乾坤破",
+                    attacker.getId(),
+                    attacker.getMaxHp(),
+                    attacker.getCurrentHp(),
+                    0,
+                    attacker.isOnField(),
+                    defender.getId(),
+                    defender.getMaxHp(),
+                    defender.getCurrentHp(),
+                    shotDamage,
+                    defender.isOnField(),
+                    shotEffectType,
+                    DamageType.PHYSICAL,
+                    "-" + shotDamage, logIndex);
+            // 死亡日志
+            if (!deadUnits.isEmpty()) {
+                addMultiTargetLog("UNIT_DEATH",
+                        null,
+                        0,
+                        0,
+                        false,
+                        deadUnits,
+                        null,
+                        null,
+                        "死亡");
+                //触发死亡技能
+                triggerOnDeathSkills(defender);
+            } else {
+                //触发受击技能
+                triggerOnAttackedSkills(defender, EffectType.DAMAGE);
+            }
         }
     }
 
@@ -3296,6 +3528,10 @@ public class BattleManager {
                                 "眩晕2回合");
                     }
                 }
+                break;
+            case "后羿":
+                // 乾坤破（2技能）：受到/躲过伤害时蓄力+1，蓄力满4层后攻击时释放连射
+                addHouYiCharge(defender);
                 break;
         }
 
@@ -8229,7 +8465,7 @@ public class BattleManager {
                         guardian.getCurrentHp(),
                         0,
                         guardian.isOnField(),
-                        EffectType.CHARGE_UP,
+                        EffectType.fromChargeStacks(xuli + 1, str.length),
                         DamageType.BUFF,
                         str[xuli]);
             }
@@ -8344,7 +8580,7 @@ public class BattleManager {
                         guardian.getCurrentHp(),
                         0,
                         guardian.isOnField(),
-                        EffectType.CHARGE_UP,
+                        EffectType.fromChargeStacks(xuli + 1, str.length),
                         DamageType.BUFF,
                         str[xuli]);
             }

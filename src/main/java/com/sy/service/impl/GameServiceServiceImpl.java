@@ -7101,6 +7101,17 @@ public class GameServiceServiceImpl implements GameServiceService {
                 addBagItem(userId, 94, 2500);
                 user.setGold(user.getGold().add(new BigDecimal("5000000")));
                 break;
+            case 95: // 后羿魂魄宝箱：后羿魂魄1~10枚(id1105)、玄铁矿(id14)/青铜矿(id13)/紫金矿(id15)各99~599
+                Random random = new Random();
+                // 后羿魂魄（id 1105）：1~10枚，进背包
+                addBagItem(userId, 1105, random.nextInt(10) + 1);
+                // 玄铁矿（id 14）：99~599
+                addBagItem(userId, 14, random.nextInt(501) + 99);
+                // 青铜矿（id 13）：99~599
+                addBagItem(userId, 13, random.nextInt(501) + 99);
+                // 紫金矿（id 15）：99~599
+                addBagItem(userId, 15, random.nextInt(501) + 99);
+                break;
             default:
                 throw new IllegalArgumentException("不支持的物品ID：" + itemId);
         }

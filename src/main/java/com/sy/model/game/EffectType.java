@@ -4,6 +4,11 @@ public enum EffectType {
     DISPEL("驱散"),
     DISP("闪避"),
     CRIT("暴击"),
+    CRIT_UP("暴击提升"),
+    CRIT_DOWN("暴击下降"),
+    CRIT_UP_PRET("暴击提升"),
+    CRIT_DOWN_PRET("暴击下降"),
+
     CRIT_DISP("暴击闪避"),
     SILENCE("沉默"),
     SILENCE_IMMUNE("沉默免疫"),
@@ -11,7 +16,14 @@ public enum EffectType {
     STUN_IMMUNE("眩晕免疫"),
     BLOODTHIRST("嗜血"),
     CRAZY("疯狂"),
-    CHARGE_UP("蓄力"),
+    // 蓄力：1~6层逐级展示，蓄满统一用XULIMAN
+    XULI1("蓄力1"),
+    XULI2("蓄力2"),
+    XULI3("蓄力3"),
+    XULI4("蓄力4"),
+    XULI5("蓄力5"),
+    XULI6("蓄力6"),
+    XULIMAN("蓄力满"),
     DRAIN("吸血"),
     TRUE_DAMAGE("真实伤害"),
     FIXED_SOUL("固魂"),
@@ -92,4 +104,34 @@ public enum EffectType {
     SPEED_DOWN_PRET("速度下降");
     private String desc;
     EffectType(String desc) { this.desc = desc; }
+
+    /**
+     * 蓄力层数 → 蓄力EffectType
+     * 1~6层依次对应 XULI1~XULI6；达到该角色蓄力上限（满层）或超过6层时统一用 XULIMAN
+     * @param stacks    本次蓄力+1之后的当前层数
+     * @param maxStacks 该角色的蓄力上限层数
+     */
+    public static EffectType fromChargeStacks(int stacks, int maxStacks) {
+        // 蓄力已满
+        if (maxStacks > 0 && stacks >= maxStacks) {
+            return XULIMAN;
+        }
+        switch (stacks) {
+            case 1:
+                return XULI1;
+            case 2:
+                return XULI2;
+            case 3:
+                return XULI3;
+            case 4:
+                return XULI4;
+            case 5:
+                return XULI5;
+            case 6:
+                return XULI6;
+            // 层数超过6层兜底为蓄力满
+            default:
+                return XULIMAN;
+        }
+    }
 }
