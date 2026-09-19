@@ -375,6 +375,20 @@ public class GameServiceServiceImpl implements GameServiceService {
     //格式化装备
     public List<EqCharacters> formateEqCharacter(List<EqCharacters> characterList) {
         for (EqCharacters eqCharacters : characterList) {
+            // 飞升加成：每级flyup增加3%属性
+            if (Xtool.isNotNull(eqCharacters.getFlyup())) {
+                BigDecimal flyupRate = new BigDecimal("1").add(new BigDecimal(eqCharacters.getFlyup()).multiply(new BigDecimal("0.03")));
+                eqCharacters.setWlAtk(new BigDecimal(eqCharacters.getWlAtk()).multiply(flyupRate).intValue());
+                eqCharacters.setHyAtk(new BigDecimal(eqCharacters.getHyAtk()).multiply(flyupRate).intValue());
+                eqCharacters.setFdAtk(new BigDecimal(eqCharacters.getFdAtk()).multiply(flyupRate).intValue());
+                eqCharacters.setDsAtk(new BigDecimal(eqCharacters.getDsAtk()).multiply(flyupRate).intValue());
+                eqCharacters.setWlDef(new BigDecimal(eqCharacters.getWlDef()).multiply(flyupRate).intValue());
+                eqCharacters.setHyDef(new BigDecimal(eqCharacters.getHyDef()).multiply(flyupRate).intValue());
+                eqCharacters.setDsDef(new BigDecimal(eqCharacters.getDsDef()).multiply(flyupRate).intValue());
+                eqCharacters.setFdDef(new BigDecimal(eqCharacters.getFdDef()).multiply(flyupRate).intValue());
+                eqCharacters.setZlDef(new BigDecimal(eqCharacters.getZlDef()).multiply(flyupRate).intValue());
+                eqCharacters.setZlAtk(new BigDecimal(eqCharacters.getZlAtk()).multiply(flyupRate).intValue());
+            }
             eqCharacters.setWlAtk(eqCharacters.getWlAtk() * eqCharacters.getLv());
             eqCharacters.setHyAtk(eqCharacters.getHyAtk() * eqCharacters.getLv());
             eqCharacters.setFdAtk(eqCharacters.getFdAtk() * eqCharacters.getLv());

@@ -706,6 +706,60 @@ public class BattleManager {
     //吃伤时技能
     private Integer triggerOnAttackedSkills(Guardian defender, Integer burnDamage,EffectType effectType){
             int[] skillLevel = CardSkillLevelUtil.calculateSkillLevels(defender.getLevel(), defender.getStar().doubleValue());
+            //触发场下技能（玄武守卫，不受场上单位沉默影响，仅受玄武自身沉默影响）
+        List<Guardian> xuXuanWu = defender.getCamp() == Camp.A ?
+                campA.stream().filter(g -> !g.isDead()&&g.getName().equals("玄武")).collect(Collectors.toList()) :
+                campB.stream().filter(g -> !g.isDead()&&g.getName().equals("玄武")).collect(Collectors.toList());
+            if (Xtool.isNotNull(xuXuanWu)&&!defender.getName().equals("玄武")&&effectType == EffectType.DAMAGE && defender.isOnField()){
+                Guardian guardian=xuXuanWu.get(0);
+                if (!guardian.isSilence()) {
+                int[] skillLevelC = CardSkillLevelUtil.calculateSkillLevels(guardian.getLevel(), guardian.getStar().doubleValue());
+                if (skillLevelC[1]>0){
+                    guardian.setCurrentHp(guardian.getCurrentHp() - burnDamage);
+                    addLog("守卫",
+                            guardian.getId(),
+                            guardian.getMaxHp(),
+                            guardian.getCurrentHp(),
+                            0,
+                            guardian.isOnField(),
+                            guardian.getId(),
+                            guardian.getMaxHp(),
+                            guardian.getCurrentHp(),
+                            burnDamage,
+                            guardian.isOnField(),
+                            EffectType.DAMAGE,
+                            DamageType.TRUE,
+                            "-" + burnDamage);
+                    Map<String, TargetBattleData> deadUnits = new HashMap<>();
+
+                    if (guardian.getCurrentHp() <= 0) {
+                        guardian.setDead(true);
+                        guardian.setOnField(false);
+                        TargetBattleData data = new TargetBattleData(guardian.getMaxHp(), guardian.getCurrentHp(), burnDamage, guardian.isOnField());
+                        deadUnits.put(guardian.getId(), data);
+                    }
+                    // 死亡日志
+                    if (!deadUnits.isEmpty()) {
+                        addMultiTargetLog("UNIT_DEATH",
+                                null,
+                                0,
+                                0,
+                                false,
+                                deadUnits,
+                                null,
+                                null,
+                                "死亡");
+                        //触发死亡技能
+                        triggerOnDeathSkills(guardian);
+
+                    } else {
+                        //触发受击技能
+                        triggerOnAttackedSkills(guardian, defender);
+                    }
+                    burnDamage=0;
+                }
+                }
+            }
             if (defender.isSilence()) {
                 return burnDamage;
             }
@@ -770,58 +824,6 @@ public class BattleManager {
                         }
                     }
                     break;
-            }
-            //触发场下技能
-        List<Guardian> defenders = defender.getCamp() == Camp.A ?
-                campA.stream().filter(g -> !g.isDead()&&g.getName().equals("玄武")).collect(Collectors.toList()) :
-                campB.stream().filter(g -> !g.isDead()&&g.getName().equals("玄武")).collect(Collectors.toList());
-            if (Xtool.isNotNull(defenders)&&!defender.getName().equals("玄武")&&effectType == EffectType.DAMAGE && defender.isOnField()){
-                Guardian guardian=defenders.get(0);
-                int[] skillLevelC = CardSkillLevelUtil.calculateSkillLevels(guardian.getLevel(), guardian.getStar().doubleValue());
-                if (skillLevelC[1]>0){
-                    guardian.setCurrentHp(guardian.getCurrentHp() - burnDamage);
-                    addLog("守卫",
-                            guardian.getId(),
-                            guardian.getMaxHp(),
-                            guardian.getCurrentHp(),
-                            0,
-                            guardian.isOnField(),
-                            guardian.getId(),
-                            guardian.getMaxHp(),
-                            guardian.getCurrentHp(),
-                            burnDamage,
-                            guardian.isOnField(),
-                            EffectType.DAMAGE,
-                            DamageType.TRUE,
-                            "-" + burnDamage);
-                    Map<String, TargetBattleData> deadUnits = new HashMap<>();
-
-                    if (guardian.getCurrentHp() <= 0) {
-                        guardian.setDead(true);
-                        guardian.setOnField(false);
-                        TargetBattleData data = new TargetBattleData(guardian.getMaxHp(), guardian.getCurrentHp(), burnDamage, guardian.isOnField());
-                        deadUnits.put(guardian.getId(), data);
-                    }
-                    // 死亡日志
-                    if (!deadUnits.isEmpty()) {
-                        addMultiTargetLog("UNIT_DEATH",
-                                null,
-                                0,
-                                0,
-                                false,
-                                deadUnits,
-                                null,
-                                null,
-                                "死亡");
-                        //触发死亡技能
-                        triggerOnDeathSkills(guardian);
-
-                    } else {
-                        //触发受击技能
-                        triggerOnAttackedSkills(guardian, defender);
-                    }
-                    burnDamage=0;
-                }
             }
 
         return burnDamage;
@@ -1043,6 +1045,834 @@ public class BattleManager {
                     }
                 }
                 break;
+            case "树苗小妖":
+                if (1 == 1) {
+                    //烈焰阵Lv1登场时，令敌方全体收到火焰伤害420点；
+                    Map<String, TargetBattleData> deadUnits = new HashMap<>();
+                    List<Guardian> deadGuardians = new ArrayList<>();
+
+                    Map<String, TargetBattleData> targetStatus = new HashMap<>();
+                    List<Guardian> enemies = guardian.getCamp() == Camp.A ?
+                            campB.stream().filter(g -> !g.isDead()).collect(Collectors.toList()) :
+                            campA.stream().filter(g -> !g.isDead()).collect(Collectors.toList());
+                    if (Xtool.isNotNull(enemies)) {
+                        Integer logIndex=battleLogs.size();
+                        enemies.forEach(g -> {
+                            // 1. 计算所有中毒效果的总伤害（累加 POISON 类型的 value）
+                            int totalPoisonDamage = 420 * skillLevel[0];
+                            // 2. 计算毒抗相关（直接基于你现有 EffectInstance 计算，不新增 Guardian 方法）
+                            // 火伤增益：所有 POISON_RESIST 类型效果的 value 总和
+                            int resistUp = calculateTotalVaule(guardian, EffectType.FIRE_BOOST);
+                            // 火伤增益百分比：所有 POISON_RESIST 类型效果的 value 乘积
+                            double resistUpPret = calculateTotalUpPretVaule(guardian, EffectType.FIRE_BOOST_PRET);
+                            // 火伤降低：所有 POISON_RESIST_DOWN 类型效果的 value 总和
+                            int resistDown = calculateTotalVaule(guardian, EffectType.FIRE_DOWN);
+                            // 火伤降低百分比：所有 POISON_RESIST 类型效果的 value 乘积
+                            double resistDownPret = calculateTotalDownPretVaule(guardian, EffectType.FIRE_DOWN_PRET);
+
+
+                            // 2. 计算毒抗相关（直接基于你现有 EffectInstance 计算，不新增 Guardian 方法）
+                            // 火抗增益：所有 POISON_RESIST 类型效果的 value 总和
+                            int targetUp = calculateTotalVaule(g, EffectType.FIRE_RESIST_BOOST);
+                            // 火抗增益百分比：所有 POISON_RESIST 类型效果的 value 乘积
+                            double targetUpPret = calculateTotalDownPretVaule(g, EffectType.FIRE_RESIST_BOOST_PRET);
+                            // 火抗降低：所有 POISON_RESIST_DOWN 类型效果的 value 总和
+                            int targetDown = calculateTotalVaule(g, EffectType.FIRE_RESIST_DOWN);
+                            // 火抗降低百分比：所有 POISON_RESIST 类型效果的 value 乘积
+                            double targetDownPret = calculateTotalUpPretVaule(g, EffectType.FIRE_RESIST_DOWN_PRET);
+                            // 最终（仅基于 buff 计算，无新增方法）
+
+                            int burnDamage = (int) (totalPoisonDamage * resistUpPret * resistDownPret * targetUpPret * targetDownPret
+                                    + (resistUp - resistDown + guardian.getHyAtk() - g.getHyDef() - targetUp + targetDown));
+                            burnDamage = applyXilianElement(guardian, g, burnDamage);
+
+                            if (burnDamage < 0) {
+                                burnDamage = 0;
+                            }
+                            burnDamage=triggerOnAttackedSkills(g,burnDamage,EffectType.FIRE_DAMAGE);
+
+                            // 4. 扣除伤害
+                            g.setCurrentHp(g.getCurrentHp() - burnDamage);
+                            TargetBattleData data = new TargetBattleData(g.getMaxHp(), g.getCurrentHp(), burnDamage, g.isOnField());
+                            targetStatus.put(g.getId(), data);
+                            if (g.isDead()) {
+
+                                deadGuardians.add(g);
+                                deadUnits.put(g.getId(), data);
+                            }
+                        });
+
+                        // 单条日志记录多目标
+                        addMultiTargetLog("烈焰阵",
+                                guardian.getId(),
+                                guardian.getMaxHp(),
+                                guardian.getCurrentHp(),
+                                guardian.isOnField(),
+                                targetStatus,
+                                EffectType.FIRE_DAMAGE,
+                                DamageType.FIRE,
+                                "敌方全体收到火焰伤害",logIndex);
+                        // 死亡日志
+                        if (!deadUnits.isEmpty()) {
+                            addMultiTargetLog("UNIT_DEATH",
+                                    null,
+                                    0,
+                                    0,
+                                    false,
+                                    deadUnits,
+                                    null,
+                                    null,
+                                    "死亡");
+                            //触发死亡技能
+                            for (Guardian g : deadGuardians) {
+                                triggerOnDeathSkills(g);
+                            }
+
+                        }
+                        //触发受击技能
+                        enemies.forEach(g -> {
+                            //触发受到任意伤害技能
+                            triggerOnAttackedSkills(g, EffectType.FIRE_DAMAGE);
+                        });
+                    }
+                }
+                break;
+            case "小树妖":
+                if (1 == 1) {
+                    //烈焰阵Lv1登场时，令敌方全体收到火焰伤害420点；
+                    Map<String, TargetBattleData> deadUnits = new HashMap<>();
+                    List<Guardian> deadGuardians = new ArrayList<>();
+
+                    Map<String, TargetBattleData> targetStatus = new HashMap<>();
+                    List<Guardian> enemies = guardian.getCamp() == Camp.A ?
+                            campB.stream().filter(g -> !g.isDead()).collect(Collectors.toList()) :
+                            campA.stream().filter(g -> !g.isDead()).collect(Collectors.toList());
+                    if (Xtool.isNotNull(enemies)) {
+                        Integer logIndex=battleLogs.size();
+                        enemies.forEach(g -> {
+                            // 1. 计算所有中毒效果的总伤害（累加 POISON 类型的 value）
+                            int totalPoisonDamage = 420 * skillLevel[0];
+                            // 2. 计算毒抗相关（直接基于你现有 EffectInstance 计算，不新增 Guardian 方法）
+                            // 火伤增益：所有 POISON_RESIST 类型效果的 value 总和
+                            int resistUp = calculateTotalVaule(guardian, EffectType.FIRE_BOOST);
+                            // 火伤增益百分比：所有 POISON_RESIST 类型效果的 value 乘积
+                            double resistUpPret = calculateTotalUpPretVaule(guardian, EffectType.FIRE_BOOST_PRET);
+                            // 火伤降低：所有 POISON_RESIST_DOWN 类型效果的 value 总和
+                            int resistDown = calculateTotalVaule(guardian, EffectType.FIRE_DOWN);
+                            // 火伤降低百分比：所有 POISON_RESIST 类型效果的 value 乘积
+                            double resistDownPret = calculateTotalDownPretVaule(guardian, EffectType.FIRE_DOWN_PRET);
+
+
+                            // 2. 计算毒抗相关（直接基于你现有 EffectInstance 计算，不新增 Guardian 方法）
+                            // 火抗增益：所有 POISON_RESIST 类型效果的 value 总和
+                            int targetUp = calculateTotalVaule(g, EffectType.FIRE_RESIST_BOOST);
+                            // 火抗增益百分比：所有 POISON_RESIST 类型效果的 value 乘积
+                            double targetUpPret = calculateTotalDownPretVaule(g, EffectType.FIRE_RESIST_BOOST_PRET);
+                            // 火抗降低：所有 POISON_RESIST_DOWN 类型效果的 value 总和
+                            int targetDown = calculateTotalVaule(g, EffectType.FIRE_RESIST_DOWN);
+                            // 火抗降低百分比：所有 POISON_RESIST 类型效果的 value 乘积
+                            double targetDownPret = calculateTotalUpPretVaule(g, EffectType.FIRE_RESIST_DOWN_PRET);
+                            // 最终（仅基于 buff 计算，无新增方法）
+
+                            int burnDamage = (int) (totalPoisonDamage * resistUpPret * resistDownPret * targetUpPret * targetDownPret
+                                    + (resistUp - resistDown + guardian.getHyAtk() - g.getHyDef() - targetUp + targetDown));
+                            burnDamage = applyXilianElement(guardian, g, burnDamage);
+
+                            if (burnDamage < 0) {
+                                burnDamage = 0;
+                            }
+                            burnDamage=triggerOnAttackedSkills(g,burnDamage,EffectType.FIRE_DAMAGE);
+
+                            // 4. 扣除伤害
+                            g.setCurrentHp(g.getCurrentHp() - burnDamage);
+                            TargetBattleData data = new TargetBattleData(g.getMaxHp(), g.getCurrentHp(), burnDamage, g.isOnField());
+                            targetStatus.put(g.getId(), data);
+                            if (g.isDead()) {
+
+                                deadGuardians.add(g);
+                                deadUnits.put(g.getId(), data);
+                            }
+                        });
+
+                        // 单条日志记录多目标
+                        addMultiTargetLog("烈焰阵",
+                                guardian.getId(),
+                                guardian.getMaxHp(),
+                                guardian.getCurrentHp(),
+                                guardian.isOnField(),
+                                targetStatus,
+                                EffectType.FIRE_DAMAGE,
+                                DamageType.FIRE,
+                                "敌方全体收到火焰伤害",logIndex);
+                        // 死亡日志
+                        if (!deadUnits.isEmpty()) {
+                            addMultiTargetLog("UNIT_DEATH",
+                                    null,
+                                    0,
+                                    0,
+                                    false,
+                                    deadUnits,
+                                    null,
+                                    null,
+                                    "死亡");
+                            //触发死亡技能
+                            for (Guardian g : deadGuardians) {
+                                triggerOnDeathSkills(g);
+                            }
+
+                        }
+                        //触发受击技能
+                        enemies.forEach(g -> {
+                            //触发受到任意伤害技能
+                            triggerOnAttackedSkills(g, EffectType.FIRE_DAMAGE);
+                        });
+                    }
+                }
+                break;
+            case "树妖":
+                if (1 == 1) {
+                    //烈焰阵Lv1登场时，令敌方全体收到火焰伤害420点；
+                    Map<String, TargetBattleData> deadUnits = new HashMap<>();
+                    List<Guardian> deadGuardians = new ArrayList<>();
+
+                    Map<String, TargetBattleData> targetStatus = new HashMap<>();
+                    List<Guardian> enemies = guardian.getCamp() == Camp.A ?
+                            campB.stream().filter(g -> !g.isDead()).collect(Collectors.toList()) :
+                            campA.stream().filter(g -> !g.isDead()).collect(Collectors.toList());
+                    if (Xtool.isNotNull(enemies)) {
+                        Integer logIndex=battleLogs.size();
+                        enemies.forEach(g -> {
+                            // 1. 计算所有中毒效果的总伤害（累加 POISON 类型的 value）
+                            int totalPoisonDamage = 420 * skillLevel[0];
+                            // 2. 计算毒抗相关（直接基于你现有 EffectInstance 计算，不新增 Guardian 方法）
+                            // 火伤增益：所有 POISON_RESIST 类型效果的 value 总和
+                            int resistUp = calculateTotalVaule(guardian, EffectType.FIRE_BOOST);
+                            // 火伤增益百分比：所有 POISON_RESIST 类型效果的 value 乘积
+                            double resistUpPret = calculateTotalUpPretVaule(guardian, EffectType.FIRE_BOOST_PRET);
+                            // 火伤降低：所有 POISON_RESIST_DOWN 类型效果的 value 总和
+                            int resistDown = calculateTotalVaule(guardian, EffectType.FIRE_DOWN);
+                            // 火伤降低百分比：所有 POISON_RESIST 类型效果的 value 乘积
+                            double resistDownPret = calculateTotalDownPretVaule(guardian, EffectType.FIRE_DOWN_PRET);
+
+
+                            // 2. 计算毒抗相关（直接基于你现有 EffectInstance 计算，不新增 Guardian 方法）
+                            // 火抗增益：所有 POISON_RESIST 类型效果的 value 总和
+                            int targetUp = calculateTotalVaule(g, EffectType.FIRE_RESIST_BOOST);
+                            // 火抗增益百分比：所有 POISON_RESIST 类型效果的 value 乘积
+                            double targetUpPret = calculateTotalDownPretVaule(g, EffectType.FIRE_RESIST_BOOST_PRET);
+                            // 火抗降低：所有 POISON_RESIST_DOWN 类型效果的 value 总和
+                            int targetDown = calculateTotalVaule(g, EffectType.FIRE_RESIST_DOWN);
+                            // 火抗降低百分比：所有 POISON_RESIST 类型效果的 value 乘积
+                            double targetDownPret = calculateTotalUpPretVaule(g, EffectType.FIRE_RESIST_DOWN_PRET);
+                            // 最终（仅基于 buff 计算，无新增方法）
+
+                            int burnDamage = (int) (totalPoisonDamage * resistUpPret * resistDownPret * targetUpPret * targetDownPret
+                                    + (resistUp - resistDown + guardian.getHyAtk() - g.getHyDef() - targetUp + targetDown));
+                            burnDamage = applyXilianElement(guardian, g, burnDamage);
+
+                            if (burnDamage < 0) {
+                                burnDamage = 0;
+                            }
+                            burnDamage=triggerOnAttackedSkills(g,burnDamage,EffectType.FIRE_DAMAGE);
+
+                            // 4. 扣除伤害
+                            g.setCurrentHp(g.getCurrentHp() - burnDamage);
+                            TargetBattleData data = new TargetBattleData(g.getMaxHp(), g.getCurrentHp(), burnDamage, g.isOnField());
+                            targetStatus.put(g.getId(), data);
+                            if (g.isDead()) {
+
+                                deadGuardians.add(g);
+                                deadUnits.put(g.getId(), data);
+                            }
+                        });
+
+                        // 单条日志记录多目标
+                        addMultiTargetLog("烈焰阵",
+                                guardian.getId(),
+                                guardian.getMaxHp(),
+                                guardian.getCurrentHp(),
+                                guardian.isOnField(),
+                                targetStatus,
+                                EffectType.FIRE_DAMAGE,
+                                DamageType.FIRE,
+                                "敌方全体收到火焰伤害",logIndex);
+                        // 死亡日志
+                        if (!deadUnits.isEmpty()) {
+                            addMultiTargetLog("UNIT_DEATH",
+                                    null,
+                                    0,
+                                    0,
+                                    false,
+                                    deadUnits,
+                                    null,
+                                    null,
+                                    "死亡");
+                            //触发死亡技能
+                            for (Guardian g : deadGuardians) {
+                                triggerOnDeathSkills(g);
+                            }
+
+                        }
+                        //触发受击技能
+                        enemies.forEach(g -> {
+                            //触发受到任意伤害技能
+                            triggerOnAttackedSkills(g, EffectType.FIRE_DAMAGE);
+                        });
+                    }
+                }
+                break;
+            case "红鼻子老道":
+                if (1 == 1) {
+                    //烈焰阵Lv1登场时，令敌方全体收到火焰伤害420点；
+                    Map<String, TargetBattleData> deadUnits = new HashMap<>();
+                    List<Guardian> deadGuardians = new ArrayList<>();
+
+                    Map<String, TargetBattleData> targetStatus = new HashMap<>();
+                    List<Guardian> enemies = guardian.getCamp() == Camp.A ?
+                            campB.stream().filter(g -> !g.isDead()).collect(Collectors.toList()) :
+                            campA.stream().filter(g -> !g.isDead()).collect(Collectors.toList());
+                    if (Xtool.isNotNull(enemies)) {
+                        Integer logIndex=battleLogs.size();
+                        enemies.forEach(g -> {
+                            // 1. 计算所有中毒效果的总伤害（累加 POISON 类型的 value）
+                            int totalPoisonDamage = 420 * skillLevel[0];
+                            // 2. 计算毒抗相关（直接基于你现有 EffectInstance 计算，不新增 Guardian 方法）
+                            // 火伤增益：所有 POISON_RESIST 类型效果的 value 总和
+                            int resistUp = calculateTotalVaule(guardian, EffectType.FIRE_BOOST);
+                            // 火伤增益百分比：所有 POISON_RESIST 类型效果的 value 乘积
+                            double resistUpPret = calculateTotalUpPretVaule(guardian, EffectType.FIRE_BOOST_PRET);
+                            // 火伤降低：所有 POISON_RESIST_DOWN 类型效果的 value 总和
+                            int resistDown = calculateTotalVaule(guardian, EffectType.FIRE_DOWN);
+                            // 火伤降低百分比：所有 POISON_RESIST 类型效果的 value 乘积
+                            double resistDownPret = calculateTotalDownPretVaule(guardian, EffectType.FIRE_DOWN_PRET);
+
+
+                            // 2. 计算毒抗相关（直接基于你现有 EffectInstance 计算，不新增 Guardian 方法）
+                            // 火抗增益：所有 POISON_RESIST 类型效果的 value 总和
+                            int targetUp = calculateTotalVaule(g, EffectType.FIRE_RESIST_BOOST);
+                            // 火抗增益百分比：所有 POISON_RESIST 类型效果的 value 乘积
+                            double targetUpPret = calculateTotalDownPretVaule(g, EffectType.FIRE_RESIST_BOOST_PRET);
+                            // 火抗降低：所有 POISON_RESIST_DOWN 类型效果的 value 总和
+                            int targetDown = calculateTotalVaule(g, EffectType.FIRE_RESIST_DOWN);
+                            // 火抗降低百分比：所有 POISON_RESIST 类型效果的 value 乘积
+                            double targetDownPret = calculateTotalUpPretVaule(g, EffectType.FIRE_RESIST_DOWN_PRET);
+                            // 最终（仅基于 buff 计算，无新增方法）
+
+                            int burnDamage = (int) (totalPoisonDamage * resistUpPret * resistDownPret * targetUpPret * targetDownPret
+                                    + (resistUp - resistDown + guardian.getHyAtk() - g.getHyDef() - targetUp + targetDown));
+                            burnDamage = applyXilianElement(guardian, g, burnDamage);
+
+                            if (burnDamage < 0) {
+                                burnDamage = 0;
+                            }
+                            burnDamage=triggerOnAttackedSkills(g,burnDamage,EffectType.FIRE_DAMAGE);
+
+                            // 4. 扣除伤害
+                            g.setCurrentHp(g.getCurrentHp() - burnDamage);
+                            TargetBattleData data = new TargetBattleData(g.getMaxHp(), g.getCurrentHp(), burnDamage, g.isOnField());
+                            targetStatus.put(g.getId(), data);
+                            if (g.isDead()) {
+
+                                deadGuardians.add(g);
+                                deadUnits.put(g.getId(), data);
+                            }
+                        });
+
+                        // 单条日志记录多目标
+                        addMultiTargetLog("烈焰阵",
+                                guardian.getId(),
+                                guardian.getMaxHp(),
+                                guardian.getCurrentHp(),
+                                guardian.isOnField(),
+                                targetStatus,
+                                EffectType.FIRE_DAMAGE,
+                                DamageType.FIRE,
+                                "敌方全体收到火焰伤害",logIndex);
+                        // 死亡日志
+                        if (!deadUnits.isEmpty()) {
+                            addMultiTargetLog("UNIT_DEATH",
+                                    null,
+                                    0,
+                                    0,
+                                    false,
+                                    deadUnits,
+                                    null,
+                                    null,
+                                    "死亡");
+                            //触发死亡技能
+                            for (Guardian g : deadGuardians) {
+                                triggerOnDeathSkills(g);
+                            }
+
+                        }
+                        //触发受击技能
+                        enemies.forEach(g -> {
+                            //触发受到任意伤害技能
+                            triggerOnAttackedSkills(g, EffectType.FIRE_DAMAGE);
+                        });
+                    }
+                }
+                break;
+            case "宝袋小妖":
+                if (1 == 1) {
+                    //烈焰阵Lv1登场时，令敌方全体收到火焰伤害420点；
+                    Map<String, TargetBattleData> deadUnits = new HashMap<>();
+                    List<Guardian> deadGuardians = new ArrayList<>();
+
+                    Map<String, TargetBattleData> targetStatus = new HashMap<>();
+                    List<Guardian> enemies = guardian.getCamp() == Camp.A ?
+                            campB.stream().filter(g -> !g.isDead()).collect(Collectors.toList()) :
+                            campA.stream().filter(g -> !g.isDead()).collect(Collectors.toList());
+                    if (Xtool.isNotNull(enemies)) {
+                        Integer logIndex=battleLogs.size();
+                        enemies.forEach(g -> {
+                            // 1. 计算所有中毒效果的总伤害（累加 POISON 类型的 value）
+                            int totalPoisonDamage = 420 * skillLevel[0];
+                            // 2. 计算毒抗相关（直接基于你现有 EffectInstance 计算，不新增 Guardian 方法）
+                            // 火伤增益：所有 POISON_RESIST 类型效果的 value 总和
+                            int resistUp = calculateTotalVaule(guardian, EffectType.FIRE_BOOST);
+                            // 火伤增益百分比：所有 POISON_RESIST 类型效果的 value 乘积
+                            double resistUpPret = calculateTotalUpPretVaule(guardian, EffectType.FIRE_BOOST_PRET);
+                            // 火伤降低：所有 POISON_RESIST_DOWN 类型效果的 value 总和
+                            int resistDown = calculateTotalVaule(guardian, EffectType.FIRE_DOWN);
+                            // 火伤降低百分比：所有 POISON_RESIST 类型效果的 value 乘积
+                            double resistDownPret = calculateTotalDownPretVaule(guardian, EffectType.FIRE_DOWN_PRET);
+
+
+                            // 2. 计算毒抗相关（直接基于你现有 EffectInstance 计算，不新增 Guardian 方法）
+                            // 火抗增益：所有 POISON_RESIST 类型效果的 value 总和
+                            int targetUp = calculateTotalVaule(g, EffectType.FIRE_RESIST_BOOST);
+                            // 火抗增益百分比：所有 POISON_RESIST 类型效果的 value 乘积
+                            double targetUpPret = calculateTotalDownPretVaule(g, EffectType.FIRE_RESIST_BOOST_PRET);
+                            // 火抗降低：所有 POISON_RESIST_DOWN 类型效果的 value 总和
+                            int targetDown = calculateTotalVaule(g, EffectType.FIRE_RESIST_DOWN);
+                            // 火抗降低百分比：所有 POISON_RESIST 类型效果的 value 乘积
+                            double targetDownPret = calculateTotalUpPretVaule(g, EffectType.FIRE_RESIST_DOWN_PRET);
+                            // 最终（仅基于 buff 计算，无新增方法）
+
+                            int burnDamage = (int) (totalPoisonDamage * resistUpPret * resistDownPret * targetUpPret * targetDownPret
+                                    + (resistUp - resistDown + guardian.getHyAtk() - g.getHyDef() - targetUp + targetDown));
+                            burnDamage = applyXilianElement(guardian, g, burnDamage);
+
+                            if (burnDamage < 0) {
+                                burnDamage = 0;
+                            }
+                            burnDamage=triggerOnAttackedSkills(g,burnDamage,EffectType.FIRE_DAMAGE);
+
+                            // 4. 扣除伤害
+                            g.setCurrentHp(g.getCurrentHp() - burnDamage);
+                            TargetBattleData data = new TargetBattleData(g.getMaxHp(), g.getCurrentHp(), burnDamage, g.isOnField());
+                            targetStatus.put(g.getId(), data);
+                            if (g.isDead()) {
+
+                                deadGuardians.add(g);
+                                deadUnits.put(g.getId(), data);
+                            }
+                        });
+
+                        // 单条日志记录多目标
+                        addMultiTargetLog("烈焰阵",
+                                guardian.getId(),
+                                guardian.getMaxHp(),
+                                guardian.getCurrentHp(),
+                                guardian.isOnField(),
+                                targetStatus,
+                                EffectType.FIRE_DAMAGE,
+                                DamageType.FIRE,
+                                "敌方全体收到火焰伤害",logIndex);
+                        // 死亡日志
+                        if (!deadUnits.isEmpty()) {
+                            addMultiTargetLog("UNIT_DEATH",
+                                    null,
+                                    0,
+                                    0,
+                                    false,
+                                    deadUnits,
+                                    null,
+                                    null,
+                                    "死亡");
+                            //触发死亡技能
+                            for (Guardian g : deadGuardians) {
+                                triggerOnDeathSkills(g);
+                            }
+
+                        }
+                        //触发受击技能
+                        enemies.forEach(g -> {
+                            //触发受到任意伤害技能
+                            triggerOnAttackedSkills(g, EffectType.FIRE_DAMAGE);
+                        });
+                    }
+                }
+                break;
+            case "长胡子仙人":
+                if (1 == 1) {
+                    //烈焰阵Lv1登场时，令敌方全体收到火焰伤害420点；
+                    Map<String, TargetBattleData> deadUnits = new HashMap<>();
+                    List<Guardian> deadGuardians = new ArrayList<>();
+
+                    Map<String, TargetBattleData> targetStatus = new HashMap<>();
+                    List<Guardian> enemies = guardian.getCamp() == Camp.A ?
+                            campB.stream().filter(g -> !g.isDead()).collect(Collectors.toList()) :
+                            campA.stream().filter(g -> !g.isDead()).collect(Collectors.toList());
+                    if (Xtool.isNotNull(enemies)) {
+                        Integer logIndex=battleLogs.size();
+                        enemies.forEach(g -> {
+                            // 1. 计算所有中毒效果的总伤害（累加 POISON 类型的 value）
+                            int totalPoisonDamage = 420 * skillLevel[0];
+                            // 2. 计算毒抗相关（直接基于你现有 EffectInstance 计算，不新增 Guardian 方法）
+                            // 火伤增益：所有 POISON_RESIST 类型效果的 value 总和
+                            int resistUp = calculateTotalVaule(guardian, EffectType.FIRE_BOOST);
+                            // 火伤增益百分比：所有 POISON_RESIST 类型效果的 value 乘积
+                            double resistUpPret = calculateTotalUpPretVaule(guardian, EffectType.FIRE_BOOST_PRET);
+                            // 火伤降低：所有 POISON_RESIST_DOWN 类型效果的 value 总和
+                            int resistDown = calculateTotalVaule(guardian, EffectType.FIRE_DOWN);
+                            // 火伤降低百分比：所有 POISON_RESIST 类型效果的 value 乘积
+                            double resistDownPret = calculateTotalDownPretVaule(guardian, EffectType.FIRE_DOWN_PRET);
+
+
+                            // 2. 计算毒抗相关（直接基于你现有 EffectInstance 计算，不新增 Guardian 方法）
+                            // 火抗增益：所有 POISON_RESIST 类型效果的 value 总和
+                            int targetUp = calculateTotalVaule(g, EffectType.FIRE_RESIST_BOOST);
+                            // 火抗增益百分比：所有 POISON_RESIST 类型效果的 value 乘积
+                            double targetUpPret = calculateTotalDownPretVaule(g, EffectType.FIRE_RESIST_BOOST_PRET);
+                            // 火抗降低：所有 POISON_RESIST_DOWN 类型效果的 value 总和
+                            int targetDown = calculateTotalVaule(g, EffectType.FIRE_RESIST_DOWN);
+                            // 火抗降低百分比：所有 POISON_RESIST 类型效果的 value 乘积
+                            double targetDownPret = calculateTotalUpPretVaule(g, EffectType.FIRE_RESIST_DOWN_PRET);
+                            // 最终（仅基于 buff 计算，无新增方法）
+
+                            int burnDamage = (int) (totalPoisonDamage * resistUpPret * resistDownPret * targetUpPret * targetDownPret
+                                    + (resistUp - resistDown + guardian.getHyAtk() - g.getHyDef() - targetUp + targetDown));
+                            burnDamage = applyXilianElement(guardian, g, burnDamage);
+
+                            if (burnDamage < 0) {
+                                burnDamage = 0;
+                            }
+                            burnDamage=triggerOnAttackedSkills(g,burnDamage,EffectType.FIRE_DAMAGE);
+
+                            // 4. 扣除伤害
+                            g.setCurrentHp(g.getCurrentHp() - burnDamage);
+                            TargetBattleData data = new TargetBattleData(g.getMaxHp(), g.getCurrentHp(), burnDamage, g.isOnField());
+                            targetStatus.put(g.getId(), data);
+                            if (g.isDead()) {
+
+                                deadGuardians.add(g);
+                                deadUnits.put(g.getId(), data);
+                            }
+                        });
+
+                        // 单条日志记录多目标
+                        addMultiTargetLog("烈焰阵",
+                                guardian.getId(),
+                                guardian.getMaxHp(),
+                                guardian.getCurrentHp(),
+                                guardian.isOnField(),
+                                targetStatus,
+                                EffectType.FIRE_DAMAGE,
+                                DamageType.FIRE,
+                                "敌方全体收到火焰伤害",logIndex);
+                        // 死亡日志
+                        if (!deadUnits.isEmpty()) {
+                            addMultiTargetLog("UNIT_DEATH",
+                                    null,
+                                    0,
+                                    0,
+                                    false,
+                                    deadUnits,
+                                    null,
+                                    null,
+                                    "死亡");
+                            //触发死亡技能
+                            for (Guardian g : deadGuardians) {
+                                triggerOnDeathSkills(g);
+                            }
+
+                        }
+                        //触发受击技能
+                        enemies.forEach(g -> {
+                            //触发受到任意伤害技能
+                            triggerOnAttackedSkills(g, EffectType.FIRE_DAMAGE);
+                        });
+                    }
+                }
+                break;
+            case "龟兵":
+                if (1 == 1) {
+                    //烈焰阵Lv1登场时，令敌方全体收到火焰伤害420点；
+                    Map<String, TargetBattleData> deadUnits = new HashMap<>();
+                    List<Guardian> deadGuardians = new ArrayList<>();
+
+                    Map<String, TargetBattleData> targetStatus = new HashMap<>();
+                    List<Guardian> enemies = guardian.getCamp() == Camp.A ?
+                            campB.stream().filter(g -> !g.isDead()).collect(Collectors.toList()) :
+                            campA.stream().filter(g -> !g.isDead()).collect(Collectors.toList());
+                    if (Xtool.isNotNull(enemies)) {
+                        Integer logIndex=battleLogs.size();
+                        enemies.forEach(g -> {
+                            // 1. 计算所有中毒效果的总伤害（累加 POISON 类型的 value）
+                            int totalPoisonDamage = 420 * skillLevel[0];
+                            // 2. 计算毒抗相关（直接基于你现有 EffectInstance 计算，不新增 Guardian 方法）
+                            // 火伤增益：所有 POISON_RESIST 类型效果的 value 总和
+                            int resistUp = calculateTotalVaule(guardian, EffectType.FIRE_BOOST);
+                            // 火伤增益百分比：所有 POISON_RESIST 类型效果的 value 乘积
+                            double resistUpPret = calculateTotalUpPretVaule(guardian, EffectType.FIRE_BOOST_PRET);
+                            // 火伤降低：所有 POISON_RESIST_DOWN 类型效果的 value 总和
+                            int resistDown = calculateTotalVaule(guardian, EffectType.FIRE_DOWN);
+                            // 火伤降低百分比：所有 POISON_RESIST 类型效果的 value 乘积
+                            double resistDownPret = calculateTotalDownPretVaule(guardian, EffectType.FIRE_DOWN_PRET);
+
+
+                            // 2. 计算毒抗相关（直接基于你现有 EffectInstance 计算，不新增 Guardian 方法）
+                            // 火抗增益：所有 POISON_RESIST 类型效果的 value 总和
+                            int targetUp = calculateTotalVaule(g, EffectType.FIRE_RESIST_BOOST);
+                            // 火抗增益百分比：所有 POISON_RESIST 类型效果的 value 乘积
+                            double targetUpPret = calculateTotalDownPretVaule(g, EffectType.FIRE_RESIST_BOOST_PRET);
+                            // 火抗降低：所有 POISON_RESIST_DOWN 类型效果的 value 总和
+                            int targetDown = calculateTotalVaule(g, EffectType.FIRE_RESIST_DOWN);
+                            // 火抗降低百分比：所有 POISON_RESIST 类型效果的 value 乘积
+                            double targetDownPret = calculateTotalUpPretVaule(g, EffectType.FIRE_RESIST_DOWN_PRET);
+                            // 最终（仅基于 buff 计算，无新增方法）
+
+                            int burnDamage = (int) (totalPoisonDamage * resistUpPret * resistDownPret * targetUpPret * targetDownPret
+                                    + (resistUp - resistDown + guardian.getHyAtk() - g.getHyDef() - targetUp + targetDown));
+                            burnDamage = applyXilianElement(guardian, g, burnDamage);
+
+                            if (burnDamage < 0) {
+                                burnDamage = 0;
+                            }
+                            burnDamage=triggerOnAttackedSkills(g,burnDamage,EffectType.FIRE_DAMAGE);
+
+                            // 4. 扣除伤害
+                            g.setCurrentHp(g.getCurrentHp() - burnDamage);
+                            TargetBattleData data = new TargetBattleData(g.getMaxHp(), g.getCurrentHp(), burnDamage, g.isOnField());
+                            targetStatus.put(g.getId(), data);
+                            if (g.isDead()) {
+
+                                deadGuardians.add(g);
+                                deadUnits.put(g.getId(), data);
+                            }
+                        });
+
+                        // 单条日志记录多目标
+                        addMultiTargetLog("烈焰阵",
+                                guardian.getId(),
+                                guardian.getMaxHp(),
+                                guardian.getCurrentHp(),
+                                guardian.isOnField(),
+                                targetStatus,
+                                EffectType.FIRE_DAMAGE,
+                                DamageType.FIRE,
+                                "敌方全体收到火焰伤害",logIndex);
+                        // 死亡日志
+                        if (!deadUnits.isEmpty()) {
+                            addMultiTargetLog("UNIT_DEATH",
+                                    null,
+                                    0,
+                                    0,
+                                    false,
+                                    deadUnits,
+                                    null,
+                                    null,
+                                    "死亡");
+                            //触发死亡技能
+                            for (Guardian g : deadGuardians) {
+                                triggerOnDeathSkills(g);
+                            }
+
+                        }
+                        //触发受击技能
+                        enemies.forEach(g -> {
+                            //触发受到任意伤害技能
+                            triggerOnAttackedSkills(g, EffectType.FIRE_DAMAGE);
+                        });
+                    }
+                }
+                break;
+            case "银角妖":
+                if (1 == 1) {
+                    //烈焰阵Lv1登场时，令敌方全体收到火焰伤害420点；
+                    Map<String, TargetBattleData> deadUnits = new HashMap<>();
+                    List<Guardian> deadGuardians = new ArrayList<>();
+
+                    Map<String, TargetBattleData> targetStatus = new HashMap<>();
+                    List<Guardian> enemies = guardian.getCamp() == Camp.A ?
+                            campB.stream().filter(g -> !g.isDead()).collect(Collectors.toList()) :
+                            campA.stream().filter(g -> !g.isDead()).collect(Collectors.toList());
+                    if (Xtool.isNotNull(enemies)) {
+                        Integer logIndex=battleLogs.size();
+                        enemies.forEach(g -> {
+                            // 1. 计算所有中毒效果的总伤害（累加 POISON 类型的 value）
+                            int totalPoisonDamage = 420 * skillLevel[0];
+                            // 2. 计算毒抗相关（直接基于你现有 EffectInstance 计算，不新增 Guardian 方法）
+                            // 火伤增益：所有 POISON_RESIST 类型效果的 value 总和
+                            int resistUp = calculateTotalVaule(guardian, EffectType.FIRE_BOOST);
+                            // 火伤增益百分比：所有 POISON_RESIST 类型效果的 value 乘积
+                            double resistUpPret = calculateTotalUpPretVaule(guardian, EffectType.FIRE_BOOST_PRET);
+                            // 火伤降低：所有 POISON_RESIST_DOWN 类型效果的 value 总和
+                            int resistDown = calculateTotalVaule(guardian, EffectType.FIRE_DOWN);
+                            // 火伤降低百分比：所有 POISON_RESIST 类型效果的 value 乘积
+                            double resistDownPret = calculateTotalDownPretVaule(guardian, EffectType.FIRE_DOWN_PRET);
+
+
+                            // 2. 计算毒抗相关（直接基于你现有 EffectInstance 计算，不新增 Guardian 方法）
+                            // 火抗增益：所有 POISON_RESIST 类型效果的 value 总和
+                            int targetUp = calculateTotalVaule(g, EffectType.FIRE_RESIST_BOOST);
+                            // 火抗增益百分比：所有 POISON_RESIST 类型效果的 value 乘积
+                            double targetUpPret = calculateTotalDownPretVaule(g, EffectType.FIRE_RESIST_BOOST_PRET);
+                            // 火抗降低：所有 POISON_RESIST_DOWN 类型效果的 value 总和
+                            int targetDown = calculateTotalVaule(g, EffectType.FIRE_RESIST_DOWN);
+                            // 火抗降低百分比：所有 POISON_RESIST 类型效果的 value 乘积
+                            double targetDownPret = calculateTotalUpPretVaule(g, EffectType.FIRE_RESIST_DOWN_PRET);
+                            // 最终（仅基于 buff 计算，无新增方法）
+
+                            int burnDamage = (int) (totalPoisonDamage * resistUpPret * resistDownPret * targetUpPret * targetDownPret
+                                    + (resistUp - resistDown + guardian.getHyAtk() - g.getHyDef() - targetUp + targetDown));
+                            burnDamage = applyXilianElement(guardian, g, burnDamage);
+
+                            if (burnDamage < 0) {
+                                burnDamage = 0;
+                            }
+                            burnDamage=triggerOnAttackedSkills(g,burnDamage,EffectType.FIRE_DAMAGE);
+
+                            // 4. 扣除伤害
+                            g.setCurrentHp(g.getCurrentHp() - burnDamage);
+                            TargetBattleData data = new TargetBattleData(g.getMaxHp(), g.getCurrentHp(), burnDamage, g.isOnField());
+                            targetStatus.put(g.getId(), data);
+                            if (g.isDead()) {
+
+                                deadGuardians.add(g);
+                                deadUnits.put(g.getId(), data);
+                            }
+                        });
+
+                        // 单条日志记录多目标
+                        addMultiTargetLog("烈焰阵",
+                                guardian.getId(),
+                                guardian.getMaxHp(),
+                                guardian.getCurrentHp(),
+                                guardian.isOnField(),
+                                targetStatus,
+                                EffectType.FIRE_DAMAGE,
+                                DamageType.FIRE,
+                                "敌方全体收到火焰伤害",logIndex);
+                        // 死亡日志
+                        if (!deadUnits.isEmpty()) {
+                            addMultiTargetLog("UNIT_DEATH",
+                                    null,
+                                    0,
+                                    0,
+                                    false,
+                                    deadUnits,
+                                    null,
+                                    null,
+                                    "死亡");
+                            //触发死亡技能
+                            for (Guardian g : deadGuardians) {
+                                triggerOnDeathSkills(g);
+                            }
+
+                        }
+                        //触发受击技能
+                        enemies.forEach(g -> {
+                            //触发受到任意伤害技能
+                            triggerOnAttackedSkills(g, EffectType.FIRE_DAMAGE);
+                        });
+                    }
+                }
+                break;
+            case "金角妖":
+                if (1 == 1) {
+                    //烈焰阵Lv1登场时，令敌方全体收到火焰伤害420点；
+                    Map<String, TargetBattleData> deadUnits = new HashMap<>();
+                    List<Guardian> deadGuardians = new ArrayList<>();
+
+                    Map<String, TargetBattleData> targetStatus = new HashMap<>();
+                    List<Guardian> enemies = guardian.getCamp() == Camp.A ?
+                            campB.stream().filter(g -> !g.isDead()).collect(Collectors.toList()) :
+                            campA.stream().filter(g -> !g.isDead()).collect(Collectors.toList());
+                    if (Xtool.isNotNull(enemies)) {
+                        Integer logIndex=battleLogs.size();
+                        enemies.forEach(g -> {
+                            // 1. 计算所有中毒效果的总伤害（累加 POISON 类型的 value）
+                            int totalPoisonDamage = 420 * skillLevel[0];
+                            // 2. 计算毒抗相关（直接基于你现有 EffectInstance 计算，不新增 Guardian 方法）
+                            // 火伤增益：所有 POISON_RESIST 类型效果的 value 总和
+                            int resistUp = calculateTotalVaule(guardian, EffectType.FIRE_BOOST);
+                            // 火伤增益百分比：所有 POISON_RESIST 类型效果的 value 乘积
+                            double resistUpPret = calculateTotalUpPretVaule(guardian, EffectType.FIRE_BOOST_PRET);
+                            // 火伤降低：所有 POISON_RESIST_DOWN 类型效果的 value 总和
+                            int resistDown = calculateTotalVaule(guardian, EffectType.FIRE_DOWN);
+                            // 火伤降低百分比：所有 POISON_RESIST 类型效果的 value 乘积
+                            double resistDownPret = calculateTotalDownPretVaule(guardian, EffectType.FIRE_DOWN_PRET);
+
+
+                            // 2. 计算毒抗相关（直接基于你现有 EffectInstance 计算，不新增 Guardian 方法）
+                            // 火抗增益：所有 POISON_RESIST 类型效果的 value 总和
+                            int targetUp = calculateTotalVaule(g, EffectType.FIRE_RESIST_BOOST);
+                            // 火抗增益百分比：所有 POISON_RESIST 类型效果的 value 乘积
+                            double targetUpPret = calculateTotalDownPretVaule(g, EffectType.FIRE_RESIST_BOOST_PRET);
+                            // 火抗降低：所有 POISON_RESIST_DOWN 类型效果的 value 总和
+                            int targetDown = calculateTotalVaule(g, EffectType.FIRE_RESIST_DOWN);
+                            // 火抗降低百分比：所有 POISON_RESIST 类型效果的 value 乘积
+                            double targetDownPret = calculateTotalUpPretVaule(g, EffectType.FIRE_RESIST_DOWN_PRET);
+                            // 最终（仅基于 buff 计算，无新增方法）
+
+                            int burnDamage = (int) (totalPoisonDamage * resistUpPret * resistDownPret * targetUpPret * targetDownPret
+                                    + (resistUp - resistDown + guardian.getHyAtk() - g.getHyDef() - targetUp + targetDown));
+                            burnDamage = applyXilianElement(guardian, g, burnDamage);
+
+                            if (burnDamage < 0) {
+                                burnDamage = 0;
+                            }
+                            burnDamage=triggerOnAttackedSkills(g,burnDamage,EffectType.FIRE_DAMAGE);
+
+                            // 4. 扣除伤害
+                            g.setCurrentHp(g.getCurrentHp() - burnDamage);
+                            TargetBattleData data = new TargetBattleData(g.getMaxHp(), g.getCurrentHp(), burnDamage, g.isOnField());
+                            targetStatus.put(g.getId(), data);
+                            if (g.isDead()) {
+
+                                deadGuardians.add(g);
+                                deadUnits.put(g.getId(), data);
+                            }
+                        });
+
+                        // 单条日志记录多目标
+                        addMultiTargetLog("烈焰阵",
+                                guardian.getId(),
+                                guardian.getMaxHp(),
+                                guardian.getCurrentHp(),
+                                guardian.isOnField(),
+                                targetStatus,
+                                EffectType.FIRE_DAMAGE,
+                                DamageType.FIRE,
+                                "敌方全体收到火焰伤害",logIndex);
+                        // 死亡日志
+                        if (!deadUnits.isEmpty()) {
+                            addMultiTargetLog("UNIT_DEATH",
+                                    null,
+                                    0,
+                                    0,
+                                    false,
+                                    deadUnits,
+                                    null,
+                                    null,
+                                    "死亡");
+                            //触发死亡技能
+                            for (Guardian g : deadGuardians) {
+                                triggerOnDeathSkills(g);
+                            }
+
+                        }
+                        //触发受击技能
+                        enemies.forEach(g -> {
+                            //触发受到任意伤害技能
+                            triggerOnAttackedSkills(g, EffectType.FIRE_DAMAGE);
+                        });
+                    }
+                }
+                break;
             case "天狗":
                 if (1 == 1) {
 //                    天兆神火Lv1登场时对对方全体造成35点火焰伤害；
@@ -1181,22 +2011,24 @@ public class BattleManager {
                 break;
             case "齐天大圣":
                 // 大圣降临：回复自身20%生命
-                int heal = (int) (guardian.getMaxHp() * 0.2 * skillLevel[0])+guardian.getZlAtk();
-                guardian.setCurrentHp(guardian.getCurrentHp() + heal);
-                addLog("大圣降临",
-                        guardian.getId(),
-                        guardian.getMaxHp(),
-                        guardian.getCurrentHp(),
-                        heal,
-                        guardian.isOnField(),
-                        guardian.getId(),
-                        guardian.getMaxHp(),
-                        guardian.getCurrentHp(),
-                        heal,
-                        guardian.isOnField(),
-                        EffectType.HEAL,
-                        DamageType.BUFF,
-                        "+" + heal);
+                if (skillLevel[1]>0){
+                    int heal = (int) (guardian.getMaxHp() * 0.2 * skillLevel[1])+guardian.getZlAtk();
+                    guardian.setCurrentHp(guardian.getCurrentHp() + heal);
+                    addLog("大圣降临",
+                            guardian.getId(),
+                            guardian.getMaxHp(),
+                            guardian.getCurrentHp(),
+                            heal,
+                            guardian.isOnField(),
+                            guardian.getId(),
+                            guardian.getMaxHp(),
+                            guardian.getCurrentHp(),
+                            heal,
+                            guardian.isOnField(),
+                            EffectType.HEAL,
+                            DamageType.BUFF,
+                            "+" + heal);
+                }
                 break;
             case "怨书生":
                 // 每当敌人登场，降低其力量15点。
@@ -1724,28 +2556,49 @@ public class BattleManager {
                 }
                 break;
             case "齐天大圣":
-                // 定海神针：当前生命值6%伤害
-                if (skillLevel[1] > 0) {
-                    int damage = (int) (defender.getCurrentHp() * 0.06 * skillLevel[1]);
-                    Integer logIndex=battleLogs.size();
-                    damage=triggerOnAttackedSkills(defender,damage,EffectType.DAMAGE);
-                    defender.setCurrentHp(defender.getCurrentHp() - damage);
-
-                    addLog("定海神针",
-                            attacker.getId(),
-                            attacker.getMaxHp(),
-                            attacker.getCurrentHp(),
-                            0,
-                            attacker.isOnField(),
-                            defender.getId(),
-                            defender.getMaxHp(),
-                            defender.getCurrentHp(),
-                            damage,
-                            defender.isOnField(),
-                            EffectType.DAMAGE,
-                            DamageType.TRUE,
-                            "-" + damage,logIndex);
-                }
+               if (1==1){
+                   // 定海神针：当前生命值6%伤害
+                   int damage = (int) (defender.getCurrentHp() * 0.06 * skillLevel[0]);
+                   Integer logIndex=battleLogs.size();
+                   damage=triggerOnAttackedSkills(defender,damage,EffectType.DAMAGE);
+                   defender.setCurrentHp(defender.getCurrentHp() - damage);
+                   // 死亡检查
+                   Map<String, TargetBattleData> deadUnits = new HashMap<>();
+                   if (defender.getCurrentHp() <= 0) {
+                       defender.setDead(true);
+                       defender.setOnField(false);
+                       TargetBattleData data = new TargetBattleData(defender.getMaxHp(), defender.getCurrentHp(), damage, defender.isOnField());
+                       deadUnits.put(defender.getId(), data);
+                   }
+                   addLog("定海神针",
+                           attacker.getId(),
+                           attacker.getMaxHp(),
+                           attacker.getCurrentHp(),
+                           0,
+                           attacker.isOnField(),
+                           defender.getId(),
+                           defender.getMaxHp(),
+                           defender.getCurrentHp(),
+                           damage,
+                           defender.isOnField(),
+                           EffectType.DAMAGE,
+                           DamageType.TRUE,
+                           "-" + damage,logIndex);
+                   // 死亡日志
+                   if (!deadUnits.isEmpty()) {
+                       addMultiTargetLog("UNIT_DEATH",
+                               null,
+                               0,
+                               0,
+                               false,
+                               deadUnits,
+                               null,
+                               null,
+                               "死亡");
+                       //触发死亡技能
+                       triggerOnDeathSkills(defender);
+                   }
+               }
                 break;
             case "圣灵天将":
                 // 定海神针：当前生命值6%伤害
@@ -1793,11 +2646,11 @@ public class BattleManager {
 
                         defender.setCurrentHp(defender.getCurrentHp() - totalPoisonDamage);
                         Map<String, TargetBattleData> deadUnits = new HashMap<>();
-                        if (attacker.getCurrentHp() <= 0) {
-                            attacker.setDead(true);
-                            attacker.setOnField(false);
-                            TargetBattleData data = new TargetBattleData(attacker.getMaxHp(), attacker.getCurrentHp(), totalPoisonDamage, attacker.isOnField());
-                            deadUnits.put(attacker.getId(), data);
+                        if (defender.getCurrentHp() <= 0) {
+                            defender.setDead(true);
+                            defender.setOnField(false);
+                            TargetBattleData data = new TargetBattleData(defender.getMaxHp(), defender.getCurrentHp(), totalPoisonDamage, defender.isOnField());
+                            deadUnits.put(defender.getId(), data);
                         }
                         addLog("斩妖剑",
                                 attacker.getId(),
@@ -1870,16 +2723,23 @@ public class BattleManager {
 
                     // 4. 扣除伤害
                     defender.setCurrentHp(defender.getCurrentHp() - burnDamage);
-                    // 武圣判定
                     Map<String, TargetBattleData> deadUnits = new HashMap<>();
+                    // 死亡检查
+                    if (defender.getCurrentHp() <= 0) {
+                        defender.setDead(true);
+                        defender.setOnField(false);
+                        TargetBattleData data = new TargetBattleData(defender.getMaxHp(), defender.getCurrentHp(), burnDamage, defender.isOnField());
+                        deadUnits.put(defender.getId(), data);
+                    }
+                    // 武圣判定
 //                    如果目标是武圣则有几率一击必杀，替代普通攻击；0.05; // 对武圣5%一击必杀（可配置）
-                    if (defender.getProfession() == Profession.WARRIOR) {
+                    if (!defender.isDead() && defender.getProfession() == Profession.WARRIOR) {
                         if (ProbabilityBooleanUtils.randomByProbability(0.05)) {
-                            TargetBattleData data = new TargetBattleData(defender.getMaxHp(), defender.getCurrentHp(), defender.getCurrentHp(), defender.isOnField());
+                            TargetBattleData wushengData = new TargetBattleData(defender.getMaxHp(), defender.getCurrentHp(), defender.getCurrentHp(), defender.isOnField());
                             defender.setCurrentHp(0);
                             defender.setDead(true);
                             defender.setOnField(false);
-                            deadUnits.put(defender.getId(), data);
+                            deadUnits.put(defender.getId(), wushengData);
                         }
                     }
                     addLog("斩杀",
@@ -1953,16 +2813,23 @@ public class BattleManager {
 
                         // 4. 扣除伤害
                         defender.setCurrentHp(defender.getCurrentHp() - burnDamage);
-                        // 武圣判定
                         Map<String, TargetBattleData> deadUnits = new HashMap<>();
+                        // 死亡检查
+                        if (defender.getCurrentHp() <= 0) {
+                            defender.setDead(true);
+                            defender.setOnField(false);
+                            TargetBattleData data = new TargetBattleData(defender.getMaxHp(), defender.getCurrentHp(), burnDamage, defender.isOnField());
+                            deadUnits.put(defender.getId(), data);
+                        }
+                        // 武圣判定
 //                    如果目标是武圣则有几率一击必杀，替代普通攻击；0.05; // 对武圣5%一击必杀（可配置）
-                        if (defender.getProfession() == Profession.GOD) {
+                        if (!defender.isDead() && defender.getProfession() == Profession.GOD) {
                             if (ProbabilityBooleanUtils.randomByProbability(0.05)) {
-                                TargetBattleData data = new TargetBattleData(defender.getMaxHp(), defender.getCurrentHp(), defender.getCurrentHp(), defender.isOnField());
+                                TargetBattleData wushengData = new TargetBattleData(defender.getMaxHp(), defender.getCurrentHp(), defender.getCurrentHp(), defender.isOnField());
                                 defender.setCurrentHp(0);
                                 defender.setDead(true);
                                 defender.setOnField(false);
-                                deadUnits.put(defender.getId(), data);
+                                deadUnits.put(defender.getId(), wushengData);
                             }
                         }
                         addLog("屠杀",
@@ -2365,6 +3232,40 @@ public class BattleManager {
                 }
                 break;
             case "聂小倩":
+                // 幽灵毒击：令攻击者中毒
+                if (!defender.isDead()) {
+                    int totalPoisonDamage = 8 * skillLevel[0];
+                    // 1. 计算所有中毒效果的总伤害（累加 POISON 类型的 value）
+                    // 2. 计算毒抗相关（直接基于你现有 EffectInstance 计算，不新增 Guardian 方法）
+                    // 中毒增益：所有 POISON_RESIST 类型效果的 value 总和
+                    int resistUp = calculateTotalVaule(defender, EffectType.POISON_BOOST);
+                    // 中毒增益百分比：所有 POISON_RESIST 类型效果的 value 乘积
+                    double resistUpPret = calculateTotalUpPretVaule(defender, EffectType.POISON_BOOST_PRET);
+                    // 中毒降低：所有 POISON_RESIST_DOWN 类型效果的 value 总和
+                    int resistDown = calculateTotalVaule(defender, EffectType.POISON_DOWN);
+                    // 中毒降低百分比：所有 POISON_RESIST 类型效果的 value 乘积
+                    double resistDownPret = calculateTotalDownPretVaule(defender, EffectType.POISON_DOWN_PRET);
+
+                    int poisonValue = (int) (totalPoisonDamage * resistUpPret * resistDownPret + (resistUp + defender.getDsAtk() - resistDown));
+                    poisonValue = applyXilianElement(defender, attacker, poisonValue);
+                    attacker.addEffect(EffectType.POISON, poisonValue, 99, defender.getId());
+                    addLog("幽灵毒击",
+                            defender.getId(),
+                            defender.getMaxHp(),
+                            defender.getCurrentHp(),
+                            0,
+                            defender.isOnField(),
+                            attacker.getId(),
+                            attacker.getMaxHp(),
+                            attacker.getCurrentHp(),
+                            poisonValue,
+                            attacker.isOnField(),
+                            EffectType.POISON,
+                            DamageType.POISON,
+                            "中毒+" + poisonValue);
+                }
+                break;
+            case "幽灵厨师":
                 // 幽灵毒击：令攻击者中毒
                 if (!defender.isDead()) {
                     int totalPoisonDamage = 8 * skillLevel[0];
@@ -7310,6 +8211,102 @@ public class BattleManager {
         }
 
         // A玄冥
+//            玄冥，毒入骨髓Lv1场下，每回合令随机敌方中毒每回损失16点生命；
+        if (campA.stream().anyMatch(g -> g.getName().equals("白无常") && !g.isDead() && !g.isOnField() && !g.isSilence())) {
+            Guardian daji = campA.stream()
+                    .filter(g -> g.getName().equals("白无常") && !g.isDead() && !g.isOnField())
+                    .findFirst().get();
+            int[] skillLevel = CardSkillLevelUtil.calculateSkillLevels(daji.getLevel(), daji.getStar().doubleValue());
+
+            // 毒入骨髓：随机敌方中毒
+            List<Guardian> enemies = campB.stream()
+                    .filter(g -> !g.isDead())
+                    .collect(Collectors.toList());
+
+            if (!enemies.isEmpty()) {
+                Guardian randomEnemy = enemies.get(random.nextInt(enemies.size()));
+                int totalPoisonDamage = 16 * skillLevel[0];
+                // 1. 计算所有中毒效果的总伤害（累加 POISON 类型的 value）
+                // 2. 计算毒抗相关（直接基于你现有 EffectInstance 计算，不新增 Guardian 方法）
+                // 中毒增益：所有 POISON_RESIST 类型效果的 value 总和
+                int resistUp = calculateTotalVaule(daji, EffectType.POISON_BOOST);
+                // 中毒增益百分比：所有 POISON_RESIST 类型效果的 value 乘积
+                double resistUpPret = calculateTotalUpPretVaule(daji, EffectType.POISON_BOOST_PRET);
+                // 中毒降低：所有 POISON_RESIST_DOWN 类型效果的 value 总和
+                int resistDown = calculateTotalVaule(daji, EffectType.POISON_DOWN);
+                // 中毒降低百分比：所有 POISON_RESIST 类型效果的 value 乘积
+                double resistDownPret = calculateTotalDownPretVaule(daji, EffectType.POISON_DOWN_PRET);
+
+                int poisonValue = (int) (totalPoisonDamage * resistUpPret * resistDownPret + (resistUp + daji.getDsAtk() - resistDown));
+                poisonValue = applyXilianElement(daji, randomEnemy, poisonValue);
+                randomEnemy.addEffect(EffectType.POISON, poisonValue, 99, daji.getId());
+
+                addLog("毒入骨髓",
+                        daji.getId(),
+                        daji.getMaxHp(),
+                        daji.getCurrentHp(),
+                        0,
+                        daji.isOnField(),
+                        randomEnemy.getId(),
+                        randomEnemy.getMaxHp(),
+                        randomEnemy.getCurrentHp(),
+                        0,
+                        randomEnemy.isOnField(),
+                        EffectType.POISON,
+                        DamageType.POISON,
+                        "中毒");
+            }
+        }
+
+        // B队玄冥
+        if (campB.stream().anyMatch(g -> g.getName().equals("白无常") && !g.isDead() && !g.isOnField() && !g.isSilence())) {
+            Guardian daji = campB.stream()
+                    .filter(g -> g.getName().equals("白无常") && !g.isDead() && !g.isOnField())
+                    .findFirst().get();
+            int[] skillLevel = CardSkillLevelUtil.calculateSkillLevels(daji.getLevel(), daji.getStar().doubleValue());
+
+
+            // 谄媚噬魂：随机敌方中毒
+            List<Guardian> enemies = campA.stream()
+                    .filter(g -> !g.isDead())
+                    .collect(Collectors.toList());
+
+            if (!enemies.isEmpty()) {
+                Guardian randomEnemy = enemies.get(random.nextInt(enemies.size()));
+                int totalPoisonDamage = 16 * skillLevel[0];
+                // 1. 计算所有中毒效果的总伤害（累加 POISON 类型的 value）
+                // 2. 计算毒抗相关（直接基于你现有 EffectInstance 计算，不新增 Guardian 方法）
+                // 中毒增益：所有 POISON_RESIST 类型效果的 value 总和
+                int resistUp = calculateTotalVaule(daji, EffectType.POISON_BOOST);
+                // 中毒增益百分比：所有 POISON_RESIST 类型效果的 value 乘积
+                double resistUpPret = calculateTotalUpPretVaule(daji, EffectType.POISON_BOOST_PRET);
+                // 中毒降低：所有 POISON_RESIST_DOWN 类型效果的 value 总和
+                int resistDown = calculateTotalVaule(daji, EffectType.POISON_DOWN);
+                // 中毒降低百分比：所有 POISON_RESIST 类型效果的 value 乘积
+                double resistDownPret = calculateTotalDownPretVaule(daji, EffectType.POISON_DOWN_PRET);
+
+                int poisonValue = (int) (totalPoisonDamage * resistUpPret * resistDownPret + (resistUp + daji.getDsAtk() - resistDown));
+                poisonValue = applyXilianElement(daji, randomEnemy, poisonValue);
+                randomEnemy.addEffect(EffectType.POISON, poisonValue, 99, daji.getId());
+
+                addLog("毒入骨髓",
+                        daji.getId(),
+                        daji.getMaxHp(),
+                        daji.getCurrentHp(),
+                        0,
+                        daji.isOnField(),
+                        randomEnemy.getId(),
+                        randomEnemy.getMaxHp(),
+                        randomEnemy.getCurrentHp(),
+                        0,
+                        randomEnemy.isOnField(),
+                        EffectType.POISON,
+                        DamageType.POISON,
+                        "中毒+" + poisonValue);
+            }
+        }
+
+        // A玄冥
 //            任意位置，若场上敌方有疾病则每回合令其中毒，受到40点毒素伤害
         if (campA.stream().anyMatch(g -> g.getName().equals("金钩大王") && !g.isDead() && !g.isOnField() && !g.isSilence())) {
             if (!fieldB.isDead() && fieldB.isHealDown()) {
@@ -9811,6 +10808,176 @@ public class BattleManager {
                 }
             }
 
+//            南华真人，魂力飞弹Lv1场下，每当新单位入场时，对场上敌人造成178点飞弹伤害；报复神箭Lv1场下，每回合对场上敌方造成106；
+            if (campA.stream().anyMatch(g -> g.getName().equals("兔精") && g.getPosition() == position && !g.isDead() && !g.isOnField() && !g.isSilence())) {
+                Guardian guardian = campA.stream()
+                        .filter(g -> g.getName().equals("兔精") && g.getPosition() == position && !g.isDead() && !g.isOnField())
+                        .findFirst().get();
+                int[] skillLevel = CardSkillLevelUtil.calculateSkillLevels(guardian.getLevel(), guardian.getStar().doubleValue());
+                if (fieldB != null && !fieldB.isDead()) {
+                    // 1. 计算所有中毒效果的总伤害（累加 POISON 类型的 value）
+                    int totalPoisonDamage = 178 * skillLevel[0];
+                    // 2. 计算毒抗相关（直接基于你现有 EffectInstance 计算，不新增 Guardian 方法）
+                    // 飞弹增益：所有 POISON_RESIST 类型效果的 value 总和
+                    int resistUp = calculateTotalVaule(guardian, EffectType.MISSILE_BOOST);
+                    // 飞弹增益百分比：所有 POISON_RESIST 类型效果的 value 乘积
+                    double resistUpPret = calculateTotalUpPretVaule(guardian, EffectType.MISSILE_BOOST_PRET);
+                    // 飞弹降低：所有 POISON_RESIST_DOWN 类型效果的 value 总和
+                    int resistDown = calculateTotalVaule(guardian, EffectType.MISSILE_DOWN);
+                    // 飞弹降低百分比：所有 POISON_RESIST 类型效果的 value 乘积
+                    double resistDownPret = calculateTotalDownPretVaule(guardian, EffectType.MISSILE_DOWN_PRET);
+
+
+                    // 2. 计算毒抗相关（直接基于你现有 EffectInstance 计算，不新增 Guardian 方法）
+                    // 弹抗增益：所有 POISON_RESIST 类型效果的 value 总和
+                    int targetUp = calculateTotalVaule(fieldB, EffectType.MISSILE_RESIST_BOOST);
+                    // 弹抗增益百分比：所有 POISON_RESIST 类型效果的 value 乘积
+                    double targetUpPret = calculateTotalDownPretVaule(fieldB, EffectType.MISSILE_RESIST_BOOST_PRET);
+                    // 弹抗降低：所有 POISON_RESIST_DOWN 类型效果的 value 总和
+                    int targetDown = calculateTotalVaule(fieldB, EffectType.MISSILE_RESIST_DOWN);
+                    // 弹抗降低百分比：所有 POISON_RESIST 类型效果的 value fieldA
+                    double targetDownPret = calculateTotalUpPretVaule(fieldB, EffectType.MISSILE_RESIST_DOWN_PRET);
+                    // 最终（仅基于 buff 计算，无新增方法）
+
+                    int burnDamage = (int) (totalPoisonDamage * resistUpPret * resistDownPret * targetUpPret * targetDownPret
+                            + (resistUp - resistDown + guardian.getFdAtk() - fieldB.getFdDef() - targetUp + targetDown));
+                    burnDamage = applyXilianElement(guardian, fieldB, burnDamage);
+
+                    if (burnDamage < 0) {
+                        burnDamage = 0;
+                    }
+                    Integer logIndex=battleLogs.size();
+                    burnDamage=triggerOnAttackedSkills(fieldB,burnDamage,EffectType.MISSILE_DAMAGE);
+
+                    // 4. 扣除伤害
+                    fieldB.setCurrentHp(fieldB.getCurrentHp() - burnDamage);
+                    Map<String, TargetBattleData> deadUnits = new HashMap<>();
+
+                    if (fieldB.getCurrentHp() <= 0) {
+                        fieldB.setDead(true);
+                        fieldB.setOnField(false);
+                        TargetBattleData data = new TargetBattleData(fieldB.getMaxHp(), fieldB.getCurrentHp(), burnDamage, fieldB.isOnField());
+                        deadUnits.put(fieldB.getId(), data);
+                    }
+                    addLog("魂力飞弹",
+                            guardian.getId(),
+                            guardian.getMaxHp(),
+                            guardian.getCurrentHp(),
+                            0,
+                            guardian.isOnField(),
+                            fieldB.getId(),
+                            fieldB.getMaxHp(),
+                            fieldB.getCurrentHp(),
+                            burnDamage,
+                            fieldB.isOnField(),
+                            EffectType.MISSILE_DAMAGE,
+                            DamageType.MISSILE,
+                            "-" + burnDamage,logIndex);
+                    // 死亡日志
+                    if (!deadUnits.isEmpty()) {
+                        addMultiTargetLog("UNIT_DEATH",
+                                null,
+                                0,
+                                0,
+                                false,
+                                deadUnits,
+                                null,
+                                null,
+                                "死亡");
+                        //触发死亡技能
+                        triggerOnDeathSkills(fieldB);
+
+                    } else {
+                        //触发受击技能
+                        triggerOnAttackedSkills(fieldB, EffectType.MISSILE_DAMAGE);
+                    }
+                }
+            }
+//            镇元子，魂力飞弹Lv1场下，每当新单位入场时，对场上敌人造成178点飞弹伤害；禁心咒Lv1场下，每当有单位登场，有17%几率令场上英雄沉默2回合；多宝道人同Lv1与多宝道人在同一队伍时，增加自身453点生命上限，158点攻击，158点速度。
+            if (campB.stream().anyMatch(g -> g.getName().equals("兔精") && g.getPosition() == position && !g.isDead() && !g.isOnField() && !g.isSilence())) {
+                Guardian guardian = campB.stream()
+                        .filter(g -> g.getName().equals("兔精") && g.getPosition() == position && !g.isDead() && !g.isOnField())
+                        .findFirst().get();
+                int[] skillLevel = CardSkillLevelUtil.calculateSkillLevels(guardian.getLevel(), guardian.getStar().doubleValue());
+                if (fieldA != null && !fieldA.isDead()) {
+                    // 1. 计算所有中毒效果的总伤害（累加 POISON 类型的 value）
+                    int totalPoisonDamage = 178 * skillLevel[0];
+                    // 2. 计算毒抗相关（直接基于你现有 EffectInstance 计算，不新增 Guardian 方法）
+                    // 飞弹增益：所有 POISON_RESIST 类型效果的 value 总和
+                    int resistUp = calculateTotalVaule(guardian, EffectType.MISSILE_BOOST);
+                    // 飞弹增益百分比：所有 POISON_RESIST 类型效果的 value 乘积
+                    double resistUpPret = calculateTotalUpPretVaule(guardian, EffectType.MISSILE_BOOST_PRET);
+                    // 飞弹降低：所有 POISON_RESIST_DOWN 类型效果的 value 总和
+                    int resistDown = calculateTotalVaule(guardian, EffectType.MISSILE_DOWN);
+                    // 飞弹降低百分比：所有 POISON_RESIST 类型效果的 value 乘积
+                    double resistDownPret = calculateTotalDownPretVaule(guardian, EffectType.MISSILE_DOWN_PRET);
+
+
+                    // 2. 计算毒抗相关（直接基于你现有 EffectInstance 计算，不新增 Guardian 方法）
+                    // 弹抗增益：所有 POISON_RESIST 类型效果的 value 总和
+                    int targetUp = calculateTotalVaule(fieldA, EffectType.MISSILE_RESIST_BOOST);
+                    // 弹抗增益百分比：所有 POISON_RESIST 类型效果的 value 乘积
+                    double targetUpPret = calculateTotalDownPretVaule(fieldA, EffectType.MISSILE_RESIST_BOOST_PRET);
+                    // 弹抗降低：所有 POISON_RESIST_DOWN 类型效果的 value 总和
+                    int targetDown = calculateTotalVaule(fieldA, EffectType.MISSILE_RESIST_DOWN);
+                    // 弹抗降低百分比：所有 POISON_RESIST 类型效果的 value fieldA
+                    double targetDownPret = calculateTotalUpPretVaule(fieldA, EffectType.MISSILE_RESIST_DOWN_PRET);
+                    // 最终（仅基于 buff 计算，无新增方法）
+
+                    int burnDamage = (int) (totalPoisonDamage * resistUpPret * resistDownPret * targetUpPret * targetDownPret
+                            + (resistUp - resistDown + guardian.getFdAtk() - fieldA.getFdDef() - targetUp + targetDown));
+                    burnDamage = applyXilianElement(guardian, fieldA, burnDamage);
+
+                    if (burnDamage < 0) {
+                        burnDamage = 0;
+                    }
+                    Integer logIndex=battleLogs.size();
+                    burnDamage=triggerOnAttackedSkills(fieldA,burnDamage,EffectType.MISSILE_DAMAGE);
+
+                    // 4. 扣除伤害
+                    fieldA.setCurrentHp(fieldA.getCurrentHp() - burnDamage);
+                    Map<String, TargetBattleData> deadUnits = new HashMap<>();
+
+                    if (fieldA.getCurrentHp() <= 0) {
+                        fieldA.setDead(true);
+                        fieldA.setOnField(false);
+                        TargetBattleData data = new TargetBattleData(fieldA.getMaxHp(), fieldA.getCurrentHp(), burnDamage, fieldA.isOnField());
+                        deadUnits.put(fieldA.getId(), data);
+                    }
+                    addLog("魂力飞弹",
+                            guardian.getId(),
+                            guardian.getMaxHp(),
+                            guardian.getCurrentHp(),
+                            0,
+                            guardian.isOnField(),
+                            fieldA.getId(),
+                            fieldA.getMaxHp(),
+                            fieldA.getCurrentHp(),
+                            burnDamage,
+                            fieldA.isOnField(),
+                            EffectType.MISSILE_DAMAGE,
+                            DamageType.MISSILE,
+                            "-" + burnDamage,logIndex);
+                    // 死亡日志
+                    if (!deadUnits.isEmpty()) {
+                        addMultiTargetLog("UNIT_DEATH",
+                                null,
+                                0,
+                                0,
+                                false,
+                                deadUnits,
+                                null,
+                                null,
+                                "死亡");
+                        //触发死亡技能
+                        triggerOnDeathSkills(fieldA);
+
+                    } else {
+                        //触发受击技能
+                        triggerOnAttackedSkills(fieldA, EffectType.MISSILE_DAMAGE);
+                    }
+                }
+            }
 
             //            南华真人，魂力飞弹Lv1场下，每当新单位入场时，对场上敌人造成178点飞弹伤害；报复神箭Lv1场下，每回合对场上敌方造成106；
             if (campA.stream().anyMatch(g -> g.getName().equals("北岳大帝") && g.getPosition() == position && !g.isDead() && !g.isOnField() && !g.isSilence())) {
