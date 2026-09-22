@@ -10792,7 +10792,7 @@ public class GameServiceServiceImpl implements GameServiceService {
                     character.setSpeed(character.getSpeed() + skillLevel[1] * characters.getCollSpeed());
                 }
                 //瑶池仙女物理抗性
-                if (characters.getName().equals("瑶池仙女")) {
+                if (characters.getName().equals("瑶池仙女")||characters.getName().equals("虞姬")) {
                     character.setWlDef(character.getWlDef() + 32 * skillLevel[1]);
                 }
             }

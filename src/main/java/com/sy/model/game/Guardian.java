@@ -40,7 +40,17 @@ public class Guardian {
         this.buffXuanMins = buffXuanMins;
     }
 
+    public int getPhysicalBarrier() {
+        return physicalBarrier;
+    }
+
+    public void setPhysicalBarrier(int physicalBarrier) {
+        this.physicalBarrier = physicalBarrier;
+    }
+
     private int buffXuanMins;
+    // 物理结界值：吸收物理伤害，每次受击先扣结界再扣血
+    private int physicalBarrier;
     private int wlAtk;
     private int hyAtk;
     private int dsAtk;

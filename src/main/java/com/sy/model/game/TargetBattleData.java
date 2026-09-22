@@ -10,6 +10,7 @@ public class TargetBattleData {
     private boolean isPoison;
     private boolean isFireBoost;
     private boolean isHealDown;
+    private int shieldRemaining;  // 当前盾（物理结界）剩余值
 
     public boolean isHealDown() {
         return isHealDown;
@@ -75,5 +76,13 @@ public class TargetBattleData {
 
     public boolean getFieldStatus() {
         return fieldStatus;
+    }
+
+    public int getShieldRemaining() {
+        return shieldRemaining;
+    }
+
+    public void setShieldRemaining(int shieldRemaining) {
+        this.shieldRemaining = shieldRemaining;
     }
 }

@@ -101,7 +101,8 @@ public enum EffectType {
     SPEED_UP("速度提升"),
     SPEED_UP_PRET("速度提升"),
     SPEED_DOWN("速度下降"),
-    SPEED_DOWN_PRET("速度下降");
+    SPEED_DOWN_PRET("速度下降"),
+    PHYSICAL_BARRIER("物理结界");
     private String desc;
     EffectType(String desc) { this.desc = desc; }
 

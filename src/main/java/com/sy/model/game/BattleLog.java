@@ -33,4 +33,5 @@ public class BattleLog {
     private DamageType damageType;          // 伤害类型（如果适用）
     private String extraDesc;               // 额外描述信息（可选）
     private int aoe;
+    private int shieldRemaining;        // 目标当前盾（物理结界）剩余值
 }

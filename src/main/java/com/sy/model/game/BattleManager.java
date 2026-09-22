@@ -666,6 +666,16 @@ public class BattleManager {
         Integer logIndex=battleLogs.size();
         burnDamage=triggerOnAttackedSkills(defender,burnDamage,EffectType.DAMAGE);
 
+        // 物理结界吸收物理伤害
+        if (defender.getPhysicalBarrier() > 0 && burnDamage > 0) {
+            if (defender.getPhysicalBarrier() >= burnDamage) {
+                defender.setPhysicalBarrier(defender.getPhysicalBarrier() - burnDamage);
+                burnDamage = 0;
+            } else {
+                burnDamage = burnDamage - defender.getPhysicalBarrier();
+                defender.setPhysicalBarrier(0);
+            }
+        }
         defender.setCurrentHp(defender.getCurrentHp() - burnDamage);
         addLog("NORMAL_ATTACK",
                 attacker.getId(),
@@ -677,6 +687,8 @@ public class BattleManager {
                 burnDamage, defender.isOnField(),
                 attackEffectType, DamageType.PHYSICAL,
                 "-" + burnDamage,logIndex);
+        // 记录目标当前盾剩余值
+        battleLogs.get(logIndex).setShieldRemaining(defender.getPhysicalBarrier());
         // 检查阵亡
         if (defender.getCurrentHp() <= 0) {
             defender.setDead(true);
@@ -2189,11 +2201,9 @@ public class BattleManager {
                                     "攻击-50%，速度+50%");
                         }
                         break;
-                    case "烛龙":
-                        // 致命衰竭：登场目标攻击减少10%
+                    case "烛龙":     // 致命衰竭：登场目标攻击减少10%，最多降低90%
                         if (skillLevel[1] > 0) {
                             if (guardian1 != null) {
-
                                 // 1. 计算所有中毒效果的总伤害（累加 POISON 类型的 value）
                                 int totalPoisonDamage = guardian1.getAttack();
                                 // 2. 计算毒抗相关（直接基于你现有 EffectInstance 计算，不新增 Guardian 方法）
@@ -2206,19 +2216,22 @@ public class BattleManager {
                                 // 物理攻击降低百分比：所有 POISON_RESIST 类型效果的 value 乘积
                                 double resistDownPret = calculateTotalDownPretVaule(guardian1, EffectType.ATTACK_DOWN_PRET);
 
-
                                 //算出对方攻击
                                 int burnDamage = (int) (totalPoisonDamage * resistUpPret * resistDownPret
                                         + (resistUp - resistDown + guardian1.getWlAtk()));
-                                int burnDamage2 = (int) (totalPoisonDamage * resistUpPret * resistDownPret*(1 - 0.1*skillLevel[1])
+                                int weaken = skillLevel[1] * 10;
+                                // 上限 90%
+                                if (weaken > 90) {
+                                    weaken = 90;
+                                }
+                                int burnDamage2 = (int) (totalPoisonDamage * resistUpPret * resistDownPret * (1 - weaken / 100.0)
                                         + (resistUp - resistDown + guardian1.getWlAtk()));
                                 // 物理攻击
-                                burnDamage= burnDamage-burnDamage2;
+                                burnDamage = burnDamage - burnDamage2;
                                 if (burnDamage < 0) {
                                     burnDamage = 0;
                                 }
-                                int weaken=skillLevel[1]*10;
-                                guardian1.addEffect(EffectType.ATTACK_DOWN_PRET,weaken,99,enemy.getId());
+                                guardian1.addEffect(EffectType.ATTACK_DOWN_PRET, weaken, 99, enemy.getId());
                                 addLog("致命衰竭",
                                         enemy.getId(),
                                         enemy.getMaxHp(),
@@ -2232,7 +2245,7 @@ public class BattleManager {
                                         guardian1.isOnField(),
                                         EffectType.ATTACK_DOWN_PRET,
                                         DamageType.BUFF,
-                                        "攻击降低" + skillLevel[1] + "0%");
+                                        "攻击降低" + weaken + "%");
                             }
                         }
                         break;
@@ -2925,6 +2938,55 @@ public class BattleManager {
                 EffectType.fromChargeStacks(xuli + 1, HOU_YI_CHARGE_MAX),
                 DamageType.BUFF,
                 "");
+    }
+
+    /**
+     * 后羿蓄力触发（乌江之殇等外部扣血场景）：50%概率蓄力+1，上限4层
+     */
+    private void triggerHouYiChargeOnHit(Guardian g) {
+        if (g.getBuffStacks() < HOU_YI_CHARGE_MAX && ProbabilityBooleanUtils.randomByProbability(0.5)) {
+            int xuli = g.getBuffStacks();
+            g.setBuffStacks(xuli + 1);
+            addLog("乌江之殇·蓄力",
+                    g.getId(),
+                    g.getMaxHp(),
+                    g.getCurrentHp(),
+                    0,
+                    g.isOnField(),
+                    g.getId(),
+                    g.getMaxHp(),
+                    g.getCurrentHp(),
+                    0,
+                    g.isOnField(),
+                    EffectType.fromChargeStacks(xuli + 1, HOU_YI_CHARGE_MAX),
+                    DamageType.BUFF,
+                    "蓄力+1");
+        }
+    }
+
+    /**
+     * 白天君蓄力触发（乌江之殇等外部扣血场景）：50%概率蓄力+1，上限3层
+     */
+    private void triggerBaiTianJunChargeOnHit(Guardian g) {
+        int chargeMax = 3;
+        if (g.getBuffStacks() < chargeMax && ProbabilityBooleanUtils.randomByProbability(0.5)) {
+            int xuli = g.getBuffStacks();
+            g.setBuffStacks(xuli + 1);
+            addLog("乌江之殇·蓄力",
+                    g.getId(),
+                    g.getMaxHp(),
+                    g.getCurrentHp(),
+                    0,
+                    g.isOnField(),
+                    g.getId(),
+                    g.getMaxHp(),
+                    g.getCurrentHp(),
+                    0,
+                    g.isOnField(),
+                    EffectType.fromChargeStacks(xuli + 1, chargeMax),
+                    DamageType.BUFF,
+                    "蓄力+1");
+        }
     }
 
     /**
@@ -7874,6 +7936,93 @@ public class BattleManager {
 
         }
 
+        // 虞姬·乌江之殇：回合开始时扣除前后护法及虞姬自己 n% 当前生命（上限40%），给予总扣血量80%的物理结界（所有目标获得相同盾值），扣血50%概率触发蓄力
+        for (List<Guardian> camp : new List[]{campA, campB}) {
+            Guardian yuji = camp.stream()
+                    .filter(g -> g.getName().equals("虞姬") && !g.isDead() && !g.isSilence())
+                    .findFirst().orElse(null);
+            if (yuji == null) continue;
+            int[] skillLevel = CardSkillLevelUtil.calculateSkillLevels(yuji.getLevel(), yuji.getStar().doubleValue());
+            if (skillLevel[0] <= 0) continue;
+            int nPercent = Math.min(10 * skillLevel[0], 40); // 每级10%，上限40%
+            // 查找前后护法（position ± 1）
+            List<Guardian> adjacentGuardians = camp.stream()
+                    .filter(g -> !g.isDead() && (g.getPosition() == yuji.getPosition() - 1 || g.getPosition() == yuji.getPosition() + 1))
+                    .collect(Collectors.toList());
+
+            // 扣血目标包含虞姬自己
+            List<Guardian> targets = new ArrayList<>(adjacentGuardians);
+            targets.add(yuji);
+
+            Map<String, TargetBattleData> targetStatus = new HashMap<>();
+            Map<String, TargetBattleData> deadUnits = new HashMap<>();
+            List<Guardian> deadGuardians = new ArrayList<>();
+
+            // 第一遍：扣血并统计总伤害
+            int totalDamage = 0;
+            Map<String, Integer> damageMap = new LinkedHashMap<>();
+            for (Guardian g : targets) {
+                int actualDamage = (int) (g.getCurrentHp() * nPercent / 100.0);
+                if (actualDamage <= 0) continue;
+                g.setCurrentHp(g.getCurrentHp() - actualDamage);
+                damageMap.put(g.getId(), actualDamage);
+                totalDamage += actualDamage;
+            }
+
+            // 盾值 = 总扣血量 × 80%，所有目标（含虞姬）获得相同盾值
+            int barrierValue = (int) (totalDamage * 0.8);
+
+            // 第二遍：加盾、记录日志、检查阵亡
+            for (Guardian g : targets) {
+                Integer dmg = damageMap.get(g.getId());
+                if (dmg == null) continue;
+                g.setPhysicalBarrier(g.getPhysicalBarrier() + barrierValue);
+                TargetBattleData data = new TargetBattleData(g.getMaxHp(), g.getCurrentHp(), dmg, g.isOnField());
+                data.setShieldRemaining(g.getPhysicalBarrier());
+                targetStatus.put(g.getId(), data);
+                // 检查阵亡
+                if (g.getCurrentHp() <= 0) {
+                    g.setDead(true);
+                    g.setOnField(false);
+                    deadUnits.put(g.getId(), data);
+                    deadGuardians.add(g);
+                }
+                // 50%概率触发蓄力（仅前后护法为后羿或白天君时生效，满层不加）
+                if (g.getName().equals("后羿")) {
+                    triggerHouYiChargeOnHit(g);
+                } else if (g.getName().equals("白天君")) {
+                    triggerBaiTianJunChargeOnHit(g);
+                }
+            }
+            // 多目标整合日志
+            if (!targetStatus.isEmpty()) {
+                addMultiTargetLog("乌江之殇",
+                        yuji.getId(),
+                        yuji.getMaxHp(),
+                        yuji.getCurrentHp(),
+                        yuji.isOnField(),
+                        targetStatus,
+                        EffectType.PHYSICAL_BARRIER,
+                        DamageType.BUFF,
+                        "物理结界+" + barrierValue);
+            }
+            // 死亡日志
+            if (!deadUnits.isEmpty()) {
+                addMultiTargetLog("UNIT_DEATH",
+                        null,
+                        0,
+                        0,
+                        false,
+                        deadUnits,
+                        null,
+                        null,
+                        "死亡");
+                //触发死亡技能
+                for (Guardian g : deadGuardians) {
+                    triggerOnDeathSkills(g);
+                }
+            }
+        }
 
         if (campA.stream().anyMatch(g -> g.getName().equals("红孩儿") && !g.isDead() && !g.isSilence())) {
             Guardian nianshou = campA.stream()
@@ -12474,7 +12623,10 @@ public class BattleManager {
                         g.getEffects().removeIf(effect -> effect.getType() == EffectType.HP_UP_PRET && !effect.getIsSkill());
                         g.getEffects().removeIf(effect -> effect.getType() == EffectType.SPEED_UP && !effect.getIsSkill());
                         g.getEffects().removeIf(effect -> effect.getType() == EffectType.SPEED_UP_PRET && !effect.getIsSkill());
+                        // 驱散乌江之殇的物理结界
+                        g.setPhysicalBarrier(0);
                         TargetBattleData data = new TargetBattleData(g.getMaxHp(), g.getCurrentHp(), 50, g.isOnField());
+                        data.setShieldRemaining(0);
                         targetStatus.put(g.getId(), data);
                     });
                     addMultiTargetLog("元气消散",
@@ -12521,7 +12673,10 @@ public class BattleManager {
                         g.getEffects().removeIf(effect -> effect.getType() == EffectType.HP_UP_PRET && !effect.getIsSkill());
                         g.getEffects().removeIf(effect -> effect.getType() == EffectType.SPEED_UP && !effect.getIsSkill());
                         g.getEffects().removeIf(effect -> effect.getType() == EffectType.SPEED_UP_PRET && !effect.getIsSkill());
+                        // 驱散乌江之殇的物理结界
+                        g.setPhysicalBarrier(0);
                         TargetBattleData data = new TargetBattleData(g.getMaxHp(), g.getCurrentHp(), 50, g.isOnField());
+                        data.setShieldRemaining(0);
                         targetStatus.put(g.getId(), data);
                     });
                     addMultiTargetLog("元气消散",
@@ -12569,7 +12724,10 @@ public class BattleManager {
                         g.getEffects().removeIf(effect -> effect.getType() == EffectType.HP_UP_PRET && !effect.getIsSkill());
                         g.getEffects().removeIf(effect -> effect.getType() == EffectType.SPEED_UP && !effect.getIsSkill());
                         g.getEffects().removeIf(effect -> effect.getType() == EffectType.SPEED_UP_PRET && !effect.getIsSkill());
+                        // 驱散乌江之殇的物理结界
+                        g.setPhysicalBarrier(0);
                         TargetBattleData data = new TargetBattleData(g.getMaxHp(), g.getCurrentHp(), 50, g.isOnField());
+                        data.setShieldRemaining(0);
                         targetStatus.put(g.getId(), data);
                     });
                     addMultiTargetLog("元气消散",
@@ -12616,7 +12774,10 @@ public class BattleManager {
                         g.getEffects().removeIf(effect -> effect.getType() == EffectType.HP_UP_PRET && !effect.getIsSkill());
                         g.getEffects().removeIf(effect -> effect.getType() == EffectType.SPEED_UP && !effect.getIsSkill());
                         g.getEffects().removeIf(effect -> effect.getType() == EffectType.SPEED_UP_PRET && !effect.getIsSkill());
+                        // 驱散乌江之殇的物理结界
+                        g.setPhysicalBarrier(0);
                         TargetBattleData data = new TargetBattleData(g.getMaxHp(), g.getCurrentHp(), 50, g.isOnField());
+                        data.setShieldRemaining(0);
                         targetStatus.put(g.getId(), data);
                     });
                     addMultiTargetLog("元气消散",
@@ -12922,6 +13083,7 @@ public class BattleManager {
                 effectType,
                 damageType,
                 extraDesc,
+                0,
                 0
         ));
     }
@@ -12959,6 +13121,7 @@ public class BattleManager {
                 effectType,
                 damageType,
                 extraDesc,
+                0,
                 0
         ));
     }
@@ -12990,7 +13153,8 @@ public class BattleManager {
                 null,
                 null,
                 extraDesc,
-                1
+                1,
+                0
         ));
     }
 
@@ -13023,7 +13187,8 @@ public class BattleManager {
                 effectType,
                 damageType,
                 extraDesc,
-                1
+                1,
+                0
         ));
     }
 
@@ -13058,7 +13223,8 @@ public class BattleManager {
                 effectType,
                 damageType,
                 extraDesc,
-                1
+                1,
+                0
         ));
     }
 
