@@ -7115,16 +7115,38 @@ public class GameServiceServiceImpl implements GameServiceService {
                 addBagItem(userId, 94, 2500);
                 user.setGold(user.getGold().add(new BigDecimal("5000000")));
                 break;
-            case 95: // 后羿魂魄宝箱：后羿魂魄1~10枚(id1105)、玄铁矿(id14)/青铜矿(id13)/紫金矿(id15)各99~599
+            case 95: // 后羿魂魄1~10枚、玄铁矿 999~1999枚、青铜矿 599~999枚、紫金矿 199~599枚
                 Random random = new Random();
                 // 后羿魂魄（id 1105）：1~10枚，进背包
                 addBagItem(userId, 1105, random.nextInt(10) + 1);
-                // 玄铁矿（id 14）：99~599
-                addBagItem(userId, 14, random.nextInt(501) + 99);
-                // 青铜矿（id 13）：99~599
-                addBagItem(userId, 13, random.nextInt(501) + 99);
-                // 紫金矿（id 15）：99~599
-                addBagItem(userId, 15, random.nextInt(501) + 99);
+                // 玄铁矿 id:14，范围 999 ~ 1999  差值：1999 - 999 = 1000
+                addBagItem(userId, 13, random.nextInt(1001) + 999);
+                // 青铜矿 id:13，范围 599 ~ 999    差值：999 - 599 = 400
+                addBagItem(userId, 14, random.nextInt(401) + 599);
+                // 紫金矿 id:15，范围 199 ~ 599    差值：599 - 199 = 400
+                addBagItem(userId, 15, random.nextInt(401) + 199);
+                break;
+            case 96: // 虞姬魂魄1~10枚、玄铁矿 999~1999枚、青铜矿 599~999枚、紫金矿 199~599枚
+                Random random2 = new Random();
+                // 虞姬魂魄（id 1105）：1~10枚，进背包
+                addBagItem(userId, 1106, random2.nextInt(10) + 1);
+                // 玄铁矿 id:14，范围 999 ~ 1999  差值：1999 - 999 = 1000
+                addBagItem(userId, 13, random2.nextInt(1001) + 999);
+                // 青铜矿 id:13，范围 599 ~ 999    差值：999 - 599 = 400
+                addBagItem(userId, 14, random2.nextInt(401) + 599);
+                // 紫金矿 id:15，范围 199 ~ 599    差值：599 - 199 = 400
+                addBagItem(userId, 15, random2.nextInt(401) + 199);
+                break;
+            case 97: // 虞姬魂魄1~10枚、玄铁矿 999~1999枚、青铜矿 599~999枚、紫金矿 199~599枚
+                Random random3 = new Random();
+                // 虞姬魂魄（id 1105）：1~10枚，进背包
+                addBagItem(userId, 1107, random3.nextInt(10) + 1);
+                // 玄铁矿 id:14，范围 999 ~ 1999  差值：1999 - 999 = 1000
+                addBagItem(userId, 13, random3.nextInt(1001) + 999);
+                // 青铜矿 id:13，范围 599 ~ 999    差值：999 - 599 = 400
+                addBagItem(userId, 14, random3.nextInt(401) + 599);
+                // 紫金矿 id:15，范围 199 ~ 599    差值：599 - 199 = 400
+                addBagItem(userId, 15, random3.nextInt(401) + 199);
                 break;
             default:
                 throw new IllegalArgumentException("不支持的物品ID：" + itemId);

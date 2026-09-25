@@ -23,6 +23,12 @@ public class BattleManager {
     private Random random = new Random();
     // 落日余晖已累计的暴击加成（战斗内有效，key为后羿id），用于封顶判定
     private final Map<String, Integer> houYiCritBonus = new HashMap<>();
+    // 桂影栖身已累计的闪避加成（战斗内有效，key为嫦娥id），用于封顶判定
+    private final Map<String, Integer> changEDodgeBonus = new HashMap<>();
+    // 魅影闪避临时闪避加成（持续1回合，key为捡漏小妖id），回合结束时移除
+    private final Map<String, Integer> jianLouDodgeBonus = new HashMap<>();
+    // 换位秘术重入保护，防止换位触发登场技能后再次触发换位导致死循环
+    private boolean huanWeiMiShuInProgress = false;
     // 新增递归深度常量（可根据业务调整）
     private static final int MAX_TRIGGER_DEPTH = 5;
     // 后羿乾坤破（2技能）：蓄力满4层后，攻击时以30%攻击力对易死目标连射，箭数随2技能等级提升，封顶10箭
@@ -155,6 +161,7 @@ public class BattleManager {
     private Guardian getNextGuardian(List<Guardian> camp) {
         return camp.stream()
                 .filter(g -> !g.isDead() && !g.isOnField())
+                .sorted(Comparator.comparing(Guardian::getPosition))
                 .findFirst()
                 .orElse(null);
     }
@@ -373,7 +380,7 @@ public class BattleManager {
         if (fieldA == null && fieldB == null) {
             initBattle();
         } else {
-            if (fieldA != null && fieldA.isDead()) {
+            if ((fieldA == null || fieldA.isDead()) && fieldB != null) {
                 Guardian newA = getNextGuardian(campA);
                 if (newA != null) {
                     fieldA = newA;
@@ -413,7 +420,7 @@ public class BattleManager {
                 }
             }
 
-            if (fieldB != null && fieldB.isDead()) {
+            if ((fieldB == null || fieldB.isDead()) && fieldA != null) {
                 Guardian newB = getNextGuardian(campB);
                 if (newB != null) {
                     fieldB = newB;
@@ -458,6 +465,10 @@ public class BattleManager {
 
     // 处理回合结束效果
     private void processRoundEndEffects() {
+        // 移除上回合捡漏小妖魅影闪避的临时闪避加成（持续1回合，遍历双方阵营确保换下场后也能清除）
+        for (Guardian g : campA) removeJianLouDodgeBonus(g);
+        for (Guardian g : campB) removeJianLouDodgeBonus(g);
+
         // 托塔天王仙塔庇护
         if (fieldA != null && !fieldA.isDead() && fieldA.getName().equals("托塔天王")) {
             int[] skillLevel = CardSkillLevelUtil.calculateSkillLevels(fieldA.getLevel(), fieldA.getStar().doubleValue());
@@ -553,6 +564,20 @@ public class BattleManager {
                 .findFirst().orElse(null);
         addHouYiCharge(houyiB);
         triggerHouYiLuoRiYuHui(houyiB);
+
+        // 嫦娥场下：桂影栖身（1技能）每回合闪避+技能等级%，最多叠加30%
+        Guardian changEa = campA.stream()
+                .filter(g -> g.getName().equals("嫦娥") && !g.isDead() && !g.isOnField())
+                .findFirst().orElse(null);
+        triggerChangEGuiYingQiShen(changEa);
+        Guardian changEb = campB.stream()
+                .filter(g -> g.getName().equals("嫦娥") && !g.isDead() && !g.isOnField())
+                .findFirst().orElse(null);
+        triggerChangEGuiYingQiShen(changEb);
+
+        // 捡漏小妖场下：换位秘术（2技能）回合结束时概率与随机队友互换位置
+        triggerJianLouHuanWeiMiShu(campA, fieldA);
+        triggerJianLouHuanWeiMiShu(campB, fieldB);
 
         List<Guardian> allUnits = new ArrayList<>();
         allUnits.addAll(campA);
@@ -2071,6 +2096,30 @@ public class BattleManager {
                     }
                 }
                 break;
+            case "捡漏小妖":
+                // 魅影闪避Lv1登场时获得20*技能等级%闪避，持续1回合
+                if (skillLevel[0] > 0&&guardian.isOnField()) {
+                    // 先清除可能残留的旧闪避加成（防止重复叠加）
+                    removeJianLouDodgeBonus(guardian);
+                    int dodgeGain = 20 * skillLevel[0];
+                    guardian.setXilianDodge(guardian.getXilianDodge() + dodgeGain);
+                    jianLouDodgeBonus.put(guardian.getId(), dodgeGain);
+                    addLog("魅影闪避",
+                            guardian.getId(),
+                            guardian.getMaxHp(),
+                            guardian.getCurrentHp(),
+                            dodgeGain,
+                            guardian.isOnField(),
+                            guardian.getId(),
+                            guardian.getMaxHp(),
+                            guardian.getCurrentHp(),
+                            dodgeGain,
+                            guardian.isOnField(),
+                            EffectType.DODGE_UP,
+                            DamageType.BUFF,
+                            "闪避+" + dodgeGain + "%");
+                }
+                break;
         }
     }
     private void triggerOnEnterSkills2(Guardian guardian) {
@@ -2081,7 +2130,7 @@ public class BattleManager {
         if (1 == 1&&guardian1!=null) {
             int[] skillLevel = CardSkillLevelUtil.calculateSkillLevels(guardian1.getLevel(), guardian1.getStar().doubleValue());
             Guardian enemy = guardian1.getCamp() == Camp.A ? fieldB : fieldA;
-            if (!enemy.isSilence() && enemy != null) {
+            if (enemy != null && !enemy.isSilence()) {
                 switch (enemy.getName()) {
                     case "托塔天王":
                         // 镇妖塔：对敌方场上造成飞弹伤害
@@ -2284,8 +2333,11 @@ public class BattleManager {
                                         g.getEffects().removeIf(effect -> effect.getType() == EffectType.HP_UP_PRET && !effect.getIsSkill());
                                         g.getEffects().removeIf(effect -> effect.getType() == EffectType.SPEED_UP && !effect.getIsSkill());
                                         g.getEffects().removeIf(effect -> effect.getType() == EffectType.SPEED_UP_PRET && !effect.getIsSkill());
+                                        // 驱散护盾
+                                        g.setPhysicalBarrier(0);
 
                                         TargetBattleData data = new TargetBattleData(g.getMaxHp(), g.getCurrentHp(), 50, g.isOnField());
+                                        data.setShieldRemaining(0);
                                         targetStatus.put(g.getId(), data);
                                     });
                                     addMultiTargetLog("元气消散",
@@ -2307,7 +2359,7 @@ public class BattleManager {
         if (1 == 1&&guardian2!=null) {
             int[] skillLevel2 = CardSkillLevelUtil.calculateSkillLevels(guardian2.getLevel(), guardian2.getStar().doubleValue());
             Guardian enemy = guardian2.getCamp() == Camp.A ? fieldB : fieldA;
-            if (!enemy.isSilence() && enemy != null) {
+            if (enemy != null && !enemy.isSilence()) {
                 switch (enemy.getName()) {
                     case "托塔天王":
                         // 镇妖塔：对敌方场上造成飞弹伤害
@@ -2508,7 +2560,10 @@ public class BattleManager {
                                         g.getEffects().removeIf(effect -> effect.getType() == EffectType.HP_UP_PRET && !effect.getIsSkill());
                                         g.getEffects().removeIf(effect -> effect.getType() == EffectType.SPEED_UP && !effect.getIsSkill());
                                         g.getEffects().removeIf(effect -> effect.getType() == EffectType.SPEED_UP_PRET && !effect.getIsSkill());
+                                        // 驱散护盾
+                                        g.setPhysicalBarrier(0);
                                         TargetBattleData data = new TargetBattleData(g.getMaxHp(), g.getCurrentHp(), 50, g.isOnField());
+                                        data.setShieldRemaining(0);
                                         targetStatus.put(g.getId(), data);
                                     });
                                     addMultiTargetLog("元气消散",
@@ -3028,6 +3083,135 @@ public class BattleManager {
                 EffectType.CRIT_UP,
                 DamageType.BUFF,
                 "暴击+" + gain + "%");
+    }
+
+    /**
+     * 嫦娥桂影栖身（1技能）：位于场下时每回合增加闪避，1技能每级+1%
+     * 直接累加洗练闪避值（百分比值），登场后依然生效
+     * 累计闪避加成封顶30%
+     */
+    private void triggerChangEGuiYingQiShen(Guardian changE) {
+        if (changE == null || changE.isDead() || changE.isSilence() || changE.isOnField()) {
+            return;
+        }
+        int[] skillLevel = CardSkillLevelUtil.calculateSkillLevels(changE.getLevel(), changE.getStar().doubleValue());
+        // 桂影栖身为1技能，未解锁不生效
+        if (skillLevel[0] <= 0) {
+            return;
+        }
+        // 每回合增加量：1技能每级+1%闪避
+        int dodgePerRound = skillLevel[0];
+        int bonus = changEDodgeBonus.getOrDefault(changE.getId(), 0);
+        // 累计加成已封顶，不再增加
+        if (bonus >= 30) {
+            return;
+        }
+        // 本次实际增加量：临界回合可能不足每回合增量
+        int gain = Math.min(dodgePerRound, 30 - bonus);
+        changEDodgeBonus.put(changE.getId(), bonus + gain);
+        changE.setXilianDodge(changE.getXilianDodge() + gain);
+        addLog("桂影栖身",
+                changE.getId(),
+                changE.getMaxHp(),
+                changE.getCurrentHp(),
+                gain,
+                changE.isOnField(),
+                changE.getId(),
+                changE.getMaxHp(),
+                changE.getCurrentHp(),
+                gain,
+                changE.isOnField(),
+                EffectType.DODGE_UP,
+                DamageType.BUFF,
+                "闪避+" + gain + "%");
+    }
+
+    /**
+     * 移除捡漏小妖魅影闪避的临时闪避加成（持续1回合）
+     */
+    private void removeJianLouDodgeBonus(Guardian unit) {
+        if (unit == null) return;
+        Integer bonus = jianLouDodgeBonus.remove(unit.getId());
+        if (bonus != null && bonus > 0) {
+            unit.setXilianDodge(unit.getXilianDodge() - bonus);
+        }
+    }
+
+    /**
+     * 捡漏小妖换位秘术（2技能）：回合结束时，有20*技能等级%概率将自身与一名未阵亡的随机队友互换位置
+     * 无论捡漏小妖在场上下均可触发
+     */
+    private void triggerJianLouHuanWeiMiShu(List<Guardian> camp, Guardian field) {
+        // 重入保护：防止换位触发登场技能后再次触发换位导致死循环
+        if (huanWeiMiShuInProgress) return;
+        // 场上无单位时不换位（防止场下互换无限循环）
+        if (field == null) return;
+        huanWeiMiShuInProgress = true;
+        try {
+        // 查找捡漏小妖（优先场上，其次场下）
+        Guardian jianLou = null;
+        if (field != null && !field.isDead() && field.getName().equals("捡漏小妖") && !field.isSilence()) {
+            jianLou = field;
+        } else {
+            jianLou = camp.stream()
+                    .filter(g -> g.getName().equals("捡漏小妖") && !g.isDead() && !g.isOnField() && !g.isSilence())
+                    .findFirst().orElse(null);
+        }
+        if (jianLou == null) return;
+
+        int[] skillLevel = CardSkillLevelUtil.calculateSkillLevels(jianLou.getLevel(), jianLou.getStar().doubleValue());
+        if (skillLevel[1] <= 0) return;
+        double probability = Math.min(1.0, 0.2 * skillLevel[1]);
+        if (!ProbabilityBooleanUtils.randomByProbability(probability)) return;
+
+        // 查找互换目标：从所有存活队友中随机选择（排除自己）
+        final String jianLouId = jianLou.getId();
+        List<Guardian> teammates = camp.stream()
+                .filter(g -> !g.isDead() && !g.getId().equals(jianLouId))
+                .collect(Collectors.toList());
+        if (teammates.isEmpty()) return;
+        Guardian swapTarget = teammates.get(random.nextInt(teammates.size()));
+
+        // 互换 onField + position
+        boolean wasJianLouOnField = jianLou.isOnField();
+        boolean tmpOnField = jianLou.isOnField();
+        jianLou.setOnField(swapTarget.isOnField());
+        swapTarget.setOnField(tmpOnField);
+        int tmpPosition = jianLou.getPosition();
+        jianLou.setPosition(swapTarget.getPosition());
+        swapTarget.setPosition(tmpPosition);
+
+        // 更新场上引用（谁 onField=true 谁就是 field）
+        if (jianLou.isOnField() || swapTarget.isOnField()) {
+            if (camp == campA) fieldA = jianLou.isOnField() ? jianLou : swapTarget;
+            else fieldB = jianLou.isOnField() ? jianLou : swapTarget;
+        }
+
+        addLog("换位秘术",
+                jianLou.getId(),
+                jianLou.getMaxHp(),
+                jianLou.getCurrentHp(),
+                0,
+                jianLou.isOnField(),
+                swapTarget.getId(),
+                swapTarget.getMaxHp(),
+                swapTarget.getCurrentHp(),
+                0,
+                swapTarget.isOnField(),
+                EffectType.DISP,
+                DamageType.BUFF,
+                "换位");
+        // 换位后，触发新上场单位的登场技能
+        if (!wasJianLouOnField && jianLou.isOnField()) {
+            triggerOnEnterSkills(jianLou);
+            triggerOnEnterSkills2(jianLou);
+        } else if (wasJianLouOnField && swapTarget.isOnField()) {
+            triggerOnEnterSkills(swapTarget);
+            triggerOnEnterSkills2(swapTarget);
+        }
+        } finally {
+            huanWeiMiShuInProgress = false;
+        }
     }
 
     /**
@@ -6720,7 +6904,7 @@ public class BattleManager {
             }
         }
 //        场上触发，每当有单位死亡时，对场上敌方身后单位造成237点飞弹伤害[装备飞弹提成100%]
-        if (fieldA.getName().equals("王天君")&&!fieldA.isDead()&&fieldA.isOnField()&&!fieldA.isSilence()) {
+        if (fieldA != null && fieldA.getName().equals("王天君")&&!fieldA.isDead()&&fieldA.isOnField()&&!fieldA.isSilence()) {
             List<Guardian> offFieldEnemies = fieldA.getCamp() == Camp.A ?
                     campB.stream().filter(g -> !g.isDead())  // 筛选未死亡的对象
                             .sorted(Comparator.comparing(Guardian::getPosition))  // 升序 = 最小值在前
@@ -6816,7 +7000,7 @@ public class BattleManager {
         }
 
         //场上触发，每当有单位死亡时，对场上敌方身后单位造成237点飞弹伤害[装备飞弹提成100%]
-        if (fieldB.getName().equals("王天君")&&!fieldB.isDead()&&fieldB.isOnField()&&!fieldB.isSilence()) {
+        if (fieldB != null && fieldB.getName().equals("王天君")&&!fieldB.isDead()&&fieldB.isOnField()&&!fieldB.isSilence()) {
             List<Guardian> offFieldEnemies = fieldB.getCamp() == Camp.B ?
                     campA.stream().filter(g -> !g.isDead())  // 筛选未死亡的对象
                             .sorted(Comparator.comparing(Guardian::getPosition))  // 升序 = 最小值在前
@@ -7514,6 +7698,75 @@ public class BattleManager {
 
         }
 
+        // 嫦娥·月满重生（2技能）：我方有单位阵亡时，消耗自身生命上限一定比例血量复活该单位
+        // 复活单位恢复50%最大生命值；技能等级越高消耗血量越低，最低消耗40%；不能复活固魂单位
+        if (!v.isFixedSoul()) {
+            List<Guardian> changeCamp = v.getCamp() == Camp.A ? campA : campB;
+            Guardian change = changeCamp.stream()
+                    .filter(g -> g.getName().equals("嫦娥") && !g.isDead())
+                    .findFirst().orElse(null);
+            if (change != null && !change.isSilence()) {
+                int[] skillLevel = CardSkillLevelUtil.calculateSkillLevels(change.getLevel(), change.getStar().doubleValue());
+                if (skillLevel[1] > 0) {
+                    // 消耗血量比例：100% - 技能2等级*10%，最低40%（消耗最大生命上限的百分比血量）
+                    double costPercent = Math.max(0.4, 1.0 - skillLevel[1] * 0.1);
+                    int hpCost = (int) (change.getMaxHp() * costPercent);
+                    // 记录扣血前的当前血量（用于前端正确显示消耗）
+                    int originalCurrentHp = change.getCurrentHp();
+                    // 扣除嫦娥当前血量（消耗量为最大生命上限的百分比）
+                    change.setCurrentHp(change.getCurrentHp() - hpCost);
+                    // 复活该单位：恢复50%最大生命值
+                    int reviveHp = (int) (v.getMaxHp() * 0.5);
+                    v.setDead(false);
+                    v.setCurrentHp(reviveHp);
+                    // 复活单位恢复 onField 状态（死亡时 onField 被设为 false，复活需恢复）
+                    if (fieldA == v) {
+                        v.setOnField(true);
+                    } else if (fieldB == v) {
+                        v.setOnField(true);
+                    }
+                    // 复活单位附加固魂效果（类似玄武吞噬，固魂单位不可再次被复活）
+                    v.addEffect(EffectType.FIXED_SOUL, 0, 99, change.getId());
+
+                    addLog("月满重生",
+                            change.getId(),
+                            originalCurrentHp,
+                            change.getCurrentHp(),
+                            hpCost,
+                            change.isOnField(),
+                            v.getId(),
+                            v.getMaxHp(),
+                            v.getCurrentHp(),
+                            reviveHp,
+                            v.isOnField(),
+                            EffectType.HEAL,
+                            DamageType.BUFF,
+                            "复活"  + reviveHp);
+
+                    // 检查嫦娥是否因扣血而死亡
+                    if (change.getCurrentHp() <= 0) {
+                        change.setDead(true);
+                        change.setOnField(false);
+                        // 嫦娥是场上单位时，清除 field 引用（下回合 checkAndReplaceGuardians 会补位）
+                        if (fieldA == change) fieldA = null;
+                        if (fieldB == change) fieldB = null;
+                        addLog("UNIT_DEATH",
+                                change.getId(),
+                                change.getMaxHp(), 0,
+                                0,
+                                change.isOnField(),
+                                change.getId(),
+                                change.getMaxHp(), 0,
+                                0, change.isOnField(),
+                                null, null,
+                                change.getName() + "阵亡");
+                        // 嫦娥死亡触发其他单位的死亡技能
+                        triggerOnDeathSkills(change);
+                    }
+                }
+            }
+        }
+
     }
     public Guardian getRandomAliveGuardian(List<Guardian> aliveUnits) {
         if (aliveUnits == null || aliveUnits.isEmpty()) {
@@ -7572,7 +7825,7 @@ public class BattleManager {
         }
 
         // 厚土娘娘后土聚能
-        if (!fieldA.isSilence() && !fieldA.isDead() && fieldA != null && fieldA.getName().equals("厚土娘娘") && fieldA.getBuffStacks() < 99) {
+        if (fieldA != null && !fieldA.isSilence() && !fieldA.isDead() && fieldA.getName().equals("厚土娘娘") && fieldA.getBuffStacks() < 99) {
             int[] skillLevel = CardSkillLevelUtil.calculateSkillLevels(fieldA.getLevel(), fieldA.getStar().doubleValue());
             if (skillLevel[1] > 0) {
                 fieldA.setBuffStacks(fieldA.getBuffStacks() + 1);
@@ -7605,7 +7858,7 @@ public class BattleManager {
 
         }
 
-        if (!fieldB.isSilence() && !fieldB.isDead() && fieldB != null && fieldB.getName().equals("厚土娘娘") && fieldB.getBuffStacks() < 99) {
+        if (fieldB != null && !fieldB.isSilence() && !fieldB.isDead() && fieldB.getName().equals("厚土娘娘") && fieldB.getBuffStacks() < 99) {
             int[] skillLevel = CardSkillLevelUtil.calculateSkillLevels(fieldB.getLevel(), fieldB.getStar().doubleValue());
             if (skillLevel[1] > 0) {
                 fieldB.setBuffStacks(fieldB.getBuffStacks() + 1);
@@ -7636,7 +7889,7 @@ public class BattleManager {
             }
         }
 
-        if (!fieldA.isSilence() && !fieldA.isDead() && fieldA != null && fieldA.getName().equals("玄武")) {
+        if (fieldA != null && !fieldA.isSilence() && !fieldA.isDead() && fieldA.getName().equals("玄武")) {
             int[] skillLevel = CardSkillLevelUtil.calculateSkillLevels(fieldA.getLevel(), fieldA.getStar().doubleValue());
             List<Guardian> allUnits = new ArrayList<>();
             allUnits.addAll(campA);
@@ -7690,7 +7943,7 @@ public class BattleManager {
 
         }
 
-        if (!fieldB.isSilence() && !fieldB.isDead() && fieldB != null && fieldB.getName().equals("玄武")) {
+        if (fieldB != null && !fieldB.isSilence() && !fieldB.isDead() && fieldB.getName().equals("玄武")) {
             int[] skillLevel = CardSkillLevelUtil.calculateSkillLevels(fieldB.getLevel(), fieldB.getStar().doubleValue());
             List<Guardian> allUnits = new ArrayList<>();
             allUnits.addAll(campA);

@@ -8,6 +8,10 @@ public enum EffectType {
     CRIT_DOWN("暴击下降"),
     CRIT_UP_PRET("暴击提升"),
     CRIT_DOWN_PRET("暴击下降"),
+    DODGE_UP("闪避提升"),
+    DODGE_DOWN("闪避下降"),
+    DODGE_UP_PRET("闪避提升"),
+    DODGE_DOWN_PRET("闪避下降"),
 
     CRIT_DISP("暴击闪避"),
     SILENCE("沉默"),

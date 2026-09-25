@@ -314,6 +314,7 @@ public class Guardian {
     public String getName() { return name; }
     public Camp getCamp() { return camp; }
     public int getPosition() { return position; }
+    public void setPosition(int position) { this.position = position; }
     public Profession getProfession() { return profession; }
     public Race getRace() { return race; }
     public int getLevel() { return level; }
