@@ -374,6 +374,29 @@ public class GameContoller {
     }
 
     /**
+     * 强化卡牌
+     *
+     * @param token
+     * @param request
+     * @return
+     */
+    @RequestMapping(value = "fenjie", method = RequestMethod.POST)
+    @CrossOrigin
+    public BaseResp fenjie(@RequestBody TokenDto token, HttpServletRequest request) {
+        BaseResp baseResp = new BaseResp();
+        try {
+            baseResp = gameServiceService.fenjie(token, request);
+            return baseResp;
+        } catch (Exception e) {
+            e.printStackTrace();
+            baseResp.setSuccess(0);
+            return baseResp;
+        }
+    }
+
+    
+
+    /**
      * 上阵
      * @param token
      * @param request
@@ -2056,6 +2079,20 @@ public class GameContoller {
         BaseResp baseResp = new BaseResp();
         try {
             baseResp = gameServiceService.getArenaCards(token, request);
+            return baseResp;
+        } catch (Exception e) {
+            e.printStackTrace();
+            baseResp.setSuccess(0);
+            return baseResp;
+        }
+    }
+
+    @PostMapping("toggleEquipSuo")
+    @CrossOrigin
+    public BaseResp toggleEquipSuo(@RequestBody TokenDto token, HttpServletRequest request) {
+        BaseResp baseResp = new BaseResp();
+        try {
+            baseResp = gameServiceService.toggleEquipSuo(token, request);
             return baseResp;
         } catch (Exception e) {
             e.printStackTrace();

@@ -89,4 +89,6 @@ public class EqCharacters {
     private Integer xilian;
     @TableField("flyup")
     private Integer flyup;
+    @TableField("is_suo")
+    private Integer isSuo;
 }

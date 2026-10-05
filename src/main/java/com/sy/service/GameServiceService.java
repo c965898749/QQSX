@@ -35,6 +35,7 @@ public interface GameServiceService {
     BaseResp stopLevel(TokenDto token, HttpServletRequest request) throws Exception;
     BaseResp cardLevelUp2(TokenDto token, HttpServletRequest request) throws Exception;
     BaseResp eqCardLevelUp2(TokenDto token, HttpServletRequest request) throws Exception;
+    BaseResp fenjie(TokenDto token, HttpServletRequest request) throws Exception;
     BaseResp changerHeader(TokenDto token, HttpServletRequest request) throws Exception;
     BaseResp itemUpdate(TokenDto token, HttpServletRequest request) throws Exception;
     BaseResp arenaItemUpdate(TokenDto token, HttpServletRequest request) throws Exception;
@@ -132,4 +133,5 @@ public interface GameServiceService {
     void sendTuoRawrd();
     void addActCode();
     void syncLastWeekRank();
+    BaseResp toggleEquipSuo(TokenDto token, HttpServletRequest request) throws Exception;
 }

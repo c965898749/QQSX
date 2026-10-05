@@ -2349,6 +2349,188 @@ public class GameServiceServiceImpl implements GameServiceService {
     }
 
     @Override
+    public BaseResp fenjie(TokenDto token, HttpServletRequest request) throws Exception {
+        BaseResp baseResp = new BaseResp();
+        if (Xtool.isNull(token.getMyMap())) {
+            baseResp.setSuccess(0);
+            baseResp.setErrorMsg("从卡不存在");
+            return baseResp;
+        }
+
+
+        List<List<Object>> strArray = token.getMyMap();
+        if (strArray == null || strArray.isEmpty()) {
+            baseResp.setSuccess(0);
+            baseResp.setErrorMsg("服务器异常1");
+            return baseResp;
+        }
+        // 2. 将二维数组转为Map<String, Integer>（核心步骤）
+        Map<String, Integer> myMap = new HashMap<>();
+        for (List<Object> entry : strArray) {
+            // 校验数组元素格式（避免前端传参异常导致报错）
+            if (entry.size() != 2) {
+                baseResp.setSuccess(0);
+                baseResp.setErrorMsg("服务器异常2");
+                return baseResp;
+            }
+            // 强转：第一个元素是String（键），第二个是Integer（值）
+            String key = (String) entry.get(0);
+            Integer value = (Integer) entry.get(1);
+            myMap.put(key, value);
+        }
+
+
+        // 防刷校验：锁定装备不可分解
+        for (Map.Entry<String, Integer> entry : myMap.entrySet()) {
+            EqCharacters check = eqCharactersMapper.listById(token.getUserId(), entry.getKey());
+            if (check == null) {
+                baseResp.setSuccess(0);
+                baseResp.setErrorMsg("装备不存在");
+                return baseResp;
+            }
+            if (check.getIsSuo() != null && check.getIsSuo() == 1) {
+                baseResp.setSuccess(0);
+                baseResp.setErrorMsg("已锁定的装备不可分解");
+                return baseResp;
+            }
+        }
+
+        // 分解产物列表（用于前端展示）
+        List<PveReward> rewards = new ArrayList<>();
+        BigDecimal totalGoldReturn = BigDecimal.ZERO;
+        // 材料累计：青铜矿(13)、玄铁(14)、紫金(15)
+        int bronzeAmount = 0;
+        int darkSteelAmount = 0;
+        int purpleGoldAmount = 0;
+
+        for (Map.Entry<String, Integer> entry : myMap.entrySet()) {
+            EqCharacters characters = eqCharactersMapper.listById(token.getUserId(), entry.getKey());
+            int count = entry.getValue();
+            if (characters.getStackCount() - count >= 0) {
+                characters.setStackCount(characters.getStackCount() - count);
+            } else {
+                characters.setIsDelete("1");
+            }
+            eqCharactersMapper.updateByPrimaryKey(characters);
+
+            // 根据装备星级计算分解产物（分解损耗约50%，防刷：分解产物价值始终低于打造成本）
+            BigDecimal star = characters.getStar();
+            if (star != null && star.compareTo(new BigDecimal("3.5")) >= 0) {
+                if (star.compareTo(new BigDecimal("4.5")) >= 0) {
+                    // 4.5星分解：200青铜矿 + 800玄铁 + 2000紫金（打造成本5000紫金，回收约40%）
+                    bronzeAmount += 200 * count;
+                    darkSteelAmount += 800 * count;
+                    purpleGoldAmount += 2000 * count;
+                } else if (star.compareTo(new BigDecimal("4")) >= 0) {
+                    // 4星分解：300青铜矿 + 800玄铁（打造成本2000玄铁，回收约40%）
+                    bronzeAmount += 300 * count;
+                    darkSteelAmount += 800 * count;
+                } else {
+                    // 3.5星分解：500青铜矿（打造成本1000青铜矿，回收50%）
+                    bronzeAmount += 500 * count;
+                }
+            } else {
+                // 3星及以下分解：返还金币（按星级固定数值）
+                int goldPerEquip;
+                if (star != null && star.compareTo(new BigDecimal("2.5")) >= 0) {
+                    goldPerEquip = 120000; // 3星(400000*30%)
+                } else if (star != null && star.compareTo(new BigDecimal("2")) >= 0) {
+                    goldPerEquip = 90000;  // 2.5星(300000*30%)
+                } else if (star != null && star.compareTo(new BigDecimal("1.5")) >= 0) {
+                    goldPerEquip = 60000;  // 2星(200000*30%)
+                } else {
+                    goldPerEquip = 30000;  // 1.5星以下(100000*30%)
+                }
+                totalGoldReturn = totalGoldReturn.add(new BigDecimal(goldPerEquip * count));
+            }
+        }
+
+        // 发放分解产物
+        User user = userMapper.selectUserByUserId(Integer.parseInt(token.getUserId()));
+        // 金币返还
+        if (totalGoldReturn.compareTo(BigDecimal.ZERO) > 0) {
+            user.setGold(user.getGold().add(totalGoldReturn));
+            PveReward goldReward = new PveReward();
+            goldReward.setRewardType("2");
+            goldReward.setRewardAmount(totalGoldReturn.intValue());
+            goldReward.setRewardDesc("银两");
+            rewards.add(goldReward);
+        }
+        // 材料返还（通过背包系统发放）
+        if (bronzeAmount > 0) {
+            addBagItem(user.getUserId(), 13, bronzeAmount);
+            PveReward r = new PveReward();
+            GameItemBase gameItemBase = GameConfigCache.getItemBase(13);
+            r.setItemName(gameItemBase.getItemName() + bronzeAmount);
+            r.setImg(gameItemBase.getIcon());
+            r.setRewardType("6");
+            r.setItemId(13);
+            r.setRewardAmount(bronzeAmount);
+            r.setRewardDesc("青铜矿");
+            rewards.add(r);
+        }
+        if (darkSteelAmount > 0) {
+            addBagItem(user.getUserId(), 14, darkSteelAmount);
+            PveReward r = new PveReward();
+            GameItemBase gameItemBase = GameConfigCache.getItemBase(14);
+            r.setItemName(gameItemBase.getItemName() + darkSteelAmount);
+            r.setImg(gameItemBase.getIcon());
+            r.setRewardType("6");
+            r.setItemId(14);
+            r.setRewardAmount(darkSteelAmount);
+            r.setRewardDesc("玄铁");
+            rewards.add(r);
+        }
+        if (purpleGoldAmount > 0) {
+            addBagItem(user.getUserId(), 15, purpleGoldAmount);
+            PveReward r = new PveReward();
+            GameItemBase gameItemBase = GameConfigCache.getItemBase(15);
+            r.setItemName(gameItemBase.getItemName() + purpleGoldAmount);
+            r.setImg(gameItemBase.getIcon());
+            r.setRewardType("6");
+            r.setItemId(15);
+            r.setRewardAmount(purpleGoldAmount);
+            r.setRewardDesc("紫金");
+            rewards.add(r);
+        }
+
+        userMapper.updateuser(user);
+        List<EqCharacters> characterList = eqCharactersMapper.selectByUserId(user.getUserId());
+        List<GameEquipInlay> inlayList = gameEquipInlayMapper.selectList(new LambdaQueryWrapper<GameEquipInlay>()
+                .eq(GameEquipInlay::getUserId, user.getUserId()));
+        for (EqCharacters eqCharacters : characterList) {
+            List<GameEquipInlay> gemList = inlayList.stream().filter(x -> (x.getEquipUniqueId() + "").equals(eqCharacters.getUuid() + "")).collect(Collectors.toList());
+            eqCharacters.setGemList(gemList);
+            List<Xilian> xilianList = xilianMapper.selectList(new LambdaQueryWrapper<Xilian>()
+                    .eq(Xilian::getEqId,eqCharacters.getUuid()));
+            eqCharacters.setXilianList(xilianList);
+        }
+        UserInfo info = new UserInfo();
+        BeanUtils.copyProperties(user, info);
+        info.setEqCharactersList(formateEqCharacter(characterList));
+        info.setBronze(BigDecimal.ZERO);
+        info.setDarkSteel(BigDecimal.ZERO);
+        info.setPurpleGold(BigDecimal.ZERO);
+        info.setCrystal(BigDecimal.ZERO);
+        GamePlayerBag pb13 = gamePlayerBagMapper.goIntoListByIdAndItemId(user.getUserId() + "", 13);
+        if (pb13 != null) info.setBronze(pb13.getItemCount());
+        GamePlayerBag pb14 = gamePlayerBagMapper.goIntoListByIdAndItemId(user.getUserId() + "", 14);
+        if (pb14 != null) info.setDarkSteel(pb14.getItemCount());
+        GamePlayerBag pb15 = gamePlayerBagMapper.goIntoListByIdAndItemId(user.getUserId() + "", 15);
+        if (pb15 != null) info.setPurpleGold(pb15.getItemCount());
+        GamePlayerBag pb16 = gamePlayerBagMapper.goIntoListByIdAndItemId(user.getUserId() + "", 16);
+        if (pb16 != null) info.setCrystal(pb16.getItemCount());
+
+        Map map = new HashMap();
+        map.put("rewards", rewards);
+        map.put("user", info);
+        baseResp.setSuccess(1);
+        baseResp.setData(map);
+        baseResp.setErrorMsg("分解成功");
+        return baseResp;
+    }
+
+    @Override
     public BaseResp changerHeader(TokenDto token, HttpServletRequest request) throws Exception {
         BaseResp baseResp = new BaseResp();
         if (token == null || Xtool.isNull(token.getToken())) {
@@ -13227,6 +13409,55 @@ public class GameServiceServiceImpl implements GameServiceService {
             return Integer.parseInt(cardId) >= 1001;
         } catch (NumberFormatException e) {
             return false;
+        }
+    }
+
+    @Override
+    @NoRepeatSubmit(limitSeconds = 1)
+    public BaseResp toggleEquipSuo(TokenDto token, HttpServletRequest request) {
+        BaseResp baseResp = new BaseResp();
+        if (token == null || Xtool.isNull(token.getId())) {
+            baseResp.setSuccess(0);
+            baseResp.setErrorMsg("参数错误");
+            return baseResp;
+        }
+        String userId = token.getUserId();
+        if (Xtool.isNull(userId)) {
+            baseResp.setSuccess(0);
+            baseResp.setErrorMsg("登录过期");
+            return baseResp;
+        }
+        EqCharacters eqCharacter = eqCharactersMapper.listById(userId,token.getId());
+        if (eqCharacter == null) {
+            baseResp.setSuccess(0);
+            baseResp.setErrorMsg("装备不存在");
+            return baseResp;
+        }
+        // 切换锁定状态：1→0，0→1
+        eqCharacter.setIsSuo(eqCharacter.getIsSuo() != null && eqCharacter.getIsSuo() == 1 ? 0 : 1);
+        eqCharactersMapper.updateById(eqCharacter);
+        baseResp.setSuccess(1);
+        baseResp.setData(eqCharacter.getIsSuo());
+        baseResp.setErrorMsg("操作成功");
+        return baseResp;
+    }
+
+    /**
+     * 向背包添加物品（如果已有则累加数量，否则新建记录）
+     */
+    private void addBagItem(Integer userId, int itemId, int amount) {
+        if (amount <= 0) return;
+        GamePlayerBag bag = gamePlayerBagMapper.goIntoListByIdAndItemId(userId + "", itemId);
+        if (bag != null) {
+            bag.setItemCount(bag.getItemCount().add(new BigDecimal(amount)));
+            gamePlayerBagMapper.updateById(bag);
+        } else {
+            GamePlayerBag newBag = new GamePlayerBag();
+            newBag.setUserId(userId);
+            newBag.setItemId(itemId);
+            newBag.setItemCount(new BigDecimal(amount));
+            newBag.setGridIndex(1);
+            gamePlayerBagMapper.insert(newBag);
         }
     }
 }

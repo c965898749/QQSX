@@ -32,6 +32,7 @@
     cs.is_delete,
     cs.xilian,
     cs.flyup,
+    cs.is_suo,
     cd.passive_introduce_three
     from   eq_characters cs
     left  join eq_card cd on cd.id=cs.id
@@ -68,6 +69,7 @@
             cs.is_delete,
             cs.xilian,
             cs.flyup,
+            cs.is_suo,
             cd.passive_introduce_three
         from   eq_characters cs
         left  join eq_card cd on cd.id=cs.id
@@ -104,6 +106,7 @@
     cs.is_delete,
     cs.xilian,
     cs.flyup,
+    cs.is_suo,
     cd.passive_introduce_three
     from   eq_characters cs
     left  join eq_card cd on cd.id=cs.id
@@ -141,6 +144,7 @@
     cs.is_delete,
     cs.xilian,
     cs.flyup,
+    cs.is_suo,
     cd.passive_introduce_three
     from   eq_characters cs
     left  join eq_card cd on cd.id=cs.id
