@@ -7366,6 +7366,17 @@ public class GameServiceServiceImpl implements GameServiceService {
                 // 紫金矿 id:15，范围 199 ~ 599    差值：599 - 199 = 400
                 addBagItem(userId, 15, random3.nextInt(401) + 199);
                 break;
+            case 98: // 虞姬魂魄1~10枚、玄铁矿 999~1999枚、青铜矿 599~999枚、紫金矿 199~599枚
+                Random random4 = new Random();
+                // 虞姬魂魄（id 1105）：1~10枚，进背包
+                addBagItem(userId, 1107, random4.nextInt(10) + 1);
+                // 玄铁矿 id:14，范围 999 ~ 1999  差值：1999 - 999 = 1000
+                addBagItem(userId, 13, random4.nextInt(1001) + 999);
+                // 青铜矿 id:13，范围 599 ~ 999    差值：999 - 599 = 400
+                addBagItem(userId, 14, random4.nextInt(401) + 599);
+                // 紫金矿 id:15，范围 199 ~ 599    差值：599 - 199 = 400
+                addBagItem(userId, 15, random4.nextInt(401) + 199);
+                break;
             default:
                 throw new IllegalArgumentException("不支持的物品ID：" + itemId);
         }
