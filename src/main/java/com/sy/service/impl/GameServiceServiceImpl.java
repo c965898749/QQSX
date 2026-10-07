@@ -8196,7 +8196,7 @@ public class GameServiceServiceImpl implements GameServiceService {
         } else if (n2 + 1 <= 6) {
             n2++;
             n3 = 1;
-        } else if (n1 + 1 <= 10) {
+        } else if (n1 + 1 <= 11) {
             n1++;
             n2 = 1;
             n3 = 1;

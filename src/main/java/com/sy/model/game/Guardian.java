@@ -31,6 +31,10 @@ public class Guardian {
     private int buffYuRongWans;
     private int buffTianLuos;
     private int buffDongyues;
+    // 谛听返璞归真已触发次数（每次减伤和反弹数值减少5%）
+    private int buffDiTingFanPu;
+    // 谛听返璞归真本回合是否已触发（防止同一回合多次受击重复递增计数器）
+    private boolean fanPuTriggeredThisRound;
 
     public int getBuffXuanMins() {
         return buffXuanMins;
@@ -343,6 +347,10 @@ public class Guardian {
     public void setBuffYuRongWans(int buffYuRongWans) { this.buffYuRongWans = buffYuRongWans; }
     public void setBuffTianLuos(int buffTianLuos) { this.buffTianLuos = buffTianLuos; }
     public void setBuffDongyues(int buffDongyues) { this.buffDongyues = buffDongyues; }
+    public int getBuffDiTingFanPu() { return buffDiTingFanPu; }
+    public void setBuffDiTingFanPu(int buffDiTingFanPu) { this.buffDiTingFanPu = buffDiTingFanPu; }
+    public boolean isFanPuTriggeredThisRound() { return fanPuTriggeredThisRound; }
+    public void setFanPuTriggeredThisRound(boolean fanPuTriggeredThisRound) { this.fanPuTriggeredThisRound = fanPuTriggeredThisRound; }
 
     // ========== 洗练属性 getter/setter ==========
     public double getXilianTuji() { return xilianTuji; }

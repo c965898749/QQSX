@@ -579,6 +579,10 @@ public class BattleManager {
         triggerJianLouHuanWeiMiShu(campA, fieldA);
         triggerJianLouHuanWeiMiShu(campB, fieldB);
 
+        // 地藏菩萨·审死（2技能）：偶数回合结束击杀一名本方护法（优先妖族），回血驱散队友并伤害敌方
+        triggerDiZangShenSi(campA);
+        triggerDiZangShenSi(campB);
+
         List<Guardian> allUnits = new ArrayList<>();
         allUnits.addAll(campA);
         allUnits.addAll(campB);
@@ -815,9 +819,8 @@ public class BattleManager {
                                 burnDamage=0;
                             }
                             Guardian g=shous.get(0);
-                            // 4. 扣除伤害
-                            int totalPoisonDamage =oldBurnDamage-burnDamage;
-                            g.setCurrentHp(g.getCurrentHp() - totalPoisonDamage);
+                            int transferDamage = oldBurnDamage - burnDamage;
+                            // 先记录月之暗面转移事件
                             addLog("月之暗面",
                                     defender.getId(),
                                     defender.getMaxHp(),
@@ -827,17 +830,21 @@ public class BattleManager {
                                     g.getId(),
                                     g.getMaxHp(),
                                     g.getCurrentHp(),
-                                    totalPoisonDamage,
+                                    transferDamage,
                                     g.isOnField(),
                                     effectType.MAX_HP_DOWN,
                                     DamageType.TRUE,
-                                    "-" + totalPoisonDamage);
+                                    "-" + transferDamage);
+                            // 转移伤害经过目标的减伤技能（如返璞归真）
+                            transferDamage = triggerOnAttackedSkills(g, transferDamage, EffectType.DAMAGE);
+                            // 扣除减伤后的伤害
+                            g.setCurrentHp(g.getCurrentHp() - transferDamage);
                             Map<String, TargetBattleData> deadUnits = new HashMap<>();
 
                             if (g.getCurrentHp() <= 0) {
                                 g.setDead(true);
                                 g.setOnField(false);
-                                TargetBattleData data = new TargetBattleData(g.getMaxHp(), g.getCurrentHp(), burnDamage, g.isOnField());
+                                TargetBattleData data = new TargetBattleData(g.getMaxHp(), g.getCurrentHp(), transferDamage, g.isOnField());
                                 deadUnits.put(g.getId(), data);
                             }
                             // 死亡日志
@@ -861,6 +868,148 @@ public class BattleManager {
                         }
                     }
                     break;
+                case "谛听":
+                    // 返璞归真：除了生命流逝其他任意伤害反弹
+                    // 所受伤害减少10*技能等级%（上限100%），转移减伤前伤害值的40%至敌方易死护法
+                    // 每生效一次，减伤及反弹数值减少5%，直到0（每次受击都触发，递减直到0时受全额伤害）
+                    if (skillLevel[1] > 0 && effectType != EffectType.TRUE_DAMAGE) {
+                        int triggerCount = defender.getBuffDiTingFanPu();
+                        // 计算当前减伤百分比：固定100%起始，每次递减5%，直到0
+                        int reductionPret = Math.max(0, 100 - 5 * triggerCount);
+                        // 计算当前反弹百分比：固定40%起始，每次递减5%，直到0
+                        int reflectPret = Math.max(0, 40 - 5 * triggerCount);
+
+                        // 记录减伤前伤害值
+                        int originalDamage = burnDamage;
+                        // 减伤计算
+                        int reducedDamage = (int) Math.round(originalDamage * (1 - reductionPret / 100.0));
+                        if (reducedDamage < 0) reducedDamage = 0;
+                        burnDamage = reducedDamage;
+
+                        // 转移伤害：减伤前伤害值的反弹百分比
+                        int transferDamage = (int) Math.round(originalDamage * reflectPret / 100.0);
+                        // 上限：谛听生命值25%
+                        int maxTransfer = (int) (defender.getMaxHp() * 0.25);
+                        transferDamage = Math.min(transferDamage, maxTransfer);
+                        if (transferDamage < 0) transferDamage = 0;
+
+                        // 谛听实际受到的伤害（减伤后的值，由调用者扣血）
+                        int damageTaken = reducedDamage;
+
+                        // 找到敌方易死护法（当前生命值最低的敌方单位）
+                        if (transferDamage > 0) {
+                            List<Guardian> enemies = defender.getCamp() == Camp.A ?
+                                    campB.stream().filter(g -> !g.isDead()).collect(Collectors.toList()) :
+                                    campA.stream().filter(g -> !g.isDead()).collect(Collectors.toList());
+                            if (!enemies.isEmpty()) {
+                                // 按当前生命值升序排序，取最低的（易死护法）
+                                enemies.sort(Comparator.comparingInt(Guardian::getCurrentHp));
+                                Guardian target = enemies.get(0);
+
+                                // 对目标造成生命流失伤害；生命流失不触发目标的返璞归真减伤/反弹（传 TRUE_DAMAGE），
+                                // 避免双谛听互相转移形成 A→B→A 无限连锁
+                                transferDamage = triggerOnAttackedSkills(target, transferDamage, EffectType.TRUE_DAMAGE);
+                                target.setCurrentHp(target.getCurrentHp() - transferDamage);
+
+                                // hpBefore 统一用生命上限（进度条分母），hpAfter 用扣血后当前HP（最小为0）
+                                int sourceHpAfter = Math.max(0, defender.getCurrentHp() - damageTaken);
+
+                                addLog("返璞归真",
+                                        defender.getId(),
+                                        defender.getMaxHp(),
+                                        sourceHpAfter,
+                                        0,
+                                        defender.isOnField(),
+                                        target.getId(),
+                                        target.getMaxHp(), target.getCurrentHp(),
+                                        transferDamage,
+                                        target.isOnField(),
+                                        EffectType.DAMAGE, DamageType.TRUE,
+                                        "-" + transferDamage);
+
+                                // 目标死亡检查
+                                Map<String, TargetBattleData> deadUnits2 = new HashMap<>();
+                                if (target.getCurrentHp() <= 0) {
+                                    target.setDead(true);
+                                    target.setOnField(false);
+                                    TargetBattleData data2 = new TargetBattleData(target.getMaxHp(), target.getCurrentHp(), transferDamage, target.isOnField());
+                                    deadUnits2.put(target.getId(), data2);
+                                }
+                                if (!deadUnits2.isEmpty()) {
+                                    addMultiTargetLog("UNIT_DEATH",
+                                            null, 0, 0, false,
+                                            deadUnits2, null, null, "死亡");
+                                    triggerOnDeathSkills(target);
+                                }
+                            }
+                        } else if (damageTaken > 0) {
+                            // 反弹为0但谛听仍受到减伤后的伤害，记录日志显示飘字
+                            int sourceHpAfter2 = Math.max(0, defender.getCurrentHp() - damageTaken);
+                            addLog("返璞归真",
+                                    defender.getId(),
+                                    defender.getMaxHp(),
+                                    sourceHpAfter2,
+                                    0,
+                                    defender.isOnField(),
+                                    defender.getId(),
+                                    defender.getMaxHp(), sourceHpAfter2,
+                                    0,
+                                    defender.isOnField(),
+                                    EffectType.DAMAGE, DamageType.PHYSICAL,
+                                    "-" + damageTaken);
+                        }
+
+                        // 每次触发都累加触发次数，减伤和反弹减少5%
+                        defender.setBuffDiTingFanPu(triggerCount + 1);
+                    }
+                    break;
+                case "三圣母":
+                    // 遁让：在场上时，受到飞弹/火焰/毒素伤害超出生命上限20%，有10*技能等级%概率与后场未阵亡护法交换并躲过伤害
+                    if (skillLevel[0] > 0 && defender.isOnField() && !defender.isSilence()
+                            && (effectType == EffectType.MISSILE_DAMAGE || effectType == EffectType.FIRE_DAMAGE
+                            || effectType == EffectType.BURN || effectType == EffectType.POISON)) {
+                        if (burnDamage > defender.getMaxHp() * 0.2) {
+                            double prob = Math.min(1.0, 0.1 * skillLevel[0]);
+                            if (ProbabilityBooleanUtils.randomByProbability(prob)) {
+                                // 遁让只与后场未阵亡的仙族护法换位
+                                List<Guardian> offFieldAllies = (defender.getCamp() == Camp.A ? campA : campB).stream()
+                                        .filter(g -> !g.isDead() && !g.isOnField() && g.getRace() == Race.IMMORTAL).collect(Collectors.toList());
+                                if (!offFieldAllies.isEmpty()) {
+                                    Guardian swapTarget = offFieldAllies.get(random.nextInt(offFieldAllies.size()));
+                                    // 互换 onField + position
+                                    boolean tmpOnField = defender.isOnField();
+                                    defender.setOnField(swapTarget.isOnField());
+                                    swapTarget.setOnField(tmpOnField);
+                                    int tmpPosition = defender.getPosition();
+                                    defender.setPosition(swapTarget.getPosition());
+                                    swapTarget.setPosition(tmpPosition);
+                                    // 更新场上引用（新上场单位）
+                                    if (defender.getCamp() == Camp.A) fieldA = swapTarget;
+                                    else fieldB = swapTarget;
+                                    // 遁让日志（换位+躲过伤害）
+                                    addLog("遁让",
+                                            defender.getId(),
+                                            defender.getMaxHp(),
+                                            defender.getCurrentHp(),
+                                            0,
+                                            defender.isOnField(),
+                                            swapTarget.getId(),
+                                            swapTarget.getMaxHp(),
+                                            swapTarget.getCurrentHp(),
+                                            0,
+                                            swapTarget.isOnField(),
+                                            EffectType.DISP,
+                                            DamageType.BUFF,
+                                            "躲过伤害");
+                                    // 触发新上场单位登场技能
+                                    triggerOnEnterSkills(swapTarget);
+                                    triggerOnEnterSkills2(swapTarget);
+                                    return 0; // 躲过伤害
+                                }
+                            }
+                        }
+                    }
+                    break;
             }
 
         return burnDamage;
@@ -873,6 +1022,60 @@ public class BattleManager {
 
         //TODO 登场触发技能
         switch (guardian.getName()) {
+            case "三圣母":
+                // 破除禁锢：登场时对我方气血最低的三个护法恢复其生命上限*技能等级*10%（不超70%），并100%移除目标所有负面状态
+                if (skillLevel[1] > 0) {
+                    List<Guardian> allies = (guardian.getCamp() == Camp.A ? campA : campB).stream()
+                            .filter(g -> !g.isDead()).collect(Collectors.toList());
+                    if (!allies.isEmpty()) {
+                        allies.sort(Comparator.comparingInt(Guardian::getCurrentHp));
+                        List<Guardian> healTargets = allies.subList(0, Math.min(3, allies.size()));
+                        int healPret = Math.min(10 * skillLevel[1], 70);
+                        Map<String, TargetBattleData> targetStatus = new HashMap<>();
+                        for (Guardian g : healTargets) {
+                            int heal = (int) (g.getMaxHp() * healPret / 100.0);
+                            g.setCurrentHp(Math.min(g.getMaxHp(), g.getCurrentHp() + heal));
+                            // 移除所有负面状态
+                            g.remove(EffectType.POISON);
+                            g.remove(EffectType.STUN);
+                            g.remove(EffectType.SILENCE);
+                            g.remove(EffectType.HEAL_DOWN);
+                            g.remove(EffectType.HEAL_DOWNT_PRET);
+                            g.remove(EffectType.ATTACK_DOWN);
+                            g.remove(EffectType.ATTACK_DOWN_PRET);
+                            g.remove(EffectType.ATTACK_RESIST_DOWN);
+                            g.remove(EffectType.ATTACK_RESIST_DOWN_PRET);
+                            g.remove(EffectType.FIRE_DOWN);
+                            g.remove(EffectType.FIRE_DOWN_PRET);
+                            g.remove(EffectType.FIRE_RESIST_DOWN);
+                            g.remove(EffectType.FIRE_RESIST_DOWN_PRET);
+                            g.remove(EffectType.POISON_DOWN);
+                            g.remove(EffectType.POISON_DOWN_PRET);
+                            g.remove(EffectType.POISON_RESIST_DOWN);
+                            g.remove(EffectType.POISON_RESIST_DOWN_PRET);
+                            g.remove(EffectType.MISSILE_DOWN);
+                            g.remove(EffectType.MISSILE_DOWN_PRET);
+                            g.remove(EffectType.MISSILE_RESIST_DOWN);
+                            g.remove(EffectType.MISSILE_RESIST_DOWN_PRET);
+                            g.remove(EffectType.MAX_HP_DOWN_PRET);
+                            g.remove(EffectType.SPEED_DOWN);
+                            g.remove(EffectType.SPEED_DOWN_PRET);
+                            TargetBattleData data = new TargetBattleData(g.getMaxHp(), g.getCurrentHp(), heal, g.isOnField());
+                            targetStatus.put(g.getId(), data);
+                        }
+                        addMultiTargetLog("破除禁锢",
+                                guardian.getId(),
+                                guardian.getMaxHp(),
+                                guardian.getCurrentHp(),
+                                guardian.isOnField(),
+                                targetStatus,
+                                EffectType.HEAL,
+                                DamageType.BUFF,
+                                "恢复生命并移除负面状态");
+                        healTargets.forEach(g -> triggerOnHelSkills(g));
+                    }
+                }
+                break;
             case "黑山老妖":
 //                百毒感染Lv1登场时令敌方全体中毒，每回合损失40；
                 List<Guardian> offFieldEnemies = guardian.getCamp() == Camp.A ?
@@ -2623,6 +2826,28 @@ public class BattleManager {
                             "攻击+" +20*attackers.size()+"%");
                 }
                 break;
+            case "轩辕":
+                // 背水（1技能）：攻击时若自身生命值低于目标，则提升 10*技能等级% 攻击力 + 50% 速度（仅本次攻击生效，攻击后清除）
+                if (skillLevel[0] > 0 && attacker.getCurrentHp() < defender.getCurrentHp()) {
+                    int attackUpPret = 10 * skillLevel[0];
+                    attacker.addEffect(EffectType.ATTACK_UP_PRET, attackUpPret, 1, attacker.getId());
+                    attacker.addEffect(EffectType.SPEED_UP_PRET, 50, 1, attacker.getId());
+                    addLog("背水",
+                            attacker.getId(),
+                            attacker.getMaxHp(),
+                            attacker.getCurrentHp(),
+                            0,
+                            attacker.isOnField(),
+                            attacker.getId(),
+                            attacker.getMaxHp(),
+                            attacker.getCurrentHp(),
+                            attackUpPret,
+                            attacker.isOnField(),
+                            EffectType.ATTACK_UP_PRET,
+                            DamageType.TRUE,
+                            "攻击+" + attackUpPret + "%，速度+50%");
+                }
+                break;
             case "齐天大圣":
                if (1==1){
                    // 定海神针：当前生命值6%伤害
@@ -2955,6 +3180,88 @@ public class BattleManager {
             case "后羿":
                 // 乾坤破（2技能）：蓄力满4层后，攻击时以30%攻击力对易死目标连射，箭数随2技能等级提升（封顶10箭）
                 triggerHouYiQianKunPo(attacker);
+                break;
+            case "谛听":
+                // 撞击：攻击前消耗自身技能等级%生命值（不超过当前生命值20%），对目标造成消耗生命值2倍的物理伤害
+                if (skillLevel[0] > 0 && !defender.isDead()) {
+                    // 计算消耗HP：技能等级%，不超过当前生命值20%
+                    int hpCostPercent = skillLevel[0];
+                    int maxHpCost = (int) (attacker.getCurrentHp() * 0.20);
+                    int hpCost = Math.min((int) (attacker.getCurrentHp() * hpCostPercent / 100.0), maxHpCost);
+                    if (hpCost < 0) hpCost = 0;
+
+                    // 记录消耗前HP
+                    int hpBefore = attacker.getCurrentHp();
+                    // 消耗自身HP
+                    attacker.setCurrentHp(hpBefore - hpCost);
+                    // 自损后HP快照（供日志 sourceHpAfter，避免后续受击修正污染）
+                    int hpAfterSelfCost = Math.max(0, hpBefore - hpCost);
+
+                    // 检查自身是否因消耗HP死亡
+                    if (attacker.getCurrentHp() <= 0) {
+                        attacker.setDead(true);
+                        attacker.setOnField(false);
+                        addLog("撞击",
+                                attacker.getId(),
+                                attacker.getMaxHp(), hpAfterSelfCost,
+                                hpCost,
+                                attacker.isOnField(),
+                                defender.getId(),
+                                defender.getMaxHp(), defender.getCurrentHp(),
+                                0,
+                                defender.isOnField(),
+                                EffectType.DAMAGE, DamageType.PHYSICAL,
+                                "撞击自损" + hpCost);
+                        addLog("UNIT_DEATH",
+                                attacker.getId(),
+                                hpBefore, 0,
+                                0,
+                                attacker.isOnField(),
+                                attacker.getId(),
+                                hpBefore, 0,
+                                0, attacker.isOnField(),
+                                null, null,
+                                attacker.getName() + "阵亡");
+                        triggerOnDeathSkills(attacker);
+                        break;
+                    }
+
+                    // 造成伤害：消耗HP的2倍
+                    int damage = hpCost * 2;
+                    Integer logIndex = battleLogs.size();
+                    damage = triggerOnAttackedSkills(defender, damage, EffectType.DAMAGE);
+                    defender.setCurrentHp(defender.getCurrentHp() - damage);
+
+                    addLog("撞击",
+                            attacker.getId(),
+                            attacker.getMaxHp(), hpAfterSelfCost,
+                            hpCost,
+                            attacker.isOnField(),
+                            defender.getId(),
+                            defender.getMaxHp(), defender.getCurrentHp(),
+                            damage,
+                            defender.isOnField(),
+                            EffectType.DAMAGE, DamageType.PHYSICAL,
+                            "-" + damage, logIndex);
+
+                    // 触发受击技能（反击类等）
+                    triggerOnAttackedSkills(defender, attacker);
+
+                    // 死亡检查
+                    Map<String, TargetBattleData> deadUnits = new HashMap<>();
+                    if (defender.getCurrentHp() <= 0) {
+                        defender.setDead(true);
+                        defender.setOnField(false);
+                        TargetBattleData data = new TargetBattleData(defender.getMaxHp(), defender.getCurrentHp(), damage, defender.isOnField());
+                        deadUnits.put(defender.getId(), data);
+                    }
+                    if (!deadUnits.isEmpty()) {
+                        addMultiTargetLog("UNIT_DEATH",
+                                null, 0, 0, false,
+                                deadUnits, null, null, "死亡");
+                        triggerOnDeathSkills(defender);
+                    }
+                }
                 break;
         }
     }
@@ -4715,6 +5022,106 @@ public class BattleManager {
                     }
                 }
                 break;
+            case "轩辕":
+                // 吾乃轩辕（2技能）：攻击后对敌我全体护法追加物理伤害（基础 5*技能等级%，封遀40%）；
+                // 每存在一个人族（机族 Race.MAC）敌方护法，追加伤害提升20%
+                if (skillLevel[1] > 0) {
+                    // 基础追加百分比（5%*等级，封顶40%）
+                    int basePret = Math.min(40, 5 * skillLevel[1]);
+                    // 敌我全体存活单位
+                    List<Guardian> allAlive = new ArrayList<>();
+                    allAlive.addAll(campA.stream().filter(g -> !g.isDead()).collect(Collectors.toList()));
+                    allAlive.addAll(campB.stream().filter(g -> !g.isDead()).collect(Collectors.toList()));
+
+                    if (!allAlive.isEmpty()) {
+                        Map<String, TargetBattleData> targetStatus = new HashMap<>();
+                        Map<String, TargetBattleData> deadUnits = new HashMap<>();
+                        List<Guardian> deadGuardians = new ArrayList<>();
+                        Integer logIndex = battleLogs.size();
+
+                        // 攻击方物理攻击增益（对整个循环恒定，先算一次）
+                        int atkUp = calculateTotalVaule(attacker, EffectType.ATTACK_UP);
+                        double atkUpPret = calculateTotalUpPretVaule(attacker, EffectType.ATTACK_UP_PRET);
+                        int atkDown = calculateTotalVaule(attacker, EffectType.ATTACK_DOWN);
+                        double atkDownPret = calculateTotalDownPretVaule(attacker, EffectType.ATTACK_DOWN_PRET);
+
+                        // 敌方阵营人族数量 → 提升敌方全体受到的追加伤害
+                        List<Guardian> enemyCamp = attacker.getCamp() == Camp.A ? campB : campA;
+                        long humanEnemyCount = enemyCamp.stream().filter(u -> !u.isDead() && u.getRace() == Race.MAC).count();
+                        // 我方阵营人族数量 → 减少我方全体受到的追加伤害
+                        List<Guardian> allyCamp = attacker.getCamp() == Camp.A ? campA : campB;
+                        long humanAllyCount = allyCamp.stream().filter(u -> !u.isDead() && u.getRace() == Race.MAC).count();
+
+                        for (Guardian g : allAlive) {
+                            // 按目标所属阵营决定追加百分比：敌方受加成，我方受减益
+                            boolean isEnemy = g.getCamp() != attacker.getCamp();
+                            int totalPret = basePret;
+                            if (isEnemy) {
+                                // 敌方目标：每个人族敌方护法 +20 个百分点
+                                totalPret = basePret + 20 * (int)humanEnemyCount;
+                            } else {
+                                // 我方目标：每个人族我方护法 -20 个百分点
+                                totalPret = basePret - 20 * (int)humanAllyCount;
+                            }
+                            if (totalPret < 0) {
+                                totalPret = 0;
+                            }
+                            double totalPretDecimal = totalPret / 100.0;
+                            // 目标物理抗性
+                            int targetUp = calculateTotalVaule(g, EffectType.ATTACK_RESIST_BOOST);
+                            double targetUpPret = calculateTotalDownPretVaule(g, EffectType.ATTACK_RESIST_BOOST_PRET);
+                            int targetDown = calculateTotalVaule(g, EffectType.ATTACK_RESIST_DOWN);
+                            double targetDownPret = calculateTotalUpPretVaule(g, EffectType.ATTACK_RESIST_DOWN_PRET);
+
+                            // 以攻击力百分比套用物理伤害公式
+                            int damage = (int) (attacker.getAttack() * totalPretDecimal * atkUpPret * atkDownPret * targetUpPret * targetDownPret
+                                    + (atkUp - atkDown + attacker.getWlAtk() - g.getWlDef() - targetUp + targetDown) * totalPretDecimal);
+                            damage = applyXilianElement(attacker, g, damage);
+                            if (damage < 0) {
+                                damage = 0;
+                            }
+                            damage = triggerOnAttackedSkills(g, damage, EffectType.DAMAGE);
+                            g.setCurrentHp(g.getCurrentHp() - damage);
+                            TargetBattleData data = new TargetBattleData(g.getMaxHp(), g.getCurrentHp(), damage, g.isOnField());
+                            targetStatus.put(g.getId(), data);
+                            if (g.getCurrentHp() <= 0) {
+                                g.setDead(true);
+                                g.setOnField(false);
+                                data = new TargetBattleData(g.getMaxHp(), g.getCurrentHp(), damage, g.isOnField());
+                                targetStatus.put(g.getId(), data);
+                                deadUnits.put(g.getId(), data);
+                                deadGuardians.add(g);
+                            }
+                        }
+
+                        addMultiTargetLog("吾乃轩辕",
+                                attacker.getId(),
+                                attacker.getMaxHp(),
+                                attacker.getCurrentHp(),
+                                attacker.isOnField(),
+                                targetStatus,
+                                EffectType.DAMAGE,
+                                DamageType.PHYSICAL,
+                                "对敌我全体追加物理伤害", logIndex);
+
+                        // 死亡日志
+                        if (!deadUnits.isEmpty()) {
+                            addMultiTargetLog("UNIT_DEATH",
+                                    null,
+                                    0,
+                                    0,
+                                    false,
+                                    deadUnits,
+                                    null,
+                                    null,
+                                    "死亡");
+                            for (Guardian g : deadGuardians) {
+                                triggerOnDeathSkills(g);
+                            }
+                        }
+                    }
+                }
+                break;
             case "燃灯道人":
                 if (1 == 1) {
                     // 仙人指路Lv1每次攻击后增加自身后方单位的攻击66点，最多叠加3次；
@@ -5931,10 +6338,10 @@ public class BattleManager {
                 if (skillLevel[1] > 0) {
                     // 鞭挞Lv1每回合增加自身40点生命上限；三昧真火Lv1每回合有50%几率对敌我全体造成16点火焰伤害。
                     List<Guardian> offFieldEnemies = new ArrayList<>();
+                    // 三昧真火：50%几率触发，触发后对敌我全体（双方所有存活单位）造成火焰伤害
                     if (ProbabilityBooleanUtils.randomByProbability(0.5)) {
-                        offFieldEnemies = campA.stream().filter(g -> !g.isDead()).collect(Collectors.toList());
-                    } else {
-                        offFieldEnemies = campB.stream().filter(g -> !g.isDead()).collect(Collectors.toList());
+                        offFieldEnemies.addAll(campA.stream().filter(g -> !g.isDead()).collect(Collectors.toList()));
+                        offFieldEnemies.addAll(campB.stream().filter(g -> !g.isDead()).collect(Collectors.toList()));
                     }
 
                     if (!offFieldEnemies.isEmpty()) {
@@ -7558,17 +7965,18 @@ public class BattleManager {
                             burnDamage = 0;
                         }
                         Integer logIndex=battleLogs.size();
-                        burnDamage=triggerOnAttackedSkills(fieldB,burnDamage,EffectType.MISSILE_DAMAGE);
+                        Guardian hitTarget = fieldB;
+                        burnDamage=triggerOnAttackedSkills(hitTarget,burnDamage,EffectType.MISSILE_DAMAGE);
 
                         // 4. 扣除伤害
-                        fieldB.setCurrentHp(fieldB.getCurrentHp() - burnDamage);
+                        hitTarget.setCurrentHp(hitTarget.getCurrentHp() - burnDamage);
                         Map<String, TargetBattleData> deadUnits = new HashMap<>();
 
-                        if (fieldB.getCurrentHp() <= 0) {
-                            fieldB.setDead(true);
-                            fieldB.setOnField(false);
-                            TargetBattleData data = new TargetBattleData(fieldB.getMaxHp(), fieldB.getCurrentHp(), burnDamage, fieldB.isOnField());
-                            deadUnits.put(fieldB.getId(), data);
+                        if (hitTarget.getCurrentHp() <= 0) {
+                            hitTarget.setDead(true);
+                            hitTarget.setOnField(false);
+                            TargetBattleData data = new TargetBattleData(hitTarget.getMaxHp(), hitTarget.getCurrentHp(), burnDamage, hitTarget.isOnField());
+                            deadUnits.put(hitTarget.getId(), data);
                         }
                         addLog("复仇飞弹",
                                 changsheng.getId(),
@@ -7576,11 +7984,11 @@ public class BattleManager {
                                 changsheng.getCurrentHp(),
                                 0,
                                 changsheng.isOnField(),
-                                fieldB.getId(),
-                                fieldB.getMaxHp(),
-                                fieldB.getCurrentHp(),
+                                hitTarget.getId(),
+                                hitTarget.getMaxHp(),
+                                hitTarget.getCurrentHp(),
                                 burnDamage,
-                                fieldB.isOnField(),
+                                hitTarget.isOnField(),
                                 EffectType.MISSILE_DAMAGE,
                                 DamageType.MISSILE,
                                 "-" + burnDamage,logIndex);
@@ -7648,17 +8056,18 @@ public class BattleManager {
                         burnDamage = 0;
                     }
                     Integer logIndex=battleLogs.size();
-                    burnDamage=triggerOnAttackedSkills(fieldA,burnDamage,EffectType.MISSILE_DAMAGE);
+                    Guardian hitTarget = fieldA;
+                    burnDamage=triggerOnAttackedSkills(hitTarget,burnDamage,EffectType.MISSILE_DAMAGE);
 
                     // 4. 扣除伤害
-                    fieldA.setCurrentHp(fieldA.getCurrentHp() - burnDamage);
+                    hitTarget.setCurrentHp(hitTarget.getCurrentHp() - burnDamage);
                     Map<String, TargetBattleData> deadUnits = new HashMap<>();
 
-                    if (fieldA.getCurrentHp() <= 0) {
-                        fieldA.setDead(true);
-                        fieldA.setOnField(false);
-                        TargetBattleData data = new TargetBattleData(fieldA.getMaxHp(), fieldA.getCurrentHp(), burnDamage, fieldA.isOnField());
-                        deadUnits.put(fieldA.getId(), data);
+                    if (hitTarget.getCurrentHp() <= 0) {
+                        hitTarget.setDead(true);
+                        hitTarget.setOnField(false);
+                        TargetBattleData data = new TargetBattleData(hitTarget.getMaxHp(), hitTarget.getCurrentHp(), burnDamage, hitTarget.isOnField());
+                        deadUnits.put(hitTarget.getId(), data);
                     }
                     addLog("复仇飞弹",
                             changsheng.getId(),
@@ -7666,11 +8075,11 @@ public class BattleManager {
                             changsheng.getCurrentHp(),
                             0,
                             changsheng.isOnField(),
-                            fieldA.getId(),
-                            fieldA.getMaxHp(),
-                            fieldA.getCurrentHp(),
+                            hitTarget.getId(),
+                            hitTarget.getMaxHp(),
+                            hitTarget.getCurrentHp(),
                             burnDamage,
-                            fieldA.isOnField(),
+                            hitTarget.isOnField(),
                             EffectType.MISSILE_DAMAGE,
                             DamageType.MISSILE,
                             "-" + burnDamage,logIndex);
@@ -7776,10 +8185,211 @@ public class BattleManager {
         int idx = random.nextInt(aliveUnits.size());
         return aliveUnits.get(idx);
     }
+    /**
+     * 地藏菩萨·不屈意志（1技能）：回合开始时有 min(70,10*技能等级)% 概率消耗自身生命上限25%血量，
+     * 复活一名阵亡的友方护法（不能复活固魂单位），复活单位恢复100%最大生命值
+     */
+    private void triggerDiZangBuQuYiZhi(List<Guardian> camp) {
+        Guardian dizang = camp.stream()
+                .filter(g -> g.getName().equals("地藏菩萨") && !g.isDead() && !g.isSilence())
+                .findFirst().orElse(null);
+        if (dizang == null) return;
+        int[] skillLevel = CardSkillLevelUtil.calculateSkillLevels(dizang.getLevel(), dizang.getStar().doubleValue());
+        if (skillLevel[0] <= 0) return;
+        // 概率：10*技能等级%，最高70%
+        double probability = Math.min(0.7, 0.1 * skillLevel[0]);
+//        double probability = Math.min(1, 0.1 * skillLevel[0]);
+        if (!ProbabilityBooleanUtils.randomByProbability(probability)) return;
+        // 选择一名阵亡且非固魂的友方护法（按站位优先）
+        Guardian dead = camp.stream()
+                .filter(g -> g.isDead() && !g.isFixedSoul())
+                .sorted(Comparator.comparing(Guardian::getPosition))
+                .findFirst().orElse(null);
+        if (dead == null) return;
+        // 消耗地藏自身生命上限25%血量
+        int hpCost = (int) (dizang.getMaxHp() * 0.25);
+        dizang.setCurrentHp(dizang.getCurrentHp() - hpCost);
+        // 复活单位恢复100%最大生命值
+        dead.setDead(false);
+        dead.setCurrentHp(dead.getMaxHp());
+        // 复活单位附加固魂效果（固魂单位不可再次被复活，防止无限复活）
+        dead.addEffect(EffectType.FIXED_SOUL, 0, 99, dizang.getId());
+        addLog("不屈意志",
+                dizang.getId(),
+                dizang.getMaxHp(),
+                dizang.getCurrentHp(),
+                hpCost,
+                dizang.isOnField(),
+                dead.getId(),
+                dead.getMaxHp(),
+                dead.getCurrentHp(),
+                dead.getMaxHp(),
+                dead.isOnField(),
+                EffectType.HEAL,
+                DamageType.BUFF,
+                "复活" + dead.getName());
+        // 检查地藏是否因扣血而死亡
+        if (dizang.getCurrentHp() <= 0) {
+            dizang.setDead(true);
+            dizang.setOnField(false);
+            if (camp == campA && fieldA == dizang) fieldA = null;
+            if (camp == campB && fieldB == dizang) fieldB = null;
+            addLog("UNIT_DEATH",
+                    dizang.getId(),
+                    dizang.getMaxHp(), 0,
+                    0,
+                    dizang.isOnField(),
+                    dizang.getId(),
+                    dizang.getMaxHp(), 0,
+                    0, dizang.isOnField(),
+                    null, null,
+                    dizang.getName() + "阵亡");
+            triggerOnDeathSkills(dizang);
+        }
+    }
+
+    /**
+     * 地藏菩萨·审死（2技能）：偶数回合结束时击杀一名本方护法（优先妖族）；
+     * 本方所有存活护法回复等同亡者生命上限 min(50,5*技能等级)% 的生命并驱散所有负面效果，
+     * 对敌方所有存活护法造成等同亡者攻击力同百分比的物理伤害
+     */
+    private void triggerDiZangShenSi(List<Guardian> camp) {
+        // 仅偶数回合触发
+        if (currentRound % 2 != 0) return;
+        Guardian dizang = camp.stream()
+                .filter(g -> g.getName().equals("地藏菩萨") && !g.isDead() && !g.isSilence())
+                .findFirst().orElse(null);
+        if (dizang == null) return;
+        int[] skillLevel = CardSkillLevelUtil.calculateSkillLevels(dizang.getLevel(), dizang.getStar().doubleValue());
+        if (skillLevel[1] <= 0) return;
+        // 献祭目标：优先妖族(dark Race.DEMON)存活队友，排除地藏自己
+        final String dizangId = dizang.getId();
+        List<Guardian> allies = camp.stream()
+                .filter(g -> !g.isDead() && !g.getId().equals(dizangId))
+                .collect(Collectors.toList());
+        if (allies.isEmpty()) return;
+        Guardian sacrifice = allies.stream()
+                .filter(g -> g.getRace() == Race.DEMON)
+                .findFirst()
+                .orElse(allies.get(0));
+        int percent = Math.min(50, 5 * skillLevel[1]);
+        int healValue = (int) (sacrifice.getMaxHp() * percent / 100.0);
+        int damageValue = (int) (sacrifice.getAttack() * percent / 100.0);
+        // 击杀献祭目标（先记录死亡前的场上状态，供前端定位 shengsi 动画播放位置）
+        boolean sacrificeWasOnField = sacrifice.isOnField();
+        sacrifice.setDead(true);
+        sacrifice.setOnField(false);
+        if (camp == campA && fieldA == sacrifice) fieldA = null;
+        if (camp == campB && fieldB == sacrifice) fieldB = null;
+        // 审死·献祭：以地藏为施法源、献祭护法为单目标（无 multiTargetDataMap），前端走专属动画：地藏施法→shengsi+1004→护法死亡
+        addLog("审死",
+                dizang.getId(),
+                dizang.getMaxHp(), dizang.getCurrentHp(),
+                0,
+                dizang.isOnField(),
+                sacrifice.getId(),
+                sacrifice.getMaxHp(), 0,
+                0, sacrificeWasOnField,
+                null, null,
+                sacrifice.getName() + "阵亡");
+        triggerOnDeathSkills(sacrifice);
+        // 本方所有存活护法（含地藏）回血 + 驱散所有负面效果
+        List<Guardian> aliveAllies = camp.stream().filter(g -> !g.isDead()).collect(Collectors.toList());
+        if (!aliveAllies.isEmpty()) {
+            Map<String, TargetBattleData> healMap = new HashMap<>();
+            for (Guardian g : aliveAllies) {
+                g.setCurrentHp(Math.min(g.getMaxHp(), g.getCurrentHp() + healValue));
+                // 移除所有负面状态
+                g.remove(EffectType.POISON);
+                g.remove(EffectType.STUN);
+                g.remove(EffectType.SILENCE);
+                g.remove(EffectType.HEAL_DOWN);
+                g.remove(EffectType.HEAL_DOWNT_PRET);
+                g.remove(EffectType.ATTACK_DOWN);
+                g.remove(EffectType.ATTACK_DOWN_PRET);
+                g.remove(EffectType.ATTACK_RESIST_DOWN);
+                g.remove(EffectType.ATTACK_RESIST_DOWN_PRET);
+                g.remove(EffectType.FIRE_DOWN);
+                g.remove(EffectType.FIRE_DOWN_PRET);
+                g.remove(EffectType.FIRE_RESIST_DOWN);
+                g.remove(EffectType.FIRE_RESIST_DOWN_PRET);
+                g.remove(EffectType.POISON_DOWN);
+                g.remove(EffectType.POISON_DOWN_PRET);
+                g.remove(EffectType.POISON_RESIST_DOWN);
+                g.remove(EffectType.POISON_RESIST_DOWN_PRET);
+                g.remove(EffectType.MISSILE_DOWN);
+                g.remove(EffectType.MISSILE_DOWN_PRET);
+                g.remove(EffectType.MISSILE_RESIST_DOWN);
+                g.remove(EffectType.MISSILE_RESIST_DOWN_PRET);
+                g.remove(EffectType.MAX_HP_DOWN_PRET);
+                g.remove(EffectType.SPEED_DOWN);
+                g.remove(EffectType.SPEED_DOWN_PRET);
+                TargetBattleData data = new TargetBattleData(g.getMaxHp(), g.getCurrentHp(), healValue, g.isOnField());
+                healMap.put(g.getId(), data);
+            }
+            addMultiTargetLog("审死",
+                    dizang.getId(),
+                    dizang.getMaxHp(),
+                    dizang.getCurrentHp(),
+                    dizang.isOnField(),
+                    healMap,
+                    EffectType.HEAL,
+                    DamageType.BUFF,
+                    "回复生命并驱散负面效果");
+            aliveAllies.forEach(g -> triggerOnHelSkills(g));
+        }
+        // 对敌方所有存活护法造成物理伤害（等同亡者攻击力百分比）
+        List<Guardian> enemyCamp = camp == campA ? campB : campA;
+        List<Guardian> aliveEnemies = enemyCamp.stream().filter(g -> !g.isDead()).collect(Collectors.toList());
+        if (!aliveEnemies.isEmpty()) {
+            Map<String, TargetBattleData> dmgMap = new HashMap<>();
+            Map<String, TargetBattleData> deadUnits = new HashMap<>();
+            List<Guardian> deadGuardians = new ArrayList<>();
+            Integer logIndex = battleLogs.size();
+            for (Guardian g : aliveEnemies) {
+                int dmg = damageValue;
+                dmg = triggerOnAttackedSkills(g, dmg, EffectType.DAMAGE);
+                if (dmg < 0) dmg = 0;
+                g.setCurrentHp(g.getCurrentHp() - dmg);
+                TargetBattleData data = new TargetBattleData(g.getMaxHp(), g.getCurrentHp(), dmg, g.isOnField());
+                dmgMap.put(g.getId(), data);
+                if (g.getCurrentHp() <= 0) {
+                    g.setDead(true);
+                    g.setOnField(false);
+                    data = new TargetBattleData(g.getMaxHp(), g.getCurrentHp(), dmg, g.isOnField());
+                    dmgMap.put(g.getId(), data);
+                    deadUnits.put(g.getId(), data);
+                    deadGuardians.add(g);
+                }
+            }
+            addMultiTargetLog("审死",
+                    dizang.getId(),
+                    dizang.getMaxHp(),
+                    dizang.getCurrentHp(),
+                    dizang.isOnField(),
+                    dmgMap,
+                    EffectType.DAMAGE,
+                    DamageType.PHYSICAL,
+                    "对敌方全体造成物理伤害", logIndex);
+            if (!deadUnits.isEmpty()) {
+                addMultiTargetLog("UNIT_DEATH",
+                        null, 0, 0, false,
+                        deadUnits, null, null,
+                        "死亡");
+                for (Guardian g : deadGuardians) {
+                    triggerOnDeathSkills(g);
+                }
+            }
+        }
+    }
+
     // 处理回合开始效果
     private void processRoundStartEffects() {
         // 场下中毒效果（批量处理）
         processPoisonEffects();
+        // 地藏菩萨·不屈意志（1技能）：回合开始概率消耗自身生命复活一名阵亡友方护法
+        triggerDiZangBuQuYiZhi(campA);
+        triggerDiZangBuQuYiZhi(campB);
         List<Guardian> campAHasAlive = campA.stream().filter(g -> g.getName().equals("青霞仙子") && !g.isDead()).collect(Collectors.toList());
         if (Xtool.isNotNull(campAHasAlive) && currentRound == 1) {
             Guardian defender = campAHasAlive.get(0);
@@ -8225,7 +8835,7 @@ public class BattleManager {
             // 盾值 = 总扣血量 × 80%，所有目标（含虞姬）获得相同盾值
             int barrierValue = (int) (totalDamage * 0.8);
 
-            // 第二遍：加盾、记录日志、检查阵亡
+            // 第二遍：加盾、记录数据、检查阵亡（注意：此处不触发蓄力，否则“蓄力”日志会抢在“乌江之殇”主动画之前，导致前端动画顺序颠倒）
             for (Guardian g : targets) {
                 Integer dmg = damageMap.get(g.getId());
                 if (dmg == null) continue;
@@ -8240,14 +8850,8 @@ public class BattleManager {
                     deadUnits.put(g.getId(), data);
                     deadGuardians.add(g);
                 }
-                // 50%概率触发蓄力（仅前后护法为后羿或白天君时生效，满层不加）
-                if (g.getName().equals("后羿")) {
-                    triggerHouYiChargeOnHit(g);
-                } else if (g.getName().equals("白天君")) {
-                    triggerBaiTianJunChargeOnHit(g);
-                }
             }
-            // 多目标整合日志
+            // 多目标整合日志（乌江之殇：扣血+物理结界，作为主动画先出现）
             if (!targetStatus.isEmpty()) {
                 addMultiTargetLog("乌江之殇",
                         yuji.getId(),
@@ -8273,6 +8877,16 @@ public class BattleManager {
                 //触发死亡技能
                 for (Guardian g : deadGuardians) {
                     triggerOnDeathSkills(g);
+                }
+            }
+            // 蓄力触发：放在乌江主动画及阵亡结算之后，保证前端动画顺序为 乌江→蓄力；且不给已阵亡单位蓄力
+            for (Guardian g : targets) {
+                if (damageMap.get(g.getId()) == null || g.isDead()) continue;
+                // 50%概率触发蓄力（仅前后护法为后羿或白天君时生效，满层不加）
+                if (g.getName().equals("后羿")) {
+                    triggerHouYiChargeOnHit(g);
+                } else if (g.getName().equals("白天君")) {
+                    triggerBaiTianJunChargeOnHit(g);
                 }
             }
         }
@@ -8836,17 +9450,18 @@ public class BattleManager {
                         burnDamage = 0;
                     }
                     Integer logIndex=battleLogs.size();
-                    burnDamage=triggerOnAttackedSkills(fieldB,burnDamage,EffectType.MISSILE_DAMAGE);
+                    Guardian hitTarget = fieldB;
+                    burnDamage=triggerOnAttackedSkills(hitTarget,burnDamage,EffectType.MISSILE_DAMAGE);
 
                     // 4. 扣除伤害
-                    fieldB.setCurrentHp(fieldB.getCurrentHp() - burnDamage);
+                    hitTarget.setCurrentHp(hitTarget.getCurrentHp() - burnDamage);
                     Map<String, TargetBattleData> deadUnits = new HashMap<>();
 
-                    if (fieldB.getCurrentHp() <= 0) {
-                        fieldB.setDead(true);
-                        fieldB.setOnField(false);
-                        TargetBattleData data = new TargetBattleData(fieldB.getMaxHp(), fieldB.getCurrentHp(), burnDamage, fieldB.isOnField());
-                        deadUnits.put(fieldB.getId(), data);
+                    if (hitTarget.getCurrentHp() <= 0) {
+                        hitTarget.setDead(true);
+                        hitTarget.setOnField(false);
+                        TargetBattleData data = new TargetBattleData(hitTarget.getMaxHp(), hitTarget.getCurrentHp(), burnDamage, hitTarget.isOnField());
+                        deadUnits.put(hitTarget.getId(), data);
                     }
                     addLog("报复神箭",
                             guardian.getId(),
@@ -8854,11 +9469,11 @@ public class BattleManager {
                             guardian.getCurrentHp(),
                             0,
                             guardian.isOnField(),
-                            fieldB.getId(),
-                            fieldB.getMaxHp(),
-                            fieldB.getCurrentHp(),
+                            hitTarget.getId(),
+                            hitTarget.getMaxHp(),
+                            hitTarget.getCurrentHp(),
                             burnDamage,
-                            fieldB.isOnField(),
+                            hitTarget.isOnField(),
                             EffectType.MISSILE_DAMAGE,
                             DamageType.MISSILE,
                             "-" + burnDamage,logIndex);
@@ -8926,17 +9541,18 @@ public class BattleManager {
                         burnDamage = 0;
                     }
                     Integer logIndex=battleLogs.size();
-                    burnDamage=triggerOnAttackedSkills(fieldA,burnDamage,EffectType.MISSILE_DAMAGE);
+                    Guardian hitTarget = fieldA;
+                    burnDamage=triggerOnAttackedSkills(hitTarget,burnDamage,EffectType.MISSILE_DAMAGE);
 
                     // 4. 扣除伤害
-                    fieldA.setCurrentHp(fieldA.getCurrentHp() - burnDamage);
+                    hitTarget.setCurrentHp(hitTarget.getCurrentHp() - burnDamage);
                     Map<String, TargetBattleData> deadUnits = new HashMap<>();
 
-                    if (fieldA.getCurrentHp() <= 0) {
-                        fieldA.setDead(true);
-                        fieldA.setOnField(false);
-                        TargetBattleData data = new TargetBattleData(fieldA.getMaxHp(), fieldA.getCurrentHp(), burnDamage, fieldA.isOnField());
-                        deadUnits.put(fieldA.getId(), data);
+                    if (hitTarget.getCurrentHp() <= 0) {
+                        hitTarget.setDead(true);
+                        hitTarget.setOnField(false);
+                        TargetBattleData data = new TargetBattleData(hitTarget.getMaxHp(), hitTarget.getCurrentHp(), burnDamage, hitTarget.isOnField());
+                        deadUnits.put(hitTarget.getId(), data);
                     }
                     addLog("报复神箭",
                             guardian.getId(),
@@ -8944,11 +9560,11 @@ public class BattleManager {
                             guardian.getCurrentHp(),
                             0,
                             guardian.isOnField(),
-                            fieldA.getId(),
-                            fieldA.getMaxHp(),
-                            fieldA.getCurrentHp(),
+                            hitTarget.getId(),
+                            hitTarget.getMaxHp(),
+                            hitTarget.getCurrentHp(),
                             burnDamage,
-                            fieldA.isOnField(),
+                            hitTarget.isOnField(),
                             EffectType.MISSILE_DAMAGE,
                             DamageType.MISSILE,
                             "-" + burnDamage,logIndex);
@@ -10856,17 +11472,18 @@ public class BattleManager {
                         burnDamage = 0;
                     }
                     Integer logIndex=battleLogs.size();
-                    burnDamage=triggerOnAttackedSkills(fieldB,burnDamage,EffectType.MISSILE_DAMAGE);
+                    Guardian hitTarget = fieldB;
+                    burnDamage=triggerOnAttackedSkills(hitTarget,burnDamage,EffectType.MISSILE_DAMAGE);
 
                     // 4. 扣除伤害
-                    fieldB.setCurrentHp(fieldB.getCurrentHp() - burnDamage);
+                    hitTarget.setCurrentHp(hitTarget.getCurrentHp() - burnDamage);
                     Map<String, TargetBattleData> deadUnits = new HashMap<>();
 
-                    if (fieldB.getCurrentHp() <= 0) {
-                        fieldB.setDead(true);
-                        fieldB.setOnField(false);
-                        TargetBattleData data = new TargetBattleData(fieldB.getMaxHp(), fieldB.getCurrentHp(), burnDamage, fieldB.isOnField());
-                        deadUnits.put(fieldB.getId(), data);
+                    if (hitTarget.getCurrentHp() <= 0) {
+                        hitTarget.setDead(true);
+                        hitTarget.setOnField(false);
+                        TargetBattleData data = new TargetBattleData(hitTarget.getMaxHp(), hitTarget.getCurrentHp(), burnDamage, hitTarget.isOnField());
+                        deadUnits.put(hitTarget.getId(), data);
                     }
                     addLog("魂力飞弹",
                             guardian.getId(),
@@ -10874,11 +11491,11 @@ public class BattleManager {
                             guardian.getCurrentHp(),
                             0,
                             guardian.isOnField(),
-                            fieldB.getId(),
-                            fieldB.getMaxHp(),
-                            fieldB.getCurrentHp(),
+                            hitTarget.getId(),
+                            hitTarget.getMaxHp(),
+                            hitTarget.getCurrentHp(),
                             burnDamage,
-                            fieldB.isOnField(),
+                            hitTarget.isOnField(),
                             EffectType.MISSILE_DAMAGE,
                             DamageType.MISSILE,
                             "-" + burnDamage,logIndex);
@@ -10967,17 +11584,18 @@ public class BattleManager {
                         burnDamage = 0;
                     }
                     Integer logIndex=battleLogs.size();
-                    burnDamage=triggerOnAttackedSkills(fieldA,burnDamage,EffectType.MISSILE_DAMAGE);
+                    Guardian hitTarget = fieldA;
+                    burnDamage=triggerOnAttackedSkills(hitTarget,burnDamage,EffectType.MISSILE_DAMAGE);
 
                     // 4. 扣除伤害
-                    fieldA.setCurrentHp(fieldA.getCurrentHp() - burnDamage);
+                    hitTarget.setCurrentHp(hitTarget.getCurrentHp() - burnDamage);
                     Map<String, TargetBattleData> deadUnits = new HashMap<>();
 
-                    if (fieldA.getCurrentHp() <= 0) {
-                        fieldA.setDead(true);
-                        fieldA.setOnField(false);
-                        TargetBattleData data = new TargetBattleData(fieldA.getMaxHp(), fieldA.getCurrentHp(), burnDamage, fieldA.isOnField());
-                        deadUnits.put(fieldA.getId(), data);
+                    if (hitTarget.getCurrentHp() <= 0) {
+                        hitTarget.setDead(true);
+                        hitTarget.setOnField(false);
+                        TargetBattleData data = new TargetBattleData(hitTarget.getMaxHp(), hitTarget.getCurrentHp(), burnDamage, hitTarget.isOnField());
+                        deadUnits.put(hitTarget.getId(), data);
                     }
                     addLog("魂力飞弹",
                             guardian.getId(),
@@ -10985,11 +11603,11 @@ public class BattleManager {
                             guardian.getCurrentHp(),
                             0,
                             guardian.isOnField(),
-                            fieldA.getId(),
-                            fieldA.getMaxHp(),
-                            fieldA.getCurrentHp(),
+                            hitTarget.getId(),
+                            hitTarget.getMaxHp(),
+                            hitTarget.getCurrentHp(),
                             burnDamage,
-                            fieldA.isOnField(),
+                            hitTarget.isOnField(),
                             EffectType.MISSILE_DAMAGE,
                             DamageType.MISSILE,
                             "-" + burnDamage,logIndex);
@@ -11078,17 +11696,18 @@ public class BattleManager {
                         burnDamage = 0;
                     }
                     Integer logIndex=battleLogs.size();
-                    burnDamage=triggerOnAttackedSkills(fieldB,burnDamage,EffectType.MISSILE_DAMAGE);
+                    Guardian hitTarget = fieldB;
+                    burnDamage=triggerOnAttackedSkills(hitTarget,burnDamage,EffectType.MISSILE_DAMAGE);
 
                     // 4. 扣除伤害
-                    fieldB.setCurrentHp(fieldB.getCurrentHp() - burnDamage);
+                    hitTarget.setCurrentHp(hitTarget.getCurrentHp() - burnDamage);
                     Map<String, TargetBattleData> deadUnits = new HashMap<>();
 
-                    if (fieldB.getCurrentHp() <= 0) {
-                        fieldB.setDead(true);
-                        fieldB.setOnField(false);
-                        TargetBattleData data = new TargetBattleData(fieldB.getMaxHp(), fieldB.getCurrentHp(), burnDamage, fieldB.isOnField());
-                        deadUnits.put(fieldB.getId(), data);
+                    if (hitTarget.getCurrentHp() <= 0) {
+                        hitTarget.setDead(true);
+                        hitTarget.setOnField(false);
+                        TargetBattleData data = new TargetBattleData(hitTarget.getMaxHp(), hitTarget.getCurrentHp(), burnDamage, hitTarget.isOnField());
+                        deadUnits.put(hitTarget.getId(), data);
                     }
                     addLog("魂力飞弹",
                             guardian.getId(),
@@ -11096,11 +11715,11 @@ public class BattleManager {
                             guardian.getCurrentHp(),
                             0,
                             guardian.isOnField(),
-                            fieldB.getId(),
-                            fieldB.getMaxHp(),
-                            fieldB.getCurrentHp(),
+                            hitTarget.getId(),
+                            hitTarget.getMaxHp(),
+                            hitTarget.getCurrentHp(),
                             burnDamage,
-                            fieldB.isOnField(),
+                            hitTarget.isOnField(),
                             EffectType.MISSILE_DAMAGE,
                             DamageType.MISSILE,
                             "-" + burnDamage,logIndex);
@@ -11163,17 +11782,18 @@ public class BattleManager {
                         burnDamage = 0;
                     }
                     Integer logIndex=battleLogs.size();
-                    burnDamage=triggerOnAttackedSkills(fieldA,burnDamage,EffectType.MISSILE_DAMAGE);
+                    Guardian hitTarget = fieldA;
+                    burnDamage=triggerOnAttackedSkills(hitTarget,burnDamage,EffectType.MISSILE_DAMAGE);
 
                     // 4. 扣除伤害
-                    fieldA.setCurrentHp(fieldA.getCurrentHp() - burnDamage);
+                    hitTarget.setCurrentHp(hitTarget.getCurrentHp() - burnDamage);
                     Map<String, TargetBattleData> deadUnits = new HashMap<>();
 
-                    if (fieldA.getCurrentHp() <= 0) {
-                        fieldA.setDead(true);
-                        fieldA.setOnField(false);
-                        TargetBattleData data = new TargetBattleData(fieldA.getMaxHp(), fieldA.getCurrentHp(), burnDamage, fieldA.isOnField());
-                        deadUnits.put(fieldA.getId(), data);
+                    if (hitTarget.getCurrentHp() <= 0) {
+                        hitTarget.setDead(true);
+                        hitTarget.setOnField(false);
+                        TargetBattleData data = new TargetBattleData(hitTarget.getMaxHp(), hitTarget.getCurrentHp(), burnDamage, hitTarget.isOnField());
+                        deadUnits.put(hitTarget.getId(), data);
                     }
                     addLog("魂力飞弹",
                             guardian.getId(),
@@ -11181,11 +11801,11 @@ public class BattleManager {
                             guardian.getCurrentHp(),
                             0,
                             guardian.isOnField(),
-                            fieldA.getId(),
-                            fieldA.getMaxHp(),
-                            fieldA.getCurrentHp(),
+                            hitTarget.getId(),
+                            hitTarget.getMaxHp(),
+                            hitTarget.getCurrentHp(),
                             burnDamage,
-                            fieldA.isOnField(),
+                            hitTarget.isOnField(),
                             EffectType.MISSILE_DAMAGE,
                             DamageType.MISSILE,
                             "-" + burnDamage,logIndex);
@@ -11249,17 +11869,18 @@ public class BattleManager {
                         burnDamage = 0;
                     }
                     Integer logIndex=battleLogs.size();
-                    burnDamage=triggerOnAttackedSkills(fieldB,burnDamage,EffectType.MISSILE_DAMAGE);
+                    Guardian hitTarget = fieldB;
+                    burnDamage=triggerOnAttackedSkills(hitTarget,burnDamage,EffectType.MISSILE_DAMAGE);
 
                     // 4. 扣除伤害
-                    fieldB.setCurrentHp(fieldB.getCurrentHp() - burnDamage);
+                    hitTarget.setCurrentHp(hitTarget.getCurrentHp() - burnDamage);
                     Map<String, TargetBattleData> deadUnits = new HashMap<>();
 
-                    if (fieldB.getCurrentHp() <= 0) {
-                        fieldB.setDead(true);
-                        fieldB.setOnField(false);
-                        TargetBattleData data = new TargetBattleData(fieldB.getMaxHp(), fieldB.getCurrentHp(), burnDamage, fieldB.isOnField());
-                        deadUnits.put(fieldB.getId(), data);
+                    if (hitTarget.getCurrentHp() <= 0) {
+                        hitTarget.setDead(true);
+                        hitTarget.setOnField(false);
+                        TargetBattleData data = new TargetBattleData(hitTarget.getMaxHp(), hitTarget.getCurrentHp(), burnDamage, hitTarget.isOnField());
+                        deadUnits.put(hitTarget.getId(), data);
                     }
                     addLog("魂力飞弹",
                             guardian.getId(),
@@ -11267,11 +11888,11 @@ public class BattleManager {
                             guardian.getCurrentHp(),
                             0,
                             guardian.isOnField(),
-                            fieldB.getId(),
-                            fieldB.getMaxHp(),
-                            fieldB.getCurrentHp(),
+                            hitTarget.getId(),
+                            hitTarget.getMaxHp(),
+                            hitTarget.getCurrentHp(),
                             burnDamage,
-                            fieldB.isOnField(),
+                            hitTarget.isOnField(),
                             EffectType.MISSILE_DAMAGE,
                             DamageType.MISSILE,
                             "-" + burnDamage,logIndex);
@@ -11334,17 +11955,18 @@ public class BattleManager {
                         burnDamage = 0;
                     }
                     Integer logIndex=battleLogs.size();
-                    burnDamage=triggerOnAttackedSkills(fieldA,burnDamage,EffectType.MISSILE_DAMAGE);
+                    Guardian hitTarget = fieldA;
+                    burnDamage=triggerOnAttackedSkills(hitTarget,burnDamage,EffectType.MISSILE_DAMAGE);
 
                     // 4. 扣除伤害
-                    fieldA.setCurrentHp(fieldA.getCurrentHp() - burnDamage);
+                    hitTarget.setCurrentHp(hitTarget.getCurrentHp() - burnDamage);
                     Map<String, TargetBattleData> deadUnits = new HashMap<>();
 
-                    if (fieldA.getCurrentHp() <= 0) {
-                        fieldA.setDead(true);
-                        fieldA.setOnField(false);
-                        TargetBattleData data = new TargetBattleData(fieldA.getMaxHp(), fieldA.getCurrentHp(), burnDamage, fieldA.isOnField());
-                        deadUnits.put(fieldA.getId(), data);
+                    if (hitTarget.getCurrentHp() <= 0) {
+                        hitTarget.setDead(true);
+                        hitTarget.setOnField(false);
+                        TargetBattleData data = new TargetBattleData(hitTarget.getMaxHp(), hitTarget.getCurrentHp(), burnDamage, hitTarget.isOnField());
+                        deadUnits.put(hitTarget.getId(), data);
                     }
                     addLog("魂力飞弹",
                             guardian.getId(),
@@ -11352,11 +11974,11 @@ public class BattleManager {
                             guardian.getCurrentHp(),
                             0,
                             guardian.isOnField(),
-                            fieldA.getId(),
-                            fieldA.getMaxHp(),
-                            fieldA.getCurrentHp(),
+                            hitTarget.getId(),
+                            hitTarget.getMaxHp(),
+                            hitTarget.getCurrentHp(),
                             burnDamage,
-                            fieldA.isOnField(),
+                            hitTarget.isOnField(),
                             EffectType.MISSILE_DAMAGE,
                             DamageType.MISSILE,
                             "-" + burnDamage,logIndex);
@@ -11420,17 +12042,18 @@ public class BattleManager {
                         burnDamage = 0;
                     }
                     Integer logIndex=battleLogs.size();
-                    burnDamage=triggerOnAttackedSkills(fieldB,burnDamage,EffectType.MISSILE_DAMAGE);
+                    Guardian hitTarget = fieldB;
+                    burnDamage=triggerOnAttackedSkills(hitTarget,burnDamage,EffectType.MISSILE_DAMAGE);
 
                     // 4. 扣除伤害
-                    fieldB.setCurrentHp(fieldB.getCurrentHp() - burnDamage);
+                    hitTarget.setCurrentHp(hitTarget.getCurrentHp() - burnDamage);
                     Map<String, TargetBattleData> deadUnits = new HashMap<>();
 
-                    if (fieldB.getCurrentHp() <= 0) {
-                        fieldB.setDead(true);
-                        fieldB.setOnField(false);
-                        TargetBattleData data = new TargetBattleData(fieldB.getMaxHp(), fieldB.getCurrentHp(), burnDamage, fieldB.isOnField());
-                        deadUnits.put(fieldB.getId(), data);
+                    if (hitTarget.getCurrentHp() <= 0) {
+                        hitTarget.setDead(true);
+                        hitTarget.setOnField(false);
+                        TargetBattleData data = new TargetBattleData(hitTarget.getMaxHp(), hitTarget.getCurrentHp(), burnDamage, hitTarget.isOnField());
+                        deadUnits.put(hitTarget.getId(), data);
                     }
                     addLog("魂力飞弹",
                             guardian.getId(),
@@ -11438,11 +12061,11 @@ public class BattleManager {
                             guardian.getCurrentHp(),
                             0,
                             guardian.isOnField(),
-                            fieldB.getId(),
-                            fieldB.getMaxHp(),
-                            fieldB.getCurrentHp(),
+                            hitTarget.getId(),
+                            hitTarget.getMaxHp(),
+                            hitTarget.getCurrentHp(),
                             burnDamage,
-                            fieldB.isOnField(),
+                            hitTarget.isOnField(),
                             EffectType.MISSILE_DAMAGE,
                             DamageType.MISSILE,
                             "-" + burnDamage,logIndex);
@@ -11505,17 +12128,18 @@ public class BattleManager {
                         burnDamage = 0;
                     }
                     Integer logIndex=battleLogs.size();
-                    burnDamage=triggerOnAttackedSkills(fieldA,burnDamage,EffectType.MISSILE_DAMAGE);
+                    Guardian hitTarget = fieldA;
+                    burnDamage=triggerOnAttackedSkills(hitTarget,burnDamage,EffectType.MISSILE_DAMAGE);
 
                     // 4. 扣除伤害
-                    fieldA.setCurrentHp(fieldA.getCurrentHp() - burnDamage);
+                    hitTarget.setCurrentHp(hitTarget.getCurrentHp() - burnDamage);
                     Map<String, TargetBattleData> deadUnits = new HashMap<>();
 
-                    if (fieldA.getCurrentHp() <= 0) {
-                        fieldA.setDead(true);
-                        fieldA.setOnField(false);
-                        TargetBattleData data = new TargetBattleData(fieldA.getMaxHp(), fieldA.getCurrentHp(), burnDamage, fieldA.isOnField());
-                        deadUnits.put(fieldA.getId(), data);
+                    if (hitTarget.getCurrentHp() <= 0) {
+                        hitTarget.setDead(true);
+                        hitTarget.setOnField(false);
+                        TargetBattleData data = new TargetBattleData(hitTarget.getMaxHp(), hitTarget.getCurrentHp(), burnDamage, hitTarget.isOnField());
+                        deadUnits.put(hitTarget.getId(), data);
                     }
                     addLog("魂力飞弹",
                             guardian.getId(),
@@ -11523,11 +12147,11 @@ public class BattleManager {
                             guardian.getCurrentHp(),
                             0,
                             guardian.isOnField(),
-                            fieldA.getId(),
-                            fieldA.getMaxHp(),
-                            fieldA.getCurrentHp(),
+                            hitTarget.getId(),
+                            hitTarget.getMaxHp(),
+                            hitTarget.getCurrentHp(),
                             burnDamage,
-                            fieldA.isOnField(),
+                            hitTarget.isOnField(),
                             EffectType.MISSILE_DAMAGE,
                             DamageType.MISSILE,
                             "-" + burnDamage,logIndex);
@@ -11591,17 +12215,18 @@ public class BattleManager {
                         burnDamage = 0;
                     }
                     Integer logIndex=battleLogs.size();
-                    burnDamage=triggerOnAttackedSkills(fieldB,burnDamage,EffectType.MISSILE_DAMAGE);
+                    Guardian hitTarget = fieldB;
+                    burnDamage=triggerOnAttackedSkills(hitTarget,burnDamage,EffectType.MISSILE_DAMAGE);
 
                     // 4. 扣除伤害
-                    fieldB.setCurrentHp(fieldB.getCurrentHp() - burnDamage);
+                    hitTarget.setCurrentHp(hitTarget.getCurrentHp() - burnDamage);
                     Map<String, TargetBattleData> deadUnits = new HashMap<>();
 
-                    if (fieldB.getCurrentHp() <= 0) {
-                        fieldB.setDead(true);
-                        fieldB.setOnField(false);
-                        TargetBattleData data = new TargetBattleData(fieldB.getMaxHp(), fieldB.getCurrentHp(), burnDamage, fieldB.isOnField());
-                        deadUnits.put(fieldB.getId(), data);
+                    if (hitTarget.getCurrentHp() <= 0) {
+                        hitTarget.setDead(true);
+                        hitTarget.setOnField(false);
+                        TargetBattleData data = new TargetBattleData(hitTarget.getMaxHp(), hitTarget.getCurrentHp(), burnDamage, hitTarget.isOnField());
+                        deadUnits.put(hitTarget.getId(), data);
                     }
                     addLog("魂力飞弹",
                             guardian.getId(),
@@ -11609,11 +12234,11 @@ public class BattleManager {
                             guardian.getCurrentHp(),
                             0,
                             guardian.isOnField(),
-                            fieldB.getId(),
-                            fieldB.getMaxHp(),
-                            fieldB.getCurrentHp(),
+                            hitTarget.getId(),
+                            hitTarget.getMaxHp(),
+                            hitTarget.getCurrentHp(),
                             burnDamage,
-                            fieldB.isOnField(),
+                            hitTarget.isOnField(),
                             EffectType.MISSILE_DAMAGE,
                             DamageType.MISSILE,
                             "-" + burnDamage,logIndex);
@@ -11676,17 +12301,18 @@ public class BattleManager {
                         burnDamage = 0;
                     }
                     Integer logIndex=battleLogs.size();
-                    burnDamage=triggerOnAttackedSkills(fieldA,burnDamage,EffectType.MISSILE_DAMAGE);
+                    Guardian hitTarget = fieldA;
+                    burnDamage=triggerOnAttackedSkills(hitTarget,burnDamage,EffectType.MISSILE_DAMAGE);
 
                     // 4. 扣除伤害
-                    fieldA.setCurrentHp(fieldA.getCurrentHp() - burnDamage);
+                    hitTarget.setCurrentHp(hitTarget.getCurrentHp() - burnDamage);
                     Map<String, TargetBattleData> deadUnits = new HashMap<>();
 
-                    if (fieldA.getCurrentHp() <= 0) {
-                        fieldA.setDead(true);
-                        fieldA.setOnField(false);
-                        TargetBattleData data = new TargetBattleData(fieldA.getMaxHp(), fieldA.getCurrentHp(), burnDamage, fieldA.isOnField());
-                        deadUnits.put(fieldA.getId(), data);
+                    if (hitTarget.getCurrentHp() <= 0) {
+                        hitTarget.setDead(true);
+                        hitTarget.setOnField(false);
+                        TargetBattleData data = new TargetBattleData(hitTarget.getMaxHp(), hitTarget.getCurrentHp(), burnDamage, hitTarget.isOnField());
+                        deadUnits.put(hitTarget.getId(), data);
                     }
                     addLog("魂力飞弹",
                             guardian.getId(),
@@ -11694,11 +12320,11 @@ public class BattleManager {
                             guardian.getCurrentHp(),
                             0,
                             guardian.isOnField(),
-                            fieldA.getId(),
-                            fieldA.getMaxHp(),
-                            fieldA.getCurrentHp(),
+                            hitTarget.getId(),
+                            hitTarget.getMaxHp(),
+                            hitTarget.getCurrentHp(),
                             burnDamage,
-                            fieldA.isOnField(),
+                            hitTarget.isOnField(),
                             EffectType.MISSILE_DAMAGE,
                             DamageType.MISSILE,
                             "-" + burnDamage,logIndex);
@@ -11762,17 +12388,18 @@ public class BattleManager {
                         burnDamage = 0;
                     }
                     Integer logIndex=battleLogs.size();
-                    burnDamage=triggerOnAttackedSkills(fieldB,burnDamage,EffectType.MISSILE_DAMAGE);
+                    Guardian hitTarget = fieldB;
+                    burnDamage=triggerOnAttackedSkills(hitTarget,burnDamage,EffectType.MISSILE_DAMAGE);
 
                     // 4. 扣除伤害
-                    fieldB.setCurrentHp(fieldB.getCurrentHp() - burnDamage);
+                    hitTarget.setCurrentHp(hitTarget.getCurrentHp() - burnDamage);
                     Map<String, TargetBattleData> deadUnits = new HashMap<>();
 
-                    if (fieldB.getCurrentHp() <= 0) {
-                        fieldB.setDead(true);
-                        fieldB.setOnField(false);
-                        TargetBattleData data = new TargetBattleData(fieldB.getMaxHp(), fieldB.getCurrentHp(), burnDamage, fieldB.isOnField());
-                        deadUnits.put(fieldB.getId(), data);
+                    if (hitTarget.getCurrentHp() <= 0) {
+                        hitTarget.setDead(true);
+                        hitTarget.setOnField(false);
+                        TargetBattleData data = new TargetBattleData(hitTarget.getMaxHp(), hitTarget.getCurrentHp(), burnDamage, hitTarget.isOnField());
+                        deadUnits.put(hitTarget.getId(), data);
                     }
                     addLog("魂力飞弹",
                             guardian.getId(),
@@ -11780,11 +12407,11 @@ public class BattleManager {
                             guardian.getCurrentHp(),
                             0,
                             guardian.isOnField(),
-                            fieldB.getId(),
-                            fieldB.getMaxHp(),
-                            fieldB.getCurrentHp(),
+                            hitTarget.getId(),
+                            hitTarget.getMaxHp(),
+                            hitTarget.getCurrentHp(),
                             burnDamage,
-                            fieldB.isOnField(),
+                            hitTarget.isOnField(),
                             EffectType.MISSILE_DAMAGE,
                             DamageType.MISSILE,
                             "-" + burnDamage,logIndex);
@@ -11847,17 +12474,18 @@ public class BattleManager {
                         burnDamage = 0;
                     }
                     Integer logIndex=battleLogs.size();
-                    burnDamage=triggerOnAttackedSkills(fieldA,burnDamage,EffectType.MISSILE_DAMAGE);
+                    Guardian hitTarget = fieldA;
+                    burnDamage=triggerOnAttackedSkills(hitTarget,burnDamage,EffectType.MISSILE_DAMAGE);
 
                     // 4. 扣除伤害
-                    fieldA.setCurrentHp(fieldA.getCurrentHp() - burnDamage);
+                    hitTarget.setCurrentHp(hitTarget.getCurrentHp() - burnDamage);
                     Map<String, TargetBattleData> deadUnits = new HashMap<>();
 
-                    if (fieldA.getCurrentHp() <= 0) {
-                        fieldA.setDead(true);
-                        fieldA.setOnField(false);
-                        TargetBattleData data = new TargetBattleData(fieldA.getMaxHp(), fieldA.getCurrentHp(), burnDamage, fieldA.isOnField());
-                        deadUnits.put(fieldA.getId(), data);
+                    if (hitTarget.getCurrentHp() <= 0) {
+                        hitTarget.setDead(true);
+                        hitTarget.setOnField(false);
+                        TargetBattleData data = new TargetBattleData(hitTarget.getMaxHp(), hitTarget.getCurrentHp(), burnDamage, hitTarget.isOnField());
+                        deadUnits.put(hitTarget.getId(), data);
                     }
                     addLog("魂力飞弹",
                             guardian.getId(),
@@ -11865,11 +12493,11 @@ public class BattleManager {
                             guardian.getCurrentHp(),
                             0,
                             guardian.isOnField(),
-                            fieldA.getId(),
-                            fieldA.getMaxHp(),
-                            fieldA.getCurrentHp(),
+                            hitTarget.getId(),
+                            hitTarget.getMaxHp(),
+                            hitTarget.getCurrentHp(),
                             burnDamage,
-                            fieldA.isOnField(),
+                            hitTarget.isOnField(),
                             EffectType.MISSILE_DAMAGE,
                             DamageType.MISSILE,
                             "-" + burnDamage,logIndex);
@@ -11933,17 +12561,18 @@ public class BattleManager {
                         burnDamage = 0;
                     }
                     Integer logIndex=battleLogs.size();
-                    burnDamage=triggerOnAttackedSkills(fieldB,burnDamage,EffectType.MISSILE_DAMAGE);
+                    Guardian hitTarget = fieldB;
+                    burnDamage=triggerOnAttackedSkills(hitTarget,burnDamage,EffectType.MISSILE_DAMAGE);
 
                     // 4. 扣除伤害
-                    fieldB.setCurrentHp(fieldB.getCurrentHp() - burnDamage);
+                    hitTarget.setCurrentHp(hitTarget.getCurrentHp() - burnDamage);
                     Map<String, TargetBattleData> deadUnits = new HashMap<>();
 
-                    if (fieldB.getCurrentHp() <= 0) {
-                        fieldB.setDead(true);
-                        fieldB.setOnField(false);
-                        TargetBattleData data = new TargetBattleData(fieldB.getMaxHp(), fieldB.getCurrentHp(), burnDamage, fieldB.isOnField());
-                        deadUnits.put(fieldB.getId(), data);
+                    if (hitTarget.getCurrentHp() <= 0) {
+                        hitTarget.setDead(true);
+                        hitTarget.setOnField(false);
+                        TargetBattleData data = new TargetBattleData(hitTarget.getMaxHp(), hitTarget.getCurrentHp(), burnDamage, hitTarget.isOnField());
+                        deadUnits.put(hitTarget.getId(), data);
                     }
                     addLog("魂力飞弹",
                             guardian.getId(),
@@ -11951,11 +12580,11 @@ public class BattleManager {
                             guardian.getCurrentHp(),
                             0,
                             guardian.isOnField(),
-                            fieldB.getId(),
-                            fieldB.getMaxHp(),
-                            fieldB.getCurrentHp(),
+                            hitTarget.getId(),
+                            hitTarget.getMaxHp(),
+                            hitTarget.getCurrentHp(),
                             burnDamage,
-                            fieldB.isOnField(),
+                            hitTarget.isOnField(),
                             EffectType.MISSILE_DAMAGE,
                             DamageType.MISSILE,
                             "-" + burnDamage,logIndex);
@@ -12018,17 +12647,18 @@ public class BattleManager {
                         burnDamage = 0;
                     }
                     Integer logIndex=battleLogs.size();
-                    burnDamage=triggerOnAttackedSkills(fieldA,burnDamage,EffectType.MISSILE_DAMAGE);
+                    Guardian hitTarget = fieldA;
+                    burnDamage=triggerOnAttackedSkills(hitTarget,burnDamage,EffectType.MISSILE_DAMAGE);
 
                     // 4. 扣除伤害
-                    fieldA.setCurrentHp(fieldA.getCurrentHp() - burnDamage);
+                    hitTarget.setCurrentHp(hitTarget.getCurrentHp() - burnDamage);
                     Map<String, TargetBattleData> deadUnits = new HashMap<>();
 
-                    if (fieldA.getCurrentHp() <= 0) {
-                        fieldA.setDead(true);
-                        fieldA.setOnField(false);
-                        TargetBattleData data = new TargetBattleData(fieldA.getMaxHp(), fieldA.getCurrentHp(), burnDamage, fieldA.isOnField());
-                        deadUnits.put(fieldA.getId(), data);
+                    if (hitTarget.getCurrentHp() <= 0) {
+                        hitTarget.setDead(true);
+                        hitTarget.setOnField(false);
+                        TargetBattleData data = new TargetBattleData(hitTarget.getMaxHp(), hitTarget.getCurrentHp(), burnDamage, hitTarget.isOnField());
+                        deadUnits.put(hitTarget.getId(), data);
                     }
                     addLog("魂力飞弹",
                             guardian.getId(),
@@ -12036,11 +12666,11 @@ public class BattleManager {
                             guardian.getCurrentHp(),
                             0,
                             guardian.isOnField(),
-                            fieldA.getId(),
-                            fieldA.getMaxHp(),
-                            fieldA.getCurrentHp(),
+                            hitTarget.getId(),
+                            hitTarget.getMaxHp(),
+                            hitTarget.getCurrentHp(),
                             burnDamage,
-                            fieldA.isOnField(),
+                            hitTarget.isOnField(),
                             EffectType.MISSILE_DAMAGE,
                             DamageType.MISSILE,
                             "-" + burnDamage,logIndex);
@@ -12104,17 +12734,18 @@ public class BattleManager {
                         burnDamage = 0;
                     }
                     Integer logIndex=battleLogs.size();
-                    burnDamage=triggerOnAttackedSkills(fieldB,burnDamage,EffectType.MISSILE_DAMAGE);
+                    Guardian hitTarget = fieldB;
+                    burnDamage=triggerOnAttackedSkills(hitTarget,burnDamage,EffectType.MISSILE_DAMAGE);
 
                     // 4. 扣除伤害
-                    fieldB.setCurrentHp(fieldB.getCurrentHp() - burnDamage);
+                    hitTarget.setCurrentHp(hitTarget.getCurrentHp() - burnDamage);
                     Map<String, TargetBattleData> deadUnits = new HashMap<>();
 
-                    if (fieldB.getCurrentHp() <= 0) {
-                        fieldB.setDead(true);
-                        fieldB.setOnField(false);
-                        TargetBattleData data = new TargetBattleData(fieldB.getMaxHp(), fieldB.getCurrentHp(), burnDamage, fieldB.isOnField());
-                        deadUnits.put(fieldB.getId(), data);
+                    if (hitTarget.getCurrentHp() <= 0) {
+                        hitTarget.setDead(true);
+                        hitTarget.setOnField(false);
+                        TargetBattleData data = new TargetBattleData(hitTarget.getMaxHp(), hitTarget.getCurrentHp(), burnDamage, hitTarget.isOnField());
+                        deadUnits.put(hitTarget.getId(), data);
                     }
                     addLog("魂力飞弹",
                             guardian.getId(),
@@ -12122,11 +12753,11 @@ public class BattleManager {
                             guardian.getCurrentHp(),
                             0,
                             guardian.isOnField(),
-                            fieldB.getId(),
-                            fieldB.getMaxHp(),
-                            fieldB.getCurrentHp(),
+                            hitTarget.getId(),
+                            hitTarget.getMaxHp(),
+                            hitTarget.getCurrentHp(),
                             burnDamage,
-                            fieldB.isOnField(),
+                            hitTarget.isOnField(),
                             EffectType.MISSILE_DAMAGE,
                             DamageType.MISSILE,
                             "-" + burnDamage,logIndex);
@@ -12189,17 +12820,18 @@ public class BattleManager {
                         burnDamage = 0;
                     }
                     Integer logIndex=battleLogs.size();
-                    burnDamage=triggerOnAttackedSkills(fieldA,burnDamage,EffectType.MISSILE_DAMAGE);
+                    Guardian hitTarget = fieldA;
+                    burnDamage=triggerOnAttackedSkills(hitTarget,burnDamage,EffectType.MISSILE_DAMAGE);
 
                     // 4. 扣除伤害
-                    fieldA.setCurrentHp(fieldA.getCurrentHp() - burnDamage);
+                    hitTarget.setCurrentHp(hitTarget.getCurrentHp() - burnDamage);
                     Map<String, TargetBattleData> deadUnits = new HashMap<>();
 
-                    if (fieldA.getCurrentHp() <= 0) {
-                        fieldA.setDead(true);
-                        fieldA.setOnField(false);
-                        TargetBattleData data = new TargetBattleData(fieldA.getMaxHp(), fieldA.getCurrentHp(), burnDamage, fieldA.isOnField());
-                        deadUnits.put(fieldA.getId(), data);
+                    if (hitTarget.getCurrentHp() <= 0) {
+                        hitTarget.setDead(true);
+                        hitTarget.setOnField(false);
+                        TargetBattleData data = new TargetBattleData(hitTarget.getMaxHp(), hitTarget.getCurrentHp(), burnDamage, hitTarget.isOnField());
+                        deadUnits.put(hitTarget.getId(), data);
                     }
                     addLog("魂力飞弹",
                             guardian.getId(),
@@ -12207,11 +12839,11 @@ public class BattleManager {
                             guardian.getCurrentHp(),
                             0,
                             guardian.isOnField(),
-                            fieldA.getId(),
-                            fieldA.getMaxHp(),
-                            fieldA.getCurrentHp(),
+                            hitTarget.getId(),
+                            hitTarget.getMaxHp(),
+                            hitTarget.getCurrentHp(),
                             burnDamage,
-                            fieldA.isOnField(),
+                            hitTarget.isOnField(),
                             EffectType.MISSILE_DAMAGE,
                             DamageType.MISSILE,
                             "-" + burnDamage,logIndex);
@@ -12275,17 +12907,18 @@ public class BattleManager {
                         burnDamage = 0;
                     }
                     Integer logIndex=battleLogs.size();
-                    burnDamage=triggerOnAttackedSkills(fieldB,burnDamage,EffectType.MISSILE_DAMAGE);
+                    Guardian hitTarget = fieldB;
+                    burnDamage=triggerOnAttackedSkills(hitTarget,burnDamage,EffectType.MISSILE_DAMAGE);
 
                     // 4. 扣除伤害
-                    fieldB.setCurrentHp(fieldB.getCurrentHp() - burnDamage);
+                    hitTarget.setCurrentHp(hitTarget.getCurrentHp() - burnDamage);
                     Map<String, TargetBattleData> deadUnits = new HashMap<>();
 
-                    if (fieldB.getCurrentHp() <= 0) {
-                        fieldB.setDead(true);
-                        fieldB.setOnField(false);
-                        TargetBattleData data = new TargetBattleData(fieldB.getMaxHp(), fieldB.getCurrentHp(), burnDamage, fieldB.isOnField());
-                        deadUnits.put(fieldB.getId(), data);
+                    if (hitTarget.getCurrentHp() <= 0) {
+                        hitTarget.setDead(true);
+                        hitTarget.setOnField(false);
+                        TargetBattleData data = new TargetBattleData(hitTarget.getMaxHp(), hitTarget.getCurrentHp(), burnDamage, hitTarget.isOnField());
+                        deadUnits.put(hitTarget.getId(), data);
                     }
                     addLog("魂力飞弹",
                             guardian.getId(),
@@ -12293,11 +12926,11 @@ public class BattleManager {
                             guardian.getCurrentHp(),
                             0,
                             guardian.isOnField(),
-                            fieldB.getId(),
-                            fieldB.getMaxHp(),
-                            fieldB.getCurrentHp(),
+                            hitTarget.getId(),
+                            hitTarget.getMaxHp(),
+                            hitTarget.getCurrentHp(),
                             burnDamage,
-                            fieldB.isOnField(),
+                            hitTarget.isOnField(),
                             EffectType.MISSILE_DAMAGE,
                             DamageType.MISSILE,
                             "-" + burnDamage,logIndex);
@@ -12360,17 +12993,18 @@ public class BattleManager {
                         burnDamage = 0;
                     }
                     Integer logIndex=battleLogs.size();
-                    burnDamage=triggerOnAttackedSkills(fieldA,burnDamage,EffectType.MISSILE_DAMAGE);
+                    Guardian hitTarget = fieldA;
+                    burnDamage=triggerOnAttackedSkills(hitTarget,burnDamage,EffectType.MISSILE_DAMAGE);
 
                     // 4. 扣除伤害
-                    fieldA.setCurrentHp(fieldA.getCurrentHp() - burnDamage);
+                    hitTarget.setCurrentHp(hitTarget.getCurrentHp() - burnDamage);
                     Map<String, TargetBattleData> deadUnits = new HashMap<>();
 
-                    if (fieldA.getCurrentHp() <= 0) {
-                        fieldA.setDead(true);
-                        fieldA.setOnField(false);
-                        TargetBattleData data = new TargetBattleData(fieldA.getMaxHp(), fieldA.getCurrentHp(), burnDamage, fieldA.isOnField());
-                        deadUnits.put(fieldA.getId(), data);
+                    if (hitTarget.getCurrentHp() <= 0) {
+                        hitTarget.setDead(true);
+                        hitTarget.setOnField(false);
+                        TargetBattleData data = new TargetBattleData(hitTarget.getMaxHp(), hitTarget.getCurrentHp(), burnDamage, hitTarget.isOnField());
+                        deadUnits.put(hitTarget.getId(), data);
                     }
                     addLog("魂力飞弹",
                             guardian.getId(),
@@ -12378,11 +13012,11 @@ public class BattleManager {
                             guardian.getCurrentHp(),
                             0,
                             guardian.isOnField(),
-                            fieldA.getId(),
-                            fieldA.getMaxHp(),
-                            fieldA.getCurrentHp(),
+                            hitTarget.getId(),
+                            hitTarget.getMaxHp(),
+                            hitTarget.getCurrentHp(),
                             burnDamage,
-                            fieldA.isOnField(),
+                            hitTarget.isOnField(),
                             EffectType.MISSILE_DAMAGE,
                             DamageType.MISSILE,
                             "-" + burnDamage,logIndex);
@@ -12446,17 +13080,18 @@ public class BattleManager {
                         burnDamage = 0;
                     }
                     Integer logIndex=battleLogs.size();
-                    burnDamage=triggerOnAttackedSkills(fieldB,burnDamage,EffectType.MISSILE_DAMAGE);
+                    Guardian hitTarget = fieldB;
+                    burnDamage=triggerOnAttackedSkills(hitTarget,burnDamage,EffectType.MISSILE_DAMAGE);
 
                     // 4. 扣除伤害
-                    fieldB.setCurrentHp(fieldB.getCurrentHp() - burnDamage);
+                    hitTarget.setCurrentHp(hitTarget.getCurrentHp() - burnDamage);
                     Map<String, TargetBattleData> deadUnits = new HashMap<>();
 
-                    if (fieldB.getCurrentHp() <= 0) {
-                        fieldB.setDead(true);
-                        fieldB.setOnField(false);
-                        TargetBattleData data = new TargetBattleData(fieldB.getMaxHp(), fieldB.getCurrentHp(), burnDamage, fieldB.isOnField());
-                        deadUnits.put(fieldB.getId(), data);
+                    if (hitTarget.getCurrentHp() <= 0) {
+                        hitTarget.setDead(true);
+                        hitTarget.setOnField(false);
+                        TargetBattleData data = new TargetBattleData(hitTarget.getMaxHp(), hitTarget.getCurrentHp(), burnDamage, hitTarget.isOnField());
+                        deadUnits.put(hitTarget.getId(), data);
                     }
                     addLog("魂力飞弹",
                             guardian.getId(),
@@ -12464,11 +13099,11 @@ public class BattleManager {
                             guardian.getCurrentHp(),
                             0,
                             guardian.isOnField(),
-                            fieldB.getId(),
-                            fieldB.getMaxHp(),
-                            fieldB.getCurrentHp(),
+                            hitTarget.getId(),
+                            hitTarget.getMaxHp(),
+                            hitTarget.getCurrentHp(),
                             burnDamage,
-                            fieldB.isOnField(),
+                            hitTarget.isOnField(),
                             EffectType.MISSILE_DAMAGE,
                             DamageType.MISSILE,
                             "-" + burnDamage,logIndex);
@@ -12531,17 +13166,18 @@ public class BattleManager {
                         burnDamage = 0;
                     }
                     Integer logIndex=battleLogs.size();
-                    burnDamage=triggerOnAttackedSkills(fieldA,burnDamage,EffectType.MISSILE_DAMAGE);
+                    Guardian hitTarget = fieldA;
+                    burnDamage=triggerOnAttackedSkills(hitTarget,burnDamage,EffectType.MISSILE_DAMAGE);
 
                     // 4. 扣除伤害
-                    fieldA.setCurrentHp(fieldA.getCurrentHp() - burnDamage);
+                    hitTarget.setCurrentHp(hitTarget.getCurrentHp() - burnDamage);
                     Map<String, TargetBattleData> deadUnits = new HashMap<>();
 
-                    if (fieldA.getCurrentHp() <= 0) {
-                        fieldA.setDead(true);
-                        fieldA.setOnField(false);
-                        TargetBattleData data = new TargetBattleData(fieldA.getMaxHp(), fieldA.getCurrentHp(), burnDamage, fieldA.isOnField());
-                        deadUnits.put(fieldA.getId(), data);
+                    if (hitTarget.getCurrentHp() <= 0) {
+                        hitTarget.setDead(true);
+                        hitTarget.setOnField(false);
+                        TargetBattleData data = new TargetBattleData(hitTarget.getMaxHp(), hitTarget.getCurrentHp(), burnDamage, hitTarget.isOnField());
+                        deadUnits.put(hitTarget.getId(), data);
                     }
                     addLog("魂力飞弹",
                             guardian.getId(),
@@ -12549,11 +13185,11 @@ public class BattleManager {
                             guardian.getCurrentHp(),
                             0,
                             guardian.isOnField(),
-                            fieldA.getId(),
-                            fieldA.getMaxHp(),
-                            fieldA.getCurrentHp(),
+                            hitTarget.getId(),
+                            hitTarget.getMaxHp(),
+                            hitTarget.getCurrentHp(),
                             burnDamage,
-                            fieldA.isOnField(),
+                            hitTarget.isOnField(),
                             EffectType.MISSILE_DAMAGE,
                             DamageType.MISSILE,
                             "-" + burnDamage,logIndex);
@@ -12618,17 +13254,18 @@ public class BattleManager {
                         burnDamage = 0;
                     }
                     Integer logIndex=battleLogs.size();
-                    burnDamage=triggerOnAttackedSkills(fieldB,burnDamage,EffectType.MISSILE_DAMAGE);
+                    Guardian hitTarget = fieldB;
+                    burnDamage=triggerOnAttackedSkills(hitTarget,burnDamage,EffectType.MISSILE_DAMAGE);
 
                     // 4. 扣除伤害
-                    fieldB.setCurrentHp(fieldB.getCurrentHp() - burnDamage);
+                    hitTarget.setCurrentHp(hitTarget.getCurrentHp() - burnDamage);
                     Map<String, TargetBattleData> deadUnits = new HashMap<>();
 
-                    if (fieldB.getCurrentHp() <= 0) {
-                        fieldB.setDead(true);
-                        fieldB.setOnField(false);
-                        TargetBattleData data = new TargetBattleData(fieldB.getMaxHp(), fieldB.getCurrentHp(), burnDamage, fieldB.isOnField());
-                        deadUnits.put(fieldB.getId(), data);
+                    if (hitTarget.getCurrentHp() <= 0) {
+                        hitTarget.setDead(true);
+                        hitTarget.setOnField(false);
+                        TargetBattleData data = new TargetBattleData(hitTarget.getMaxHp(), hitTarget.getCurrentHp(), burnDamage, hitTarget.isOnField());
+                        deadUnits.put(hitTarget.getId(), data);
                     }
                     addLog("魂力飞弹",
                             guardian.getId(),
@@ -12636,11 +13273,11 @@ public class BattleManager {
                             guardian.getCurrentHp(),
                             0,
                             guardian.isOnField(),
-                            fieldB.getId(),
-                            fieldB.getMaxHp(),
-                            fieldB.getCurrentHp(),
+                            hitTarget.getId(),
+                            hitTarget.getMaxHp(),
+                            hitTarget.getCurrentHp(),
                             burnDamage,
-                            fieldB.isOnField(),
+                            hitTarget.isOnField(),
                             EffectType.MISSILE_DAMAGE,
                             DamageType.MISSILE,
                             "-" + burnDamage,logIndex);
@@ -12703,17 +13340,18 @@ public class BattleManager {
                         burnDamage = 0;
                     }
                     Integer logIndex=battleLogs.size();
-                    burnDamage=triggerOnAttackedSkills(fieldA,burnDamage,EffectType.MISSILE_DAMAGE);
+                    Guardian hitTarget = fieldA;
+                    burnDamage=triggerOnAttackedSkills(hitTarget,burnDamage,EffectType.MISSILE_DAMAGE);
 
                     // 4. 扣除伤害
-                    fieldA.setCurrentHp(fieldA.getCurrentHp() - burnDamage);
+                    hitTarget.setCurrentHp(hitTarget.getCurrentHp() - burnDamage);
                     Map<String, TargetBattleData> deadUnits = new HashMap<>();
 
-                    if (fieldA.getCurrentHp() <= 0) {
-                        fieldA.setDead(true);
-                        fieldA.setOnField(false);
-                        TargetBattleData data = new TargetBattleData(fieldA.getMaxHp(), fieldA.getCurrentHp(), burnDamage, fieldA.isOnField());
-                        deadUnits.put(fieldA.getId(), data);
+                    if (hitTarget.getCurrentHp() <= 0) {
+                        hitTarget.setDead(true);
+                        hitTarget.setOnField(false);
+                        TargetBattleData data = new TargetBattleData(hitTarget.getMaxHp(), hitTarget.getCurrentHp(), burnDamage, hitTarget.isOnField());
+                        deadUnits.put(hitTarget.getId(), data);
                     }
                     addLog("魂力飞弹",
                             guardian.getId(),
@@ -12721,11 +13359,11 @@ public class BattleManager {
                             guardian.getCurrentHp(),
                             0,
                             guardian.isOnField(),
-                            fieldA.getId(),
-                            fieldA.getMaxHp(),
-                            fieldA.getCurrentHp(),
+                            hitTarget.getId(),
+                            hitTarget.getMaxHp(),
+                            hitTarget.getCurrentHp(),
                             burnDamage,
-                            fieldA.isOnField(),
+                            hitTarget.isOnField(),
                             EffectType.MISSILE_DAMAGE,
                             DamageType.MISSILE,
                             "-" + burnDamage,logIndex);
