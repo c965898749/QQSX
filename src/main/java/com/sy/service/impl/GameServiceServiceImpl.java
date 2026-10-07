@@ -6992,7 +6992,17 @@ public class GameServiceServiceImpl implements GameServiceService {
                 baseResp.setErrorMsg("物品数量不足");
                 return baseResp;
             }
-            // 扣减物品数量
+            // 5. 先处理物品使用逻辑：不支持的物品会在扣减前抛出 IllegalArgumentException，
+            //    此处拦截并以 BaseResp 正常返回原因（此时尚未扣减，无需回滚），前端即可读取 errorMsg 提示
+            try {
+                handleBagItemUse(itemId, user, userId);
+            } catch (IllegalArgumentException e) {
+                baseResp.setSuccess(0);
+                baseResp.setErrorMsg("该物品暂时无法使用");
+                return baseResp;
+            }
+
+            // 6. 校验通过后再扣减物品数量
             if (playerBag.getItemCount().subtract(BigDecimal.ONE).compareTo(BigDecimal.ZERO) > 0) {
                 playerBag.setItemCount(playerBag.getItemCount().subtract(BigDecimal.ONE));
             } else {
@@ -7000,10 +7010,7 @@ public class GameServiceServiceImpl implements GameServiceService {
             }
             gamePlayerBagMapper.updateById(playerBag);
 
-            // 5. 处理物品使用逻辑（复用之前的封装方法）
-            handleBagItemUse(itemId, user, userId);
-
-            // 6. 更新用户信息并返回结果
+            // 7. 更新用户信息并返回结果
             userMapper.updateuser(user);
             User user1 = userMapper.selectUserByUserId(Integer.parseInt(userId));
             UserInfo userInfo = new UserInfo();
