@@ -20,6 +20,8 @@ public class GameItemShop {
 
     private String type;
 
+    private String icon;
+
     private Integer id;
 
     private Integer isBuy;

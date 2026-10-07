@@ -3719,6 +3719,25 @@ public class GameServiceServiceImpl implements GameServiceService {
         return baseResp;
     }
 
+    /**
+     * 为商店物品从 game_item_base 缓存补充 icon 字段，供前端渲染非英雄类物品（如 type=6 材料/矿石）。
+     * 在 selectAll 之后、pickRandomItems 之前调用，后续 BeanUtils.copyProperties 会自动携带 icon 进入 picked 列表及缓存 JSON。
+     */
+    private void attachShopItemIcon(List<GameItemShop> items) {
+        if (items == null) {
+            return;
+        }
+        for (GameItemShop item : items) {
+            if (item == null || item.getItemId() == null) {
+                continue;
+            }
+            GameItemBase base = GameConfigCache.getItemBase(item.getItemId());
+            if (base != null) {
+                item.setIcon(base.getIcon());
+            }
+        }
+    }
+
     @Override
     @Transactional
     @NoRepeatSubmit(limitSeconds = 1)
@@ -3764,6 +3783,8 @@ public class GameServiceServiceImpl implements GameServiceService {
                 map.put("shopUpdate", date.getTime());
             }
             List<GameItemShop> gameItemShopList = gameItemShopMapper.selectAll();
+            // 从 game_item_base 补充 icon，使非英雄类（含 type=6）物品也能被前端渲染
+            attachShopItemIcon(gameItemShopList);
             DynamicItemPicker picker = new DynamicItemPicker();
             for (GameItemShop gameItemShop : gameItemShopList) {
                 picker.addItem(gameItemShop);
@@ -3797,6 +3818,8 @@ public class GameServiceServiceImpl implements GameServiceService {
                 map.put("picked", JsonUtils.fromJsonToObjList(gameTimeRecord.get(0).getPicked()));
             } else {
                 List<GameItemShop> gameItemShopList = gameItemShopMapper.selectAll();
+                // 从 game_item_base 补充 icon，使非英雄类（含 type=6）物品也能被前端渲染
+                attachShopItemIcon(gameItemShopList);
                 DynamicItemPicker picker = new DynamicItemPicker();
                 for (GameItemShop gameItemShop : gameItemShopList) {
                     picker.addItem(gameItemShop);
@@ -3933,6 +3956,8 @@ public class GameServiceServiceImpl implements GameServiceService {
 //        user.setShopUpdate(date);
 //        map.put("shopUpdate", date);
         List<GameItemShop> gameItemShopList = gameItemShopMapper.selectAll();
+        // 从 game_item_base 补充 icon，使非英雄类（含 type=6）物品也能被前端渲染
+        attachShopItemIcon(gameItemShopList);
         DynamicItemPicker picker = new DynamicItemPicker();
         for (GameItemShop gameItemShop : gameItemShopList) {
             picker.addItem(gameItemShop);
@@ -4178,27 +4203,31 @@ public class GameServiceServiceImpl implements GameServiceService {
                 }
                 user.setDiamond(diamond);
             }
-            Characters characters1 = charactersMapper.listById(userId, gameItemShop.getItemId() + "");
-            if (characters1 != null) {
-                characters1.setStackCount(characters1.getStackCount() + 1);
-                charactersMapper.updateByPrimaryKey(characters1);
+            if ("6".equals(gameItemShop.getType())) {
+                // 材料类商品（type=6，如矿石等）：购买后累加到背包 game_player_bag，而非作为英雄卡牌
+                addBagItem(userId, gameItemShop.getItemId(), 1);
             } else {
-                // 从缓存获取卡牌配置
-                // 从缓存获取卡牌配置
-                Card card1 = GameConfigCache.getCard(gameItemShop.getItemId() + "");
-                if (card1 == null) {
-                    baseResp.setErrorMsg("服务器异常联想管理员");
-                    baseResp.setSuccess(0);
-                    return baseResp;
+                Characters characters1 = charactersMapper.listById(userId, gameItemShop.getItemId() + "");
+                if (characters1 != null) {
+                    characters1.setStackCount(characters1.getStackCount() + 1);
+                    charactersMapper.updateByPrimaryKey(characters1);
+                } else {
+                    // 从缓存获取卡牌配置
+                    Card card1 = GameConfigCache.getCard(gameItemShop.getItemId() + "");
+                    if (card1 == null) {
+                        baseResp.setErrorMsg("服务器异常联想管理员");
+                        baseResp.setSuccess(0);
+                        return baseResp;
+                    }
+                    Characters characters = new Characters();
+                    characters.setStackCount(0);
+                    characters.setId(gameItemShop.getItemId() + "");
+                    characters.setLv(1);
+                    characters.setUserId(Integer.parseInt(userId));
+                    characters.setStar(new BigDecimal(1));
+                    characters.setMaxLv(CardMaxLevelUtils.getMaxLevel(card1.getName(), card1.getStar().doubleValue()));
+                    charactersMapper.insert(characters);
                 }
-                Characters characters = new Characters();
-                characters.setStackCount(0);
-                characters.setId(gameItemShop.getItemId() + "");
-                characters.setLv(1);
-                characters.setUserId(Integer.parseInt(userId));
-                characters.setStar(new BigDecimal(1));
-                characters.setMaxLv(CardMaxLevelUtils.getMaxLevel(card1.getName(), card1.getStar().doubleValue()));
-                charactersMapper.insert(characters);
             }
             gameItemShop.setIsBuy(1);
             //先删再新增
