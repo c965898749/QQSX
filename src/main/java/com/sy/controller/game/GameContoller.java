@@ -1133,6 +1133,23 @@ public class GameContoller {
             return baseResp;
         }
     }
+
+    /**
+     * 功勋商城商品列表（game_item_base 中 item_id >= 1105000，价格按品质折算）
+     */
+    @PostMapping("getGongxunStore")
+    @CrossOrigin
+    public BaseResp getGongxunStore(@RequestBody TokenDto token, HttpServletRequest request) {
+        BaseResp baseResp = new BaseResp();
+        try {
+            baseResp = gameServiceService.getGongxunStore(token, request);
+            return baseResp;
+        } catch (Exception e) {
+            e.printStackTrace();
+            baseResp.setSuccess(0);
+            return baseResp;
+        }
+    }
     /**
      * 购买
      * @param token

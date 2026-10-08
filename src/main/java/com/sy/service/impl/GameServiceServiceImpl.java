@@ -3738,6 +3738,89 @@ public class GameServiceServiceImpl implements GameServiceService {
         }
     }
 
+    // 限时商城折扣档位：5折、8折各 1~4 件，3折尽量少（0~3 件），剩下槽位原价
+    private static final int SHOP_DISCOUNT_NONE = 0;
+    private static final int[] SHOP_DISCOUNT_RATES = {5, 8, 3};
+    private static final int[] SHOP_DISCOUNT_MIN_COUNT = {1, 1, 0};
+    private static final int[] SHOP_DISCOUNT_MAX_COUNT = {4, 4, 3};
+
+    /**
+     * 生成本期限时商城列表：复制商品并按槽位编号（id 从 0 开始，购买时靠它定位），再统一分配折扣。
+     * getStore 与 chongzhi 共用，保证写入 game_time_record 的价格与折扣一致。
+     */
+    private List<GameItemShop> buildShopPickedList(List<GameItemShop> picked) {
+        List<GameItemShop> picked2 = new ArrayList<>();
+        Integer id = 0;
+        for (GameItemShop shop : picked) {
+            GameItemShop itemShop = new GameItemShop();
+            BeanUtils.copyProperties(shop, itemShop);
+            itemShop.setId(id);
+            itemShop.setIsBuy(0);
+            picked2.add(itemShop);
+            id++;
+        }
+        attachShopDiscount(picked2);
+        return picked2;
+    }
+
+    /**
+     * 按槽位随机折扣：先打乱槽位，再依次放入 5折、8折、3折 的件数（3折排在最后，所以“尽量少”），
+     * 未被占用的槽位为原价；最后统一折算出每个槽位的应付价 payPrice。
+     */
+    private void attachShopDiscount(List<GameItemShop> items) {
+        if (Xtool.isNull(items) || items.isEmpty()) {
+            return;
+        }
+        Random random = new Random();
+        List<Integer> slots = new ArrayList<>();
+        for (int i = 0; i < items.size(); i++) {
+            slots.add(i);
+        }
+        Collections.shuffle(slots, random);
+        int cursor = 0;
+        for (int t = 0; t < SHOP_DISCOUNT_RATES.length; t++) {
+            // 商品数不足时按剩余槽位量级限件数，保证 5折/8折 优先拿到名额
+            int max = Math.min(SHOP_DISCOUNT_MAX_COUNT[t], slots.size() - cursor);
+            int min = Math.min(SHOP_DISCOUNT_MIN_COUNT[t], max);
+            int count = min + (max > min ? random.nextInt(max - min + 1) : 0);
+            for (int i = 0; i < count; i++) {
+                items.get(slots.get(cursor++)).setDiscount(SHOP_DISCOUNT_RATES[t]);
+            }
+        }
+        for (int i = cursor; i < slots.size(); i++) {
+            items.get(slots.get(i)).setDiscount(SHOP_DISCOUNT_NONE);
+        }
+        for (GameItemShop item : items) {
+            int discount = item.getDiscount() == null ? SHOP_DISCOUNT_NONE : item.getDiscount();
+            item.setPayPrice(calcShopDiscountPrice(getShopOriginPrice(item), discount));
+        }
+    }
+
+    // 原价：银两价非 0 时按银两结算，否则按灵石
+    private int getShopOriginPrice(GameItemShop item) {
+        if (Xtool.isNotNull(item.getGoldEdgePrice()) && item.getGoldEdgePrice() != 0) {
+            return item.getGoldEdgePrice();
+        }
+        return Xtool.isNotNull(item.getGemPrice()) ? item.getGemPrice() : 0;
+    }
+
+    // 折后价：原价 * 折扣 / 10，向上取整避免低价商品被折成 0
+    private int calcShopDiscountPrice(int originPrice, int discount) {
+        if (originPrice <= 0 || discount <= 0 || discount >= 10) {
+            return originPrice;
+        }
+        return (int) Math.ceil(originPrice * discount / 10.0);
+    }
+
+    // 结算价：优先用生成时写入的 payPrice；历史记录里没有该字段时按 discount 现算，都没有则原价
+    private int resolveShopPayPrice(GameItemShop item) {
+        if (Xtool.isNotNull(item.getPayPrice())) {
+            return item.getPayPrice();
+        }
+        int discount = item.getDiscount() == null ? SHOP_DISCOUNT_NONE : item.getDiscount();
+        return calcShopDiscountPrice(getShopOriginPrice(item), discount);
+    }
+
     @Override
     @Transactional
     @NoRepeatSubmit(limitSeconds = 1)
@@ -3789,18 +3872,9 @@ public class GameServiceServiceImpl implements GameServiceService {
             for (GameItemShop gameItemShop : gameItemShopList) {
                 picker.addItem(gameItemShop);
             }
-            // 尝试获取16个物品（种类不足，会重复获取）
+            // 尝试获取16个物品（种类不足，会重复获取），并随机分配折扣
             List<GameItemShop> picked = picker.pickRandomItems(16);
-            List<GameItemShop> picked2 = new ArrayList<>();
-            Integer id = 0;
-            for (GameItemShop shop : picked) {
-                GameItemShop itemShop = new GameItemShop();
-                BeanUtils.copyProperties(shop, itemShop);
-                itemShop.setId(id);
-                itemShop.setIsBuy(0);
-                picked2.add(itemShop);
-                id++;
-            }
+            List<GameItemShop> picked2 = buildShopPickedList(picked);
             userMapper.updateuser(user);
             map.put("picked", picked2);
             String json = JsonUtils.toJson(picked2);
@@ -3824,18 +3898,9 @@ public class GameServiceServiceImpl implements GameServiceService {
                 for (GameItemShop gameItemShop : gameItemShopList) {
                     picker.addItem(gameItemShop);
                 }
-                // 尝试获取16个物品（种类不足，会重复获取）
+                // 尝试获取16个物品（种类不足，会重复获取），并随机分配折扣
                 List<GameItemShop> picked = picker.pickRandomItems(16);
-                List<GameItemShop> picked2 = new ArrayList<>();
-                Integer id = 0;
-                for (GameItemShop shop : picked) {
-                    GameItemShop itemShop = new GameItemShop();
-                    BeanUtils.copyProperties(shop, itemShop);
-                    itemShop.setId(id);
-                    itemShop.setIsBuy(0);
-                    picked2.add(itemShop);
-                    id++;
-                }
+                List<GameItemShop> picked2 = buildShopPickedList(picked);
                 map.put("picked", picked2);
                 String json = JsonUtils.toJson(picked2);
                 //先删再新增
@@ -3962,18 +4027,9 @@ public class GameServiceServiceImpl implements GameServiceService {
         for (GameItemShop gameItemShop : gameItemShopList) {
             picker.addItem(gameItemShop);
         }
-        // 尝试获取16个物品（种类不足，会重复获取）
+        // 尝试获取16个物品（种类不足，会重复获取），并随机分配折扣
         List<GameItemShop> picked = picker.pickRandomItems(16);
-        List<GameItemShop> picked2 = new ArrayList<>();
-        Integer id = 0;
-        for (GameItemShop shop : picked) {
-            GameItemShop itemShop = new GameItemShop();
-            BeanUtils.copyProperties(shop, itemShop);
-            itemShop.setId(id);
-            itemShop.setIsBuy(0);
-            picked2.add(itemShop);
-            id++;
-        }
+        List<GameItemShop> picked2 = buildShopPickedList(picked);
         userMapper.updateuser(user);
         baseResp.setSuccess(1);
         UserInfo info = new UserInfo();
@@ -4116,6 +4172,34 @@ public class GameServiceServiceImpl implements GameServiceService {
         return baseResp;
     }
 
+    // 功勋商城商品在 game_item_base 中的起始 item_id，该 id 及其之后的商品都归属功勋商城
+    private static final int GONGXUN_START_ITEM_ID = 1105000;
+
+    /**
+     * 功勋商城：从 game_item_base 缓存取 item_id >= 1105000 的商品，按 itemId 升序返回。
+     * 价格按品质折算（quality*100，即 1~5 品质对应 100~500），写入瞬态字段 price 供前端展示。
+     * 缓存里存的是共享实例，这里逐个拷贝后再回填 price，避免污染缓存。
+     */
+    @Override
+    public BaseResp getGongxunStore(TokenDto token, HttpServletRequest request) throws Exception {
+        BaseResp baseResp = new BaseResp();
+        baseResp.setSuccess(1);
+        List<GameItemBase> gongxunList = GameConfigCache.getAllItemBases().stream()
+                .filter(x -> x != null && x.getItemId() != null && x.getItemId() >= GONGXUN_START_ITEM_ID)
+                .sorted(Comparator.comparing(GameItemBase::getItemId))
+                .map(base -> {
+                    GameItemBase copy = new GameItemBase();
+                    BeanUtils.copyProperties(base, copy);
+                    int quality = base.getQuality() == null ? 0 : base.getQuality().intValue();
+                    copy.setPrice(quality * 100);
+                    return copy;
+                })
+                .collect(Collectors.toList());
+        baseResp.setData(gongxunList);
+        baseResp.setErrorMsg("成功");
+        return baseResp;
+    }
+
     @Override
     @Transactional
 //    @NoRepeatSubmit(limitSeconds = 1)
@@ -4186,8 +4270,10 @@ public class GameServiceServiceImpl implements GameServiceService {
                 baseResp.setErrorMsg("商品不存在或已下架");
                 return baseResp;
             }
+            // 打折商品按生成时写入记录的折后价 payPrice 结算（前端只传槽位 id，价钱以服务端为准）
+            int payPrice = resolveShopPayPrice(gameItemShop);
             if (gameItemShop.getGoldEdgePrice() != 0) {
-                BigDecimal gold = user.getGold().subtract(new BigDecimal(gameItemShop.getGoldEdgePrice()));
+                BigDecimal gold = user.getGold().subtract(new BigDecimal(payPrice));
                 if (gold.compareTo(BigDecimal.ZERO) < 0) {
                     baseResp.setSuccess(0);
                     baseResp.setErrorMsg("银两不足");
@@ -4195,7 +4281,7 @@ public class GameServiceServiceImpl implements GameServiceService {
                 }
                 user.setGold(gold);
             } else {
-                BigDecimal diamond = user.getDiamond().subtract(new BigDecimal(gameItemShop.getGemPrice()));
+                BigDecimal diamond = user.getDiamond().subtract(new BigDecimal(payPrice));
                 if (diamond.compareTo(BigDecimal.ZERO) < 0) {
                     baseResp.setSuccess(0);
                     baseResp.setErrorMsg("灵石不足");
@@ -7369,7 +7455,7 @@ public class GameServiceServiceImpl implements GameServiceService {
             case 98: // 虞姬魂魄1~10枚、玄铁矿 999~1999枚、青铜矿 599~999枚、紫金矿 199~599枚
                 Random random4 = new Random();
                 // 虞姬魂魄（id 1105）：1~10枚，进背包
-                addBagItem(userId, 1107, random4.nextInt(10) + 1);
+                addBagItem(userId, 1109, random4.nextInt(10) + 1);
                 // 玄铁矿 id:14，范围 999 ~ 1999  差值：1999 - 999 = 1000
                 addBagItem(userId, 13, random4.nextInt(1001) + 999);
                 // 青铜矿 id:13，范围 599 ~ 999    差值：999 - 599 = 400

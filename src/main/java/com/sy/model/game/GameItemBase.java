@@ -43,5 +43,7 @@ public class GameItemBase {
     @TableField("update_time")
     private Date updateTime;
 
-
+    // 功勋商城折算价：非数据库字段，仅在下发商品列表时按 quality*100 计算并回填，供前端展示
+    @TableField(exist = false)
+    private Integer price;
 }
