@@ -746,6 +746,10 @@ public class BattleManager {
     }
     //吃伤时技能
     private Integer triggerOnAttackedSkills(Guardian defender, Integer burnDamage,EffectType effectType){
+        return triggerOnAttackedSkills(defender, burnDamage, effectType, true);
+    }
+    //吃伤时技能；allowTransfer=false 时禁止再触发“伤害转移”类技能（如哮天犬），防止转移链自递归导致 StackOverflowError
+    private Integer triggerOnAttackedSkills(Guardian defender, Integer burnDamage,EffectType effectType, boolean allowTransfer){
             int[] skillLevel = CardSkillLevelUtil.calculateSkillLevels(defender.getLevel(), defender.getStar().doubleValue());
             //触发场下技能（玄武守卫，不受场上单位沉默影响，仅受玄武自身沉默影响）
         List<Guardian> xuXuanWu = defender.getCamp() == Camp.A ?
@@ -810,7 +814,8 @@ public class BattleManager {
                     List<Guardian> defenders = defender.getCamp() == Camp.A ?
                             campA.stream().filter(g -> !g.isDead()&&g.getRace()==Race.ORC).collect(Collectors.toList()) :
                             campB.stream().filter(g -> !g.isDead()&&g.getRace()==Race.ORC).collect(Collectors.toList());
-                    if (ProbabilityBooleanUtils.randomByProbability(1.0 * defenders.size())) {
+                    // 月之暗面仅在场上触发，场下不触发
+                    if (allowTransfer && defender.isOnField() && ProbabilityBooleanUtils.randomByProbability(1.0 * defenders.size())) {
                         List<Guardian> shous=defenders.stream().filter(x->!x.isOnField()).collect(Collectors.toList());
                         if (Xtool.isNotNull(shous)&&skillLevel[1] > 0){
                             int oldBurnDamage=burnDamage;
@@ -835,8 +840,8 @@ public class BattleManager {
                                     effectType.MAX_HP_DOWN,
                                     DamageType.TRUE,
                                     "-" + transferDamage);
-                            // 转移伤害经过目标的减伤技能（如返璞归真）
-                            transferDamage = triggerOnAttackedSkills(g, transferDamage, EffectType.DAMAGE);
+                            // 转移伤害经过目标的减伤技能（如返璞归真）；allowTransfer=false 阻断接收端再次触发哮天犬转移，避免无限递归
+                            transferDamage = triggerOnAttackedSkills(g, transferDamage, EffectType.DAMAGE, false);
                             // 扣除减伤后的伤害
                             g.setCurrentHp(g.getCurrentHp() - transferDamage);
                             Map<String, TargetBattleData> deadUnits = new HashMap<>();
