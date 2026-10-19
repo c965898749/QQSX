@@ -1150,6 +1150,24 @@ public class GameContoller {
             return baseResp;
         }
     }
+
+    /**
+     * 功勋商城兑换（token.id 传商品 itemId，消耗 user.gongxun，物品进背包，返回含剩余功勋的用户信息）
+     */
+    @PostMapping("buyGongxunStore")
+    @CrossOrigin
+    public BaseResp buyGongxunStore(@RequestBody TokenDto token, HttpServletRequest request) {
+        BaseResp baseResp = new BaseResp();
+        try {
+            baseResp = gameServiceService.buyGongxunStore(token, request);
+            return baseResp;
+        } catch (Exception e) {
+            e.printStackTrace();
+            baseResp.setSuccess(0);
+            baseResp.setErrorMsg("兑换失败");
+            return baseResp;
+        }
+    }
     /**
      * 购买
      * @param token

@@ -201,6 +201,11 @@ public interface UserMapper {
     int updatebaoCount();
 
     /**
+     * 每日定时：清空所有用户的热点 redian（置为 null）
+     */
+    int resetAllRedian();
+
+    /**
      * 批量更新排名：将指定区间内的所有玩家排名+1
      * @param minRank 最小排名（包含）
      * @param maxRank 最大排名（不包含）

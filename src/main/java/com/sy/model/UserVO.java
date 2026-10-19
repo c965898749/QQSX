@@ -68,7 +68,7 @@ public class UserVO {
     private Integer status;
 
 
-
-
+    private Integer gongxun;
+    private Integer redian;
 
 }

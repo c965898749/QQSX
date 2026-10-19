@@ -208,6 +208,14 @@ public class SampleXxlJob {
         
         return allGreaterOrEqual && atLeastOneGreater;
     }
+    /**
+     * 每日 0 点：清空所有用户的热点 redian（置为 null）
+     */
+    @Scheduled(cron = "0 0 0 * * ?")
+    public void resetRedianDaily() {
+        userMapper.resetAllRedian();
+    }
+
     @Scheduled(cron = "0 0 0/4 * * ?")
     public void deleteAll(){
         gameServiceService.deleteAll();

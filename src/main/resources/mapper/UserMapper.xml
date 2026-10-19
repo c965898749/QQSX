@@ -223,6 +223,12 @@
             <if test="soul!=null ">
                 soul = #{soul},
             </if>
+            <if test="gongxun!=null ">
+                gongxun = #{gongxun},
+            </if>
+            <if test="redian!=null ">
+                redian = #{redian},
+            </if>
             <if test="winCount!=null ">
                 win_count = #{winCount},
             </if>
@@ -678,6 +684,10 @@
 
     <update id="updateBronze1" parameterType="com.sy.model.User">
 		update user set bronze1 = '1' where bronze1>100
+	</update>
+    <!--每日定时清空所有用户热点-->
+    <update id="resetAllRedian">
+		update user set redian = null
 	</update>
     <update id="updateBronze2" parameterType="com.sy.model.User">
 		update user set silvertower = '1' where silvertower>100

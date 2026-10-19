@@ -160,7 +160,7 @@ public class BattleManager {
     // 获取下一个可上场的护法
     private Guardian getNextGuardian(List<Guardian> camp) {
         return camp.stream()
-                .filter(g -> !g.isDead() && !g.isOnField())
+                .filter(g -> !g.isDead() && !g.isOnField() && !g.isPhoenixEgg())
                 .sorted(Comparator.comparing(Guardian::getPosition))
                 .findFirst()
                 .orElse(null);
@@ -510,10 +510,10 @@ public class BattleManager {
         }
         if (1==1){
             Guardian guardian=campA.stream().filter(g->g.getName().equals("玄武")&&!g.isDead()).findFirst().orElse(null);
-            // 托塔天王仙塔庇护
+            // 守卫回合结束恢复：仅当本回合守卫确实替队友承受过伤害才恢复 40% 生命上限，随后清零标记
             if (guardian != null) {
                 int[] skillLevel = CardSkillLevelUtil.calculateSkillLevels(guardian.getLevel(), guardian.getStar().doubleValue());
-                if (skillLevel[1] > 0) {
+                if (skillLevel[1] > 0 && guardian.isGuardTriggeredThisRound()) {
                     int heal = (int)(guardian.getMaxHp()*0.4);
                     guardian.setCurrentHp(guardian.getCurrentHp() + heal);
                     addLog("愈合",
@@ -527,16 +527,16 @@ public class BattleManager {
                             DamageType.MAGIC,
                             "+" + heal);
                 }
-
+                guardian.setGuardTriggeredThisRound(false);
             }
         }
 
         if (1==1){
             Guardian guardian=campB.stream().filter(g->g.getName().equals("玄武")&&!g.isDead()).findFirst().orElse(null);
-            // 托塔天王仙塔庇护
+            // 守卫回合结束恢复：仅当本回合守卫确实替队友承受过伤害才恢复 40% 生命上限，随后清零标记
             if (guardian != null) {
                 int[] skillLevel = CardSkillLevelUtil.calculateSkillLevels(guardian.getLevel(), guardian.getStar().doubleValue());
-                if (skillLevel[1] > 0) {
+                if (skillLevel[1] > 0 && guardian.isGuardTriggeredThisRound()) {
                     int heal = (int)(guardian.getMaxHp()*0.4);
                     guardian.setCurrentHp(guardian.getCurrentHp() + heal);
                     addLog("愈合",
@@ -550,7 +550,7 @@ public class BattleManager {
                             DamageType.MAGIC,
                             "+" + heal);
                 }
-
+                guardian.setGuardTriggeredThisRound(false);
             }
         }
         // 后羿场下：落日余晖（1技能）每回合暴击+1%×1技能等级；乾坤破（2技能）回合结束时位于场下蓄力+1
@@ -626,7 +626,8 @@ public class BattleManager {
 
     // 处理攻击流程
     private void processAttack(Guardian attacker, Guardian defender) {
-        if (attacker.isStunned()) {
+        // 凤凰卵（归元）为纯肉盾，不能发动攻击
+        if (attacker.isStunned() || attacker.isPhoenixEgg()) {
             return;
         }
 
@@ -760,7 +761,14 @@ public class BattleManager {
                 if (!guardian.isSilence()) {
                 int[] skillLevelC = CardSkillLevelUtil.calculateSkillLevels(guardian.getLevel(), guardian.getStar().doubleValue());
                 if (skillLevelC[1]>0){
+                    // 守卫触发条件：队友生命百分比不足 min(70, 10×守卫技能等级)% ，且其生命百分比低于玄武自身，两个条件都满足才代承受伤害
+                    int guardThreshold = Math.min(70, 10 * skillLevelC[1]);
+                    boolean teammateLowHp = (long) defender.getCurrentHp() * 100 < (long) defender.getMaxHp() * guardThreshold;
+                    boolean teammateWeakerThanGuardian = (long) defender.getCurrentHp() * guardian.getMaxHp() < (long) guardian.getCurrentHp() * defender.getMaxHp();
+                    if (teammateLowHp && teammateWeakerThanGuardian) {
                     guardian.setCurrentHp(guardian.getCurrentHp() - burnDamage);
+                    // 标记本回合守卫已触发，回合结束才恢复 40% 生命上限
+                    guardian.setGuardTriggeredThisRound(true);
                     addLog("守卫",
                             guardian.getId(),
                             guardian.getMaxHp(),
@@ -802,6 +810,7 @@ public class BattleManager {
                         triggerOnAttackedSkills(guardian, defender);
                     }
                     burnDamage=0;
+                    }
                 }
                 }
             }
@@ -978,7 +987,7 @@ public class BattleManager {
                             if (ProbabilityBooleanUtils.randomByProbability(prob)) {
                                 // 遁让只与后场未阵亡的仙族护法换位
                                 List<Guardian> offFieldAllies = (defender.getCamp() == Camp.A ? campA : campB).stream()
-                                        .filter(g -> !g.isDead() && !g.isOnField() && g.getRace() == Race.IMMORTAL).collect(Collectors.toList());
+                                        .filter(g -> !g.isDead() && !g.isOnField() && !g.isPhoenixEgg() && g.getRace() == Race.IMMORTAL).collect(Collectors.toList());
                                 if (!offFieldAllies.isEmpty()) {
                                     Guardian swapTarget = offFieldAllies.get(random.nextInt(offFieldAllies.size()));
                                     // 互换 onField + position
@@ -3479,7 +3488,7 @@ public class BattleManager {
         // 查找互换目标：从所有存活队友中随机选择（排除自己）
         final String jianLouId = jianLou.getId();
         List<Guardian> teammates = camp.stream()
-                .filter(g -> !g.isDead() && !g.getId().equals(jianLouId))
+                .filter(g -> !g.isDead() && !g.isPhoenixEgg() && !g.getId().equals(jianLouId))
                 .collect(Collectors.toList());
         if (teammates.isEmpty()) return;
         Guardian swapTarget = teammates.get(random.nextInt(teammates.size()));
@@ -6929,6 +6938,60 @@ public class BattleManager {
 
     // 触发死亡相关技能
     private void triggerOnDeathSkills(Guardian v) {
+        // 朱雀·归元（2技能）：死亡时化身为凤凰卵（固魂/沉默无法触发、且归元未被耗尽），以本体满血(100%)存活且可被攻击，
+        // 持续 10-技能等级 回合（最少2）后破壳复活（按卵当前剩余血量，不回满）；卵被打碎则彻底阵亡、不再复活。
+        if (v.getName().equals("朱雀")) {
+            int[] skillLevel = CardSkillLevelUtil.calculateSkillLevels(v.getLevel(), v.getStar().doubleValue());
+            if (skillLevel[1] > 0) {
+                if (v.isGuiYuanEggBroken()) {
+                    // 归元已耗尽：保持彻底阵亡
+                    v.setGuiYuanRounds(0);
+                } else if (v.getGuiYuanRounds() > 0) {
+                    // 处于卵态时被击杀：凤凰卵被打碎，彻底阵亡、不再复活
+                    v.setGuiYuanRounds(0);
+                    v.setGuiYuanEggBroken(true);
+                } else if (!v.isFixedSoul() && !v.isSilence()) {
+                    // 正常阵亡化身为凤凰卵：转为存活态，血量=本体生命上限100%（卵可被攻击，破壳时按剩余血量复活）
+                    int eggRounds = Math.max(2, 10 - skillLevel[1]);
+                    v.setGuiYuanRounds(eggRounds);
+                    v.setDead(false);
+                    // 归元·卵留场：朱雀死亡时若为场上单位，凤凰卵原地留在场上继续当肉盾（否则留在场下）
+                    boolean eggWasOnField = (v.getCamp() == Camp.A) ? (fieldA == v || fieldA == null) : (fieldB == v || fieldB == null);
+                    v.setOnField(eggWasOnField);
+                    if (eggWasOnField) {
+                        if (v.getCamp() == Camp.A) fieldA = v; else fieldB = v;
+                    }
+                    v.setCurrentHp(v.getMaxHp());
+                    // 变蛋：移除一切负面效果（卵为纯净肉盾，中毒/眩晕/沉默/降疗/各类降攻降抗等及其持续伤害均不再影响）
+                    for (EffectType neg : new EffectType[]{
+                            EffectType.POISON, EffectType.STUN, EffectType.SILENCE,
+                            EffectType.HEAL_DOWN, EffectType.HEAL_DOWNT_PRET,
+                            EffectType.ATTACK_DOWN, EffectType.ATTACK_DOWN_PRET,
+                            EffectType.ATTACK_RESIST_DOWN, EffectType.ATTACK_RESIST_DOWN_PRET,
+                            EffectType.FIRE_DOWN, EffectType.FIRE_DOWN_PRET,
+                            EffectType.FIRE_RESIST_DOWN, EffectType.FIRE_RESIST_DOWN_PRET,
+                            EffectType.POISON_DOWN, EffectType.POISON_DOWN_PRET,
+                            EffectType.POISON_RESIST_DOWN, EffectType.POISON_RESIST_DOWN_PRET,
+                            EffectType.MISSILE_DOWN, EffectType.MISSILE_DOWN_PRET,
+                            EffectType.MISSILE_RESIST_DOWN, EffectType.MISSILE_RESIST_DOWN_PRET,
+                            EffectType.MAX_HP_DOWN_PRET, EffectType.SPEED_DOWN, EffectType.SPEED_DOWN_PRET
+                    }) {
+                        v.remove(neg);
+                    }
+                    addLog("归元",
+                            v.getId(),
+                            v.getMaxHp(), v.getCurrentHp(),
+                            0,
+                            v.isOnField(),
+                            v.getId(),
+                            v.getMaxHp(), v.getCurrentHp(),
+                            v.getCurrentHp(), v.isOnField(),
+                            EffectType.HEAL,
+                            DamageType.BUFF,
+                            "化身为凤凰卵");
+                }
+            }
+        }
         if (!v.isSilence() && v.getName().equals("燃灯道人")) {
             List<Guardian> offFieldEnemies = v.getCamp() == Camp.A ?
                     campB.stream().filter(g -> !g.isDead()).collect(Collectors.toList()) :
@@ -8113,8 +8176,8 @@ public class BattleManager {
         }
 
         // 嫦娥·月满重生（2技能）：我方有单位阵亡时，消耗自身生命上限一定比例血量复活该单位
-        // 复活单位恢复50%最大生命值；技能等级越高消耗血量越低，最低消耗40%；不能复活固魂单位
-        if (!v.isFixedSoul()) {
+        // 复活单位恢复50%最大生命值；技能等级越高消耗血量越低，最低消耗40%；不能复活固魂单位；不能复活处于凤凰卵（归元）的单位
+        if (!v.isFixedSoul() && !v.isPhoenixEgg()) {
             List<Guardian> changeCamp = v.getCamp() == Camp.A ? campA : campB;
             Guardian change = changeCamp.stream()
                     .filter(g -> g.getName().equals("嫦娥") && !g.isDead())
@@ -8191,8 +8254,120 @@ public class BattleManager {
         return aliveUnits.get(idx);
     }
     /**
+     * 朱雀·焚尽八荒（1技能）：回合开始时（不限场上/场下）消耗自身生命上限25%血量，
+     * 对敌方全体护法造成2倍消耗血量值的火焰伤害。
+     * 伤害经由 triggerOnAttackedSkills 处理，使目标的减伤/护盾/反击/逐让等受击技能正常生效。
+     * 若因消耗自身血量而阵亡，则触发 2 技能归元（凤凰卵）。
+     * 处于凤凰卵（归元）状态时视为纯粹肉盾（不能攻击/移动/释放技能），不再释放本技能。
+     */
+    private void triggerZhuQueFenJinBaHuang(List<Guardian> camp) {
+        Guardian zhuque = camp.stream()
+                .filter(g -> g.getName().equals("朱雀") && !g.isDead() && !g.isSilence() && !g.isPhoenixEgg())
+                .findFirst().orElse(null);
+        if (zhuque == null) return;
+        int[] skillLevel = CardSkillLevelUtil.calculateSkillLevels(zhuque.getLevel(), zhuque.getStar().doubleValue());
+        if (skillLevel[0] <= 0) return;
+        // 消耗自身生命上限25%血量
+        int hpBefore = zhuque.getCurrentHp();
+        int hpCost = (int) (zhuque.getMaxHp() * 0.25);
+        zhuque.setCurrentHp(zhuque.getCurrentHp() - hpCost);
+        // 基础火焰伤害 = 2倍消耗血量值（固定量，不叠加攻防）
+        int baseFireDamage = hpCost * 2;
+        List<Guardian> enemyCamp = camp == campA ? campB : campA;
+        // 快照目标引用，避免死亡连锁时集合并发修改（凤凰卵可被攻击，故仅排除已阵亡单位）
+        List<Guardian> aliveEnemies = enemyCamp.stream()
+                .filter(g -> !g.isDead())
+                .collect(Collectors.toList());
+        if (!aliveEnemies.isEmpty()) {
+            Integer logIndex = battleLogs.size();
+            Map<String, TargetBattleData> targetStatus = new HashMap<>();
+            Map<String, TargetBattleData> deadUnits = new HashMap<>();
+            List<Guardian> deadGuardians = new ArrayList<>();
+            for (Guardian g : aliveEnemies) {
+                int dmg = triggerOnAttackedSkills(g, baseFireDamage, EffectType.FIRE_DAMAGE);
+                if (dmg < 0) dmg = 0;
+                g.setCurrentHp(g.getCurrentHp() - dmg);
+                TargetBattleData data = new TargetBattleData(g.getMaxHp(), g.getCurrentHp(), dmg, g.isOnField());
+                targetStatus.put(g.getId(), data);
+                if (g.getCurrentHp() <= 0) {
+                    g.setDead(true);
+                    g.setOnField(false);
+                    data = new TargetBattleData(g.getMaxHp(), g.getCurrentHp(), dmg, g.isOnField());
+                    targetStatus.put(g.getId(), data);
+                    deadUnits.put(g.getId(), data);
+                    deadGuardians.add(g);
+                }
+            }
+            addMultiTargetLog("焚尽八荒",
+                    zhuque.getId(),
+                    hpBefore,
+                    zhuque.getCurrentHp(),
+                    zhuque.isOnField(),
+                    targetStatus,
+                    EffectType.FIRE_DAMAGE,
+                    DamageType.FIRE,
+                    "消耗自身生命对敌方全体造成火焰伤害", logIndex);
+            if (!deadUnits.isEmpty()) {
+                addMultiTargetLog("UNIT_DEATH",
+                        null, 0, 0, false,
+                        deadUnits, null, null,
+                        "死亡");
+                for (Guardian g : deadGuardians) {
+                    triggerOnDeathSkills(g);
+                }
+            }
+        }
+        // 若朱雀因消耗自身血量而阵亡，进入死亡流程（触发归元）
+        if (zhuque.getCurrentHp() <= 0) {
+            zhuque.setDead(true);
+            zhuque.setOnField(false);
+            if (fieldA == zhuque) fieldA = null;
+            if (fieldB == zhuque) fieldB = null;
+            addLog("UNIT_DEATH",
+                    zhuque.getId(),
+                    zhuque.getMaxHp(), 0,
+                    0,
+                    zhuque.isOnField(),
+                    zhuque.getId(),
+                    zhuque.getMaxHp(), 0,
+                    0, zhuque.isOnField(),
+                    null, null,
+                    zhuque.getName() + "阵亡");
+            triggerOnDeathSkills(zhuque);
+        }
+    }
+
+    /**
+     * 朱雀·归元（2技能）：凤凰卵倒计时处理。
+     * 卵为存活态（血量=本体100%满血）且不可上场；于回合开始时递减剩余回合，降至0且卵仍存活时破壳复活（血量按卵当前剩余血量，不回满）。
+     * 若卵在倒计时结束前被打碎（阵亡），则由 triggerOnDeathSkills 标记归元耗尽、不再复活。
+     */
+    private void processZhuQueGuiYuanEgg(List<Guardian> camp) {
+        for (Guardian zhuque : camp) {
+            if (!zhuque.getName().equals("朱雀")) continue;
+            if (!zhuque.isPhoenixEgg()) continue;
+            zhuque.setGuiYuanRounds(zhuque.getGuiYuanRounds() - 1);
+            if (zhuque.getGuiYuanRounds() <= 0) {
+                zhuque.setGuiYuanRounds(0);
+                // 卵存活至倒计时结束：破壳复活，恢复为普通存活态，血量沿用凤凰卵当前剩余血量（不再回满），下个回合可正常上场
+                addLog("归元",
+                        zhuque.getId(),
+                        zhuque.getMaxHp(), zhuque.getCurrentHp(),
+                        0,
+                        zhuque.isOnField(),
+                        zhuque.getId(),
+                        zhuque.getMaxHp(), zhuque.getCurrentHp(),
+                        zhuque.getCurrentHp(), zhuque.isOnField(),
+                        EffectType.HEAL,
+                        DamageType.BUFF,
+                        "凤凰涅槃·破壳重生");
+            }
+        }
+    }
+
+    /**
      * 地藏菩萨·不屈意志（1技能）：回合开始时有 min(70,10*技能等级)% 概率消耗自身生命上限25%血量，
-     * 复活一名阵亡的友方护法（不能复活固魂单位），复活单位恢复100%最大生命值
+     * 复活一名阵亡且非固魂、非凤凰卵的友方护法，复活单位恢复100%最大生命值
      */
     private void triggerDiZangBuQuYiZhi(List<Guardian> camp) {
         Guardian dizang = camp.stream()
@@ -8205,9 +8380,9 @@ public class BattleManager {
         double probability = Math.min(0.7, 0.1 * skillLevel[0]);
 //        double probability = Math.min(1, 0.1 * skillLevel[0]);
         if (!ProbabilityBooleanUtils.randomByProbability(probability)) return;
-        // 选择一名阵亡且非固魂的友方护法（按站位优先）
+        // 选择一名阵亡且非固魂、非凤凰卵（归元）的友方护法（按站位优先）
         Guardian dead = camp.stream()
-                .filter(g -> g.isDead() && !g.isFixedSoul())
+                .filter(g -> g.isDead() && !g.isFixedSoul() && !g.isPhoenixEgg())
                 .sorted(Comparator.comparing(Guardian::getPosition))
                 .findFirst().orElse(null);
         if (dead == null) return;
@@ -8392,6 +8567,12 @@ public class BattleManager {
     private void processRoundStartEffects() {
         // 场下中毒效果（批量处理）
         processPoisonEffects();
+        // 朱雀·归元（2技能）：先结算凤凰卵倒计时，倒计时结束的回合开始时满血复活
+        processZhuQueGuiYuanEgg(campA);
+        processZhuQueGuiYuanEgg(campB);
+        // 朱雀·焚尽八荒（1技能）：在场下回合开始时消耗自身25%生命上限，对敌方全体护法造成2倍消耗值的火焰伤害
+        triggerZhuQueFenJinBaHuang(campA);
+        triggerZhuQueFenJinBaHuang(campB);
         // 地藏菩萨·不屈意志（1技能）：回合开始概率消耗自身生命复活一名阵亡友方护法
         triggerDiZangBuQuYiZhi(campA);
         triggerDiZangBuQuYiZhi(campB);
@@ -13923,15 +14104,17 @@ public class BattleManager {
 
     // 判断战斗是否结束
     private boolean isBattleEnd() {
-        boolean campAHasAlive = campA.stream().anyMatch(g -> !g.isDead());
-        boolean campBHasAlive = campB.stream().anyMatch(g -> !g.isDead());
+        // 处于凤凰卵（归元）的朱雀尚未真正阵亡，将于倒计时结束后满血复活，不能据此判定该方全灭
+        boolean campAHasAlive = campA.stream().anyMatch(g -> !g.isDead() || g.isPhoenixEgg());
+        boolean campBHasAlive = campB.stream().anyMatch(g -> !g.isDead() || g.isPhoenixEgg());
         return !campAHasAlive || !campBHasAlive;
     }
 
     // 结束战斗判定胜负
     private void endBattle() {
-        int totalHpA = campA.stream().filter(g -> !g.isDead()).mapToInt(Guardian::getCurrentHp).sum();
-        int totalHpB = campB.stream().filter(g -> !g.isDead()).mapToInt(Guardian::getCurrentHp).sum();
+        // 凤凰卵（归元）单位为存活态，按当前剩余血量计入总血量（破壳后血量不变），避免误判该方落败
+        int totalHpA = campA.stream().mapToInt(g -> !g.isDead() ? g.getCurrentHp() : (g.isPhoenixEgg() ? g.getMaxHp() : 0)).sum();
+        int totalHpB = campB.stream().mapToInt(g -> !g.isDead() ? g.getCurrentHp() : (g.isPhoenixEgg() ? g.getMaxHp() : 0)).sum();
 
         String result;
         if (totalHpA > totalHpB) {

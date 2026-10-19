@@ -3080,6 +3080,20 @@ public class GameServiceServiceImpl implements GameServiceService {
         }
         User user = userMapper.selectUserByUserId(Integer.parseInt(userId));
         String giftCode = token.getStr();
+        // 开启活跃宝箱奖励功勋：按档位 lively_25/50/75/100 → 200/400/800/1200（其余档位不加）。
+        // 仅先累加到 user 内存，方法末尾已有的 userMapper.updateuser(user) 会落库（<set> 已含 gongxun），随后 copyProperties 带出 info.gongxun。
+        int boxGongxun = 0;
+        switch (giftCode) {
+            case "lively_25": boxGongxun = 200; break;
+            case "lively_50": boxGongxun = 400; break;
+            case "lively_75": boxGongxun = 800; break;
+            case "lively_100": boxGongxun = 1200; break;
+            default: boxGongxun = 0;
+        }
+        if (boxGongxun > 0) {
+            int curGx = user.getGongxun() == null ? 0 : user.getGongxun();
+            user.setGongxun(curGx + boxGongxun);
+        }
 //        String platform = request.getPlatform();
 //        String ip = request.getIpAddress();
 
@@ -3821,6 +3835,48 @@ public class GameServiceServiceImpl implements GameServiceService {
         return calcShopDiscountPrice(getShopOriginPrice(item), discount);
     }
 
+    /**
+     * 热点(redian)倾向注入：用户有热点英雄id时，以约90%概率把“商店中在售且 itemId==redian”的商品塞进一个随机槽位
+     * （1/10 跳过，保证“极大概率出现但不是每次必出”）；若商店未在售该英雄则静默跳过。
+     */
+    private void applyRedianBias(List<GameItemShop> picked, List<GameItemShop> allItems, Integer redian) {
+        if (redian == null || picked == null || picked.isEmpty() || allItems == null) {
+            return;
+        }
+        GameItemShop hot = allItems.stream()
+                .filter(x -> x != null && x.getItemId() != null && x.getItemId().intValue() == redian.intValue())
+                .findFirst().orElse(null);
+        if (hot == null) {
+            return;
+        }
+        Random r = new Random();
+        int max = picked.size();
+        // 保底 6 个坑位为热点物品（不足 6 则全部）；大概率落 [6,12]，小概率（约 1/5）上探 [13,16]
+        int min = Math.min(6, max);
+        int low = Math.min(12, max);
+        int hotCount;
+        if (max <= min) {
+            hotCount = max;
+        } else if (r.nextInt(5) == 0 && max > low) {
+            // 1/5 概率上探到 13..max，使 12 以上概率更小
+            hotCount = (low + 1) + r.nextInt(max - low);
+        } else {
+            hotCount = min + r.nextInt(low - min + 1);
+        }
+        // 随机挑选 hotCount 个不同下标替换为热点物品，保证每次必现
+        List<Integer> idxs = new ArrayList<>();
+        for (int i = 0; i < max; i++) {
+            idxs.add(i);
+        }
+        Collections.shuffle(idxs, r);
+        for (int i = 0; i < hotCount && i < idxs.size(); i++) {
+            try {
+                picked.set(idxs.get(i), hot);
+            } catch (Exception ignored) {
+            }
+        }
+    }
+
     @Override
     @Transactional
     @NoRepeatSubmit(limitSeconds = 1)
@@ -3842,6 +3898,8 @@ public class GameServiceServiceImpl implements GameServiceService {
         User user = userMapper.selectUserByUserId(Integer.parseInt(userId));
         Map map = new HashMap();
         map.put("chongzhi", user.getChongzhi());
+        // 下发热点值，供前端判断哪个商品为热点（itemId==redian）
+        map.put("redian", user.getRedian());
         if (user.getShopUpdate() == null || (user.getShopUpdate().compareTo(date2) < 0 && "1".equals(token.getStr()))) {
 
 //            // 4. 校验并扣减背包物品
@@ -3874,6 +3932,8 @@ public class GameServiceServiceImpl implements GameServiceService {
             }
             // 尝试获取16个物品（种类不足，会重复获取），并随机分配折扣
             List<GameItemShop> picked = picker.pickRandomItems(16);
+            // 热点倾向：按 user.redian 大概率注入对应英雄商品
+            applyRedianBias(picked, gameItemShopList, user.getRedian());
             List<GameItemShop> picked2 = buildShopPickedList(picked);
             userMapper.updateuser(user);
             map.put("picked", picked2);
@@ -3900,6 +3960,8 @@ public class GameServiceServiceImpl implements GameServiceService {
                 }
                 // 尝试获取16个物品（种类不足，会重复获取），并随机分配折扣
                 List<GameItemShop> picked = picker.pickRandomItems(16);
+                // 热点倾向：按 user.redian 大概率注入对应英雄商品
+                applyRedianBias(picked, gameItemShopList, user.getRedian());
                 List<GameItemShop> picked2 = buildShopPickedList(picked);
                 map.put("picked", picked2);
                 String json = JsonUtils.toJson(picked2);
@@ -4029,6 +4091,8 @@ public class GameServiceServiceImpl implements GameServiceService {
         }
         // 尝试获取16个物品（种类不足，会重复获取），并随机分配折扣
         List<GameItemShop> picked = picker.pickRandomItems(16);
+        // 热点倾向：按 user.redian 大概率注入对应英雄商品
+        applyRedianBias(picked, gameItemShopList, user.getRedian());
         List<GameItemShop> picked2 = buildShopPickedList(picked);
         userMapper.updateuser(user);
         baseResp.setSuccess(1);
@@ -4037,6 +4101,8 @@ public class GameServiceServiceImpl implements GameServiceService {
         map.put("picked", picked2);
         map.put("userInfo", info);
         map.put("chongzhi", user.getChongzhi());
+        // 下发热点值，与 getStore 一致
+        map.put("redian", user.getRedian());
         String json = JsonUtils.toJson(picked2);
         //先删再新增
         gameTimeRecordMapper.deleteMe(Integer.parseInt(userId));
@@ -4195,8 +4261,84 @@ public class GameServiceServiceImpl implements GameServiceService {
                     return copy;
                 })
                 .collect(Collectors.toList());
-        baseResp.setData(gongxunList);
+        // 一并按 {items, gongxun} 返回：前端 init3 用 items 渲染、用 gongxun 展示“剩余功勋”
+        Map gxMap = new HashMap();
+        gxMap.put("items", gongxunList);
+        int gongxun = 0;
+        if (token != null && !Xtool.isNull(token.getUserId())) {
+            User gxUser = userMapper.selectUserByUserId(Integer.parseInt(token.getUserId()));
+            if (gxUser != null && gxUser.getGongxun() != null) {
+                gongxun = gxUser.getGongxun();
+            }
+        }
+        gxMap.put("gongxun", gongxun);
+        baseResp.setData(gxMap);
         baseResp.setErrorMsg("成功");
+        return baseResp;
+    }
+
+    /**
+     * 功勋商城兑换：token.id 传商品 itemId（>=1105000），消耗 user.gongxun（价格按 game_item_base 的 quality*100，以服务端为准），
+     * 兑换成功后物品进入背包，返回含最新剩余功勋的用户信息，供前端刷新“价格(剩余功勋)”。
+     */
+    @Override
+    @Transactional
+    public BaseResp buyGongxunStore(TokenDto token, HttpServletRequest request) throws Exception {
+        BaseResp baseResp = new BaseResp();
+        if (token == null || Xtool.isNull(token.getToken())) {
+            baseResp.setSuccess(0);
+            baseResp.setErrorMsg("登录过期");
+            return baseResp;
+        }
+        String userId = token.getUserId();
+        if (Xtool.isNull(userId)) {
+            baseResp.setSuccess(0);
+            baseResp.setErrorMsg("登录过期");
+            return baseResp;
+        }
+        if (Xtool.isNull(token.getId())) {
+            baseResp.setSuccess(0);
+            baseResp.setErrorMsg("商品不存在");
+            return baseResp;
+        }
+        int itemId;
+        try {
+            itemId = Integer.parseInt(token.getId());
+        } catch (NumberFormatException e) {
+            baseResp.setSuccess(0);
+            baseResp.setErrorMsg("商品不存在");
+            return baseResp;
+        }
+        if (itemId < GONGXUN_START_ITEM_ID) {
+            baseResp.setSuccess(0);
+            baseResp.setErrorMsg("非法的功勋商品");
+            return baseResp;
+        }
+        GameItemBase base = GameConfigCache.getAllItemBases().stream()
+                .filter(x -> x != null && x.getItemId() != null && x.getItemId() == itemId)
+                .findFirst().orElse(null);
+        if (base == null) {
+            baseResp.setSuccess(0);
+            baseResp.setErrorMsg("商品不存在或已下架");
+            return baseResp;
+        }
+        int price = (base.getQuality() == null ? 0 : base.getQuality().intValue()) * 100;
+        User user = userMapper.selectUserByUserId(Integer.parseInt(userId));
+        int curGx = user.getGongxun() == null ? 0 : user.getGongxun();
+        if (curGx < price) {
+            baseResp.setSuccess(0);
+            baseResp.setErrorMsg("功勋不足");
+            return baseResp;
+        }
+        // 扣功勋 + 物品进背包
+        user.setGongxun(curGx - price);
+        addBagItem(userId, itemId, 1);
+        userMapper.updateuser(user);
+        UserInfo info = new UserInfo();
+        BeanUtils.copyProperties(user, info);
+        baseResp.setSuccess(1);
+        baseResp.setData(info);
+        baseResp.setErrorMsg("兑换成功");
         return baseResp;
     }
 
@@ -4289,8 +4431,8 @@ public class GameServiceServiceImpl implements GameServiceService {
                 }
                 user.setDiamond(diamond);
             }
-            if ("6".equals(gameItemShop.getType())) {
-                // 材料类商品（type=6，如矿石等）：购买后累加到背包 game_player_bag，而非作为英雄卡牌
+            if ("5".equals(gameItemShop.getType()) || "6".equals(gameItemShop.getType())) {
+                // 道具/材料类商品（type=5 消耗品如活力/体力药水，type=6 材料如矿石）：购买后累加到背包 game_player_bag，而非作为英雄卡牌
                 addBagItem(userId, gameItemShop.getItemId(), 1);
             } else {
                 Characters characters1 = charactersMapper.listById(userId, gameItemShop.getItemId() + "");
@@ -7463,8 +7605,25 @@ public class GameServiceServiceImpl implements GameServiceService {
                 // 紫金矿 id:15，范围 199 ~ 599    差值：599 - 199 = 400
                 addBagItem(userId, 15, random4.nextInt(401) + 199);
                 break;
+            case 99: // 朱雀魂魄1~10枚、玄铁矿 999~1999枚、青铜矿 599~999枚、紫金矿 199~599枚
+                Random random5 = new Random();
+                // 虞姬魂魄（id 1105）：1~10枚，进背包
+                addBagItem(userId, 1113, random5.nextInt(10) + 1);
+                // 玄铁矿 id:14，范围 999 ~ 1999  差值：1999 - 999 = 1000
+                addBagItem(userId, 13, random5.nextInt(1001) + 999);
+                // 青铜矿 id:13，范围 599 ~ 999    差值：999 - 599 = 400
+                addBagItem(userId, 14, random5.nextInt(401) + 599);
+                // 紫金矿 id:15，范围 199 ~ 599    差值：599 - 199 = 400
+                addBagItem(userId, 15, random5.nextInt(401) + 199);
+                break;
             default:
-                throw new IllegalArgumentException("不支持的物品ID：" + itemId);
+                // 功勋商城定向物品（itemId>=1105000，如 1105000、1106000…）：使用后记录用户热点 redian（去除后三位得到英雄卡id，如 1105000→1105）；
+                // 其余未知 id 仍抛异常（调用方会拦截并提示“该物品暂时无法使用”，且不会扣减）。
+                if (itemId != null && itemId >= GONGXUN_START_ITEM_ID) {
+                    user.setRedian(itemId / 1000);
+                } else {
+                    throw new IllegalArgumentException("不支持的物品ID：" + itemId);
+                }
         }
     }
 
@@ -8935,12 +9094,8 @@ public class GameServiceServiceImpl implements GameServiceService {
                 baseResp.setErrorMsg("你没有配置战队无法战斗");
                 return baseResp;
             }
-            for (Characters characters : leftCharacter) {
-                List<EqCharacters> eqCharacters = eqCharactersMapper.listByGoOn(userId, characters.getId());
-                if (Xtool.isNotNull(eqCharacters)) {
-                    characters.setEqCharactersList(formateEqCharacter(eqCharacters));
-                }
-            }
+            // 填充装备信息（含宝石镶嵌 gemList 与洗练 xilianList，与 PVE 主线同一链路，此前爬塔自行组装导致宝石/洗练丢失）
+            fillCharacterEquip(userId, leftCharacter);
             if (ceng > 100) {
                 baseResp.setSuccess(0);
                 baseResp.setErrorMsg("塔已通关，可以选择重置继续试炼");
@@ -10682,10 +10837,12 @@ public class GameServiceServiceImpl implements GameServiceService {
 
 
         List<FriendRelation> friendRelationList = friendRelationMapper.selectList(new LambdaQueryWrapper<FriendRelation>()
-                .eq(FriendRelation::getUserId, userId).eq(FriendRelation::getFriendId, token.getUserId()));
+                .and(w -> w.and(x -> x.eq(FriendRelation::getUserId, userId).eq(FriendRelation::getFriendId, token.getUserId()))
+                        .or(x -> x.eq(FriendRelation::getUserId, token.getUserId()).eq(FriendRelation::getFriendId, userId))));
         if (Xtool.isNotNull(friendRelationList)) {
+            boolean isFriend = friendRelationList.stream().anyMatch(r -> r.getStatus() != null && r.getStatus() == 1);
             baseResp.setSuccess(0);
-            baseResp.setErrorMsg("请勿重复结伴");
+            baseResp.setErrorMsg(isFriend ? "对方已是你的好友" : "请勿重复结伴");
             return baseResp;
         } else {
             FriendRelation friendRelation = new FriendRelation();
@@ -10729,11 +10886,23 @@ public class GameServiceServiceImpl implements GameServiceService {
             relationOpt.setStatus(1);
             friendRelationMapper.updateById(relationOpt);
 
-            FriendRelation reverseRelation = new FriendRelation();
-            reverseRelation.setUserId(Integer.parseInt(userId));
-            reverseRelation.setFriendId(relationOpt.getUserId());
-            reverseRelation.setStatus(1);
-            friendRelationMapper.insert(reverseRelation);
+            // 反向关系可能已存在（如双方互相发起过申请），存在则直接置为好友，避免重复插入
+            List<FriendRelation> reverseList = friendRelationMapper.selectList(new LambdaQueryWrapper<FriendRelation>()
+                    .eq(FriendRelation::getUserId, userId).eq(FriendRelation::getFriendId, relationOpt.getUserId()));
+            if (Xtool.isNotNull(reverseList)) {
+                FriendRelation existRelation = reverseList.get(0);
+                if (existRelation.getStatus() == null || existRelation.getStatus() != 1) {
+                    existRelation.setStatus(1);
+                    friendRelationMapper.updateById(existRelation);
+                }
+            } else {
+                FriendRelation reverseRelation = new FriendRelation();
+                reverseRelation.setUserId(Integer.parseInt(userId));
+                reverseRelation.setFriendId(relationOpt.getUserId());
+                reverseRelation.setStatus(1);
+                reverseRelation.setCreateTime(new Date());
+                friendRelationMapper.insert(reverseRelation);
+            }
         } else {
             // 3. 拒绝：删除申请记录
             friendRelationMapper.deleteById(Long.parseLong(token.getId()));
@@ -10949,7 +11118,7 @@ public class GameServiceServiceImpl implements GameServiceService {
                     List<GameEquipInlay> gemList = eqCharacter.getGemList();
                     if (eqCharacter.getWlAtk() > 0) {
                         List<Integer> itemIds = gemList.stream()
-                                .filter(gem -> gem.getItemId() <= 88).map(GameEquipInlay::getItemId)
+                                .filter(gem -> gem.getItemId() >= 39 && gem.getItemId() <= 88).map(GameEquipInlay::getItemId)
                                 .collect(Collectors.toList());
                         // 当前装备上所有太阳石总等级
                         int gemLv = craftEqList.stream()
@@ -10961,9 +11130,9 @@ public class GameServiceServiceImpl implements GameServiceService {
                     }
                     if (1 == 1) {
                         List<Integer> itemIds = gemList.stream()
-                                .filter(gem -> gem.getItemId() <= 248 && gem.getItemId() > 88).map(GameEquipInlay::getItemId)
+                                .filter(gem -> gem.getItemId() >= 200 && gem.getItemId() <= 249).map(GameEquipInlay::getItemId)
                                 .collect(Collectors.toList());
-                        // 当前装备上所有太阳石总等级
+                        // 当前装备上所有月亮石总等级（法术抗性：火抗/毒抗/弹抗）
                         int gemLv = craftEqList.stream()
                                 .filter(inlay -> itemIds.contains(inlay.getItemId()))
                                 .mapToInt(CraftEq::getLevel)
@@ -10975,12 +11144,15 @@ public class GameServiceServiceImpl implements GameServiceService {
                         if (eqCharacter.getDsDef() > 0) {
                             eqCharacter.setDsDef((int) Math.round(eqCharacter.getDsDef() * rate));
                         }
+                        if (eqCharacter.getFdDef() > 0) {
+                            eqCharacter.setFdDef((int) Math.round(eqCharacter.getFdDef() * rate));
+                        }
                     }
                     if (1 == 1) {
                         List<Integer> itemIds = gemList.stream()
-                                .filter(gem -> gem.getItemId() <= 298 && gem.getItemId() > 248).map(GameEquipInlay::getItemId)
+                                .filter(gem -> gem.getItemId() >= 250 && gem.getItemId() <= 299).map(GameEquipInlay::getItemId)
                                 .collect(Collectors.toList());
-                        // 当前装备上所有太阳石总等级
+                        // 当前装备上所有红玛瑙总等级（法术伤害：火焰/毒素/飞弹）
                         int gemLv = craftEqList.stream()
                                 .filter(inlay -> itemIds.contains(inlay.getItemId()))
                                 .mapToInt(CraftEq::getLevel)
@@ -10992,12 +11164,15 @@ public class GameServiceServiceImpl implements GameServiceService {
                         if (eqCharacter.getDsAtk() > 0) {
                             eqCharacter.setDsAtk((int) Math.round(eqCharacter.getDsAtk() * rate));
                         }
+                        if (eqCharacter.getFdAtk() > 0) {
+                            eqCharacter.setFdAtk((int) Math.round(eqCharacter.getFdAtk() * rate));
+                        }
                     }
                     if (eqCharacter.getZlDef() > 0) {
                         List<Integer> itemIds = gemList.stream()
-                                .filter(gem -> gem.getItemId() <= 348 && gem.getItemId() > 298).map(GameEquipInlay::getItemId)
+                                .filter(gem -> gem.getItemId() >= 300 && gem.getItemId() <= 349).map(GameEquipInlay::getItemId)
                                 .collect(Collectors.toList());
-                        // 当前装备上所有太阳石总等级
+                        // 当前装备上所有黑玉石总等级（治疗效果）
                         int gemLv = craftEqList.stream()
                                 .filter(inlay -> itemIds.contains(inlay.getItemId()))
                                 .mapToInt(CraftEq::getLevel)
@@ -11007,9 +11182,9 @@ public class GameServiceServiceImpl implements GameServiceService {
                     }
                     if (eqCharacter.getWlDef() > 0) {
                         List<Integer> itemIds = gemList.stream()
-                                .filter(gem -> gem.getItemId() <= 398 && gem.getItemId() > 348).map(GameEquipInlay::getItemId)
+                                .filter(gem -> gem.getItemId() >= 350 && gem.getItemId() <= 399).map(GameEquipInlay::getItemId)
                                 .collect(Collectors.toList());
-                        // 当前装备上所有太阳石总等级
+                        // 当前装备上所有光芒石总等级（物理抗性）
                         int gemLv = craftEqList.stream()
                                 .filter(inlay -> itemIds.contains(inlay.getItemId()))
                                 .mapToInt(CraftEq::getLevel)
@@ -11019,9 +11194,9 @@ public class GameServiceServiceImpl implements GameServiceService {
                     }
                     if (eqCharacter.getZlAtk() > 0) {
                         List<Integer> itemIds = gemList.stream()
-                                .filter(gem -> gem.getItemId() <= 448 && gem.getItemId() > 398).map(GameEquipInlay::getItemId)
+                                .filter(gem -> gem.getItemId() >= 400 && gem.getItemId() <= 449).map(GameEquipInlay::getItemId)
                                 .collect(Collectors.toList());
-                        // 当前装备上所有太阳石总等级
+                        // 当前装备上所有神秘石总等级（被治疗效果）
                         int gemLv = craftEqList.stream()
                                 .filter(inlay -> itemIds.contains(inlay.getItemId()))
                                 .mapToInt(CraftEq::getLevel)
@@ -11087,7 +11262,7 @@ public class GameServiceServiceImpl implements GameServiceService {
                         character.setWlDef(character.getWlDef() + characters.getWlDef() * skillLevel[3]);
                         character.setHyDef(character.getHyDef() + characters.getHyDef() * skillLevel[3]);
                         character.setDsDef(character.getDsDef() + characters.getDsDef() * skillLevel[3]);
-                        character.setFdDef(character.getDsDef() + characters.getFdDef() * skillLevel[3]);
+                        character.setFdDef(character.getFdDef() + characters.getFdDef() * skillLevel[3]);
                         character.setZlDef(character.getZlDef() + characters.getZlDef() * skillLevel[3]);
                     }
 

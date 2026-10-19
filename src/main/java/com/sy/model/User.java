@@ -150,4 +150,7 @@ public class User {
 
     private Integer itemCount;
     private Integer baoCount;
+
+    private Integer gongxun;
+    private Integer redian;
 }

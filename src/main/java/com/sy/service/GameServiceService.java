@@ -63,6 +63,7 @@ public interface GameServiceService {
     BaseResp chongzhi2(TokenDto token, HttpServletRequest request) throws Exception;
     BaseResp getStore2(TokenDto token, HttpServletRequest request) throws Exception;
     BaseResp getGongxunStore(TokenDto token, HttpServletRequest request) throws Exception;
+    BaseResp buyGongxunStore(TokenDto token, HttpServletRequest request) throws Exception;
     BaseResp buyStore(TokenDto token, HttpServletRequest request) throws Exception;
     BaseResp buyStore3(TokenDto token, HttpServletRequest request) throws Exception;
     BaseResp buyStore2(TokenDto token, HttpServletRequest request) throws Exception;

@@ -96,4 +96,9 @@ public class UserInfo {
 
     private Integer itemCount;
     private Integer baoCount;
+
+    // 功勋（活跃宝箱产出、功勋商城消耗）
+    private Integer gongxun;
+    // 热点：记录的定向物品去除后三位得到的英雄卡id（如 1105），null 表示无；每日 0 点定时清空
+    private Integer redian;
 }

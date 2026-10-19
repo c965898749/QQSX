@@ -35,6 +35,12 @@ public class Guardian {
     private int buffDiTingFanPu;
     // 谛听返璞归真本回合是否已触发（防止同一回合多次受击重复递增计数器）
     private boolean fanPuTriggeredThisRound;
+    // 玄武守卫本回合是否已触发（仅当本回合确实代队友承受过伤害，回合结束才恢复生命）
+    private boolean guardTriggeredThisRound;
+    // 朱雀·归元：凤凰卵剩余回合数（>0 且未阵亡表示处于凤凰卵状态：以本体20%生命存活，可被攻击；被打碎则彻底阵亡不再复活）
+    private int guiYuanRounds;
+    // 朱雀·归元：凤凰卵已被打碎（归元彻底耗尽，本场不再能复活）
+    private boolean guiYuanEggBroken;
 
     public int getBuffXuanMins() {
         return buffXuanMins;
@@ -351,6 +357,17 @@ public class Guardian {
     public void setBuffDiTingFanPu(int buffDiTingFanPu) { this.buffDiTingFanPu = buffDiTingFanPu; }
     public boolean isFanPuTriggeredThisRound() { return fanPuTriggeredThisRound; }
     public void setFanPuTriggeredThisRound(boolean fanPuTriggeredThisRound) { this.fanPuTriggeredThisRound = fanPuTriggeredThisRound; }
+    public boolean isGuardTriggeredThisRound() { return guardTriggeredThisRound; }
+    public void setGuardTriggeredThisRound(boolean guardTriggeredThisRound) { this.guardTriggeredThisRound = guardTriggeredThisRound; }
+
+    public int getGuiYuanRounds() { return guiYuanRounds; }
+    public void setGuiYuanRounds(int guiYuanRounds) { this.guiYuanRounds = guiYuanRounds; }
+    public boolean isGuiYuanEggBroken() { return guiYuanEggBroken; }
+    public void setGuiYuanEggBroken(boolean guiYuanEggBroken) { this.guiYuanEggBroken = guiYuanEggBroken; }
+    /**
+     * 是否处于朱雀·归元的凤凰卵状态（存活且倒计时未结束：以本体20%生命存活，可被攻击）
+     */
+    public boolean isPhoenixEgg() { return guiYuanRounds > 0 && !isDead; }
 
     // ========== 洗练属性 getter/setter ==========
     public double getXilianTuji() { return xilianTuji; }
