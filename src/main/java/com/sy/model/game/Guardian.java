@@ -37,7 +37,7 @@ public class Guardian {
     private boolean fanPuTriggeredThisRound;
     // 玄武守卫本回合是否已触发（仅当本回合确实代队友承受过伤害，回合结束才恢复生命）
     private boolean guardTriggeredThisRound;
-    // 朱雀·归元：凤凰卵剩余回合数（>0 且未阵亡表示处于凤凰卵状态：以本体20%生命存活，可被攻击；被打碎则彻底阵亡不再复活）
+    // 朱雀·归元：凤凰卵剩余回合数（>0 且未阵亡表示处于凤凰卵状态：以本体满血(生命上限100%)存活，可被攻击；被打碎则彻底阵亡不再复活）
     private int guiYuanRounds;
     // 朱雀·归元：凤凰卵已被打碎（归元彻底耗尽，本场不再能复活）
     private boolean guiYuanEggBroken;
@@ -365,7 +365,7 @@ public class Guardian {
     public boolean isGuiYuanEggBroken() { return guiYuanEggBroken; }
     public void setGuiYuanEggBroken(boolean guiYuanEggBroken) { this.guiYuanEggBroken = guiYuanEggBroken; }
     /**
-     * 是否处于朱雀·归元的凤凰卵状态（存活且倒计时未结束：以本体20%生命存活，可被攻击）
+     * 是否处于朱雀·归元的凤凰卵状态（存活且倒计时未结束：以本体满血(生命上限100%)存活，可被攻击）
      */
     public boolean isPhoenixEgg() { return guiYuanRounds > 0 && !isDead; }
 

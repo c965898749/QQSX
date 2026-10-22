@@ -27,8 +27,8 @@ public class BattleManager {
     private final Map<String, Integer> changEDodgeBonus = new HashMap<>();
     // 魅影闪避临时闪避加成（持续1回合，key为捡漏小妖id），回合结束时移除
     private final Map<String, Integer> jianLouDodgeBonus = new HashMap<>();
-    // 换位秘术重入保护，防止换位触发登场技能后再次触发换位导致死循环
-    private boolean huanWeiMiShuInProgress = false;
+    // 统一换位重入保护：遁让/换位秘术/未来乾坤阵等所有换位技能共享，防止换位触发登场技能后再次换位导致同栈递归死循环
+    private boolean swapInProgress = false;
     // 新增递归深度常量（可根据业务调整）
     private static final int MAX_TRIGGER_DEPTH = 5;
     // 后羿乾坤破（2技能）：蓄力满4层后，攻击时以30%攻击力对易死目标连射，箭数随2技能等级提升，封顶10箭
@@ -56,6 +56,17 @@ public class BattleManager {
         double diff = attacker.getXilianLingNeng() - defender.getXilianYuLing();
         if (diff == 0) return elementDamage;
         return (int) (elementDamage * (1 + diff * 0.001));
+    }
+
+    /**
+     * 突击/防护对物理伤害的修正（静态辅助方法）
+     * 攻击方突击 > 防守方防护：每点增加0.1%物理伤害
+     * 攻击方突击 < 防守方防护：每点降低0.1%物理伤害
+     */
+    private static int applyXilianPhysical(Guardian attacker, Guardian defender, int physicalDamage) {
+        double diff = attacker.getXilianTuji() - defender.getXilianFangHu();
+        if (diff == 0) return physicalDamage;
+        return (int) (physicalDamage * (1 + diff * 0.001));
     }
 
     //比较速度大小
@@ -667,6 +678,8 @@ public class BattleManager {
         if (burnDamage < 0) {
             burnDamage = 0;
         }
+        // 洗练：突击/防护对物理伤害的修正（攻方突击高于守方防护每点+0.1%，反之-0.1%）
+        burnDamage = applyXilianPhysical(attacker, defender, burnDamage);
         // ========== 洗练属性：暴击/暴抗判定 ==========
         boolean critted = false;
         double critChance = Math.max(0, attacker.getXilianCrit() - defender.getXilianCritResist()) / 100.0;
@@ -988,7 +1001,10 @@ public class BattleManager {
                                 // 遁让只与后场未阵亡的仙族护法换位
                                 List<Guardian> offFieldAllies = (defender.getCamp() == Camp.A ? campA : campB).stream()
                                         .filter(g -> !g.isDead() && !g.isOnField() && !g.isPhoenixEgg() && g.getRace() == Race.IMMORTAL).collect(Collectors.toList());
-                                if (!offFieldAllies.isEmpty()) {
+                                if (!offFieldAllies.isEmpty() && !swapInProgress) {
+                                    // 统一换位防护：遁让换位后触发的登场技能不得再次引发换位
+                                    swapInProgress = true;
+                                    try {
                                     Guardian swapTarget = offFieldAllies.get(random.nextInt(offFieldAllies.size()));
                                     // 互换 onField + position
                                     boolean tmpOnField = defender.isOnField();
@@ -1019,6 +1035,9 @@ public class BattleManager {
                                     triggerOnEnterSkills(swapTarget);
                                     triggerOnEnterSkills2(swapTarget);
                                     return 0; // 躲过伤害
+                                                                        } finally {
+                                                                            swapInProgress = false;
+                                                                        }
                                 }
                             }
                         }
@@ -3242,6 +3261,8 @@ public class BattleManager {
 
                     // 造成伤害：消耗HP的2倍
                     int damage = hpCost * 2;
+                                        // 洗练：突击/防护修正物理伤害（撞击：attacker 攻 / defender 受）
+                                        damage = applyXilianPhysical(attacker, defender, damage);
                     Integer logIndex = battleLogs.size();
                     damage = triggerOnAttackedSkills(defender, damage, EffectType.DAMAGE);
                     defender.setCurrentHp(defender.getCurrentHp() - damage);
@@ -3464,10 +3485,10 @@ public class BattleManager {
      */
     private void triggerJianLouHuanWeiMiShu(List<Guardian> camp, Guardian field) {
         // 重入保护：防止换位触发登场技能后再次触发换位导致死循环
-        if (huanWeiMiShuInProgress) return;
+        if (swapInProgress) return;
         // 场上无单位时不换位（防止场下互换无限循环）
         if (field == null) return;
-        huanWeiMiShuInProgress = true;
+        swapInProgress = true;
         try {
         // 查找捡漏小妖（优先场上，其次场下）
         Guardian jianLou = null;
@@ -3531,7 +3552,7 @@ public class BattleManager {
             triggerOnEnterSkills2(swapTarget);
         }
         } finally {
-            huanWeiMiShuInProgress = false;
+            swapInProgress = false;
         }
     }
 
@@ -3586,7 +3607,7 @@ public class BattleManager {
 
             int shotDamage = (int) (attacker.getAttack() * HOU_YI_SHOT_ATTACK_PRET * resistUpPret * resistDownPret * targetUpPret * targetDownPret
                     + (resistUp - resistDown + attacker.getWlAtk() - defender.getWlDef() - targetUp + targetDown) * HOU_YI_SHOT_ATTACK_PRET);
-            shotDamage = applyXilianElement(attacker, defender, shotDamage);
+            shotDamage = applyXilianPhysical(attacker, defender, shotDamage);
             if (shotDamage < 0) {
                 shotDamage = 0;
             }
@@ -4139,31 +4160,32 @@ public class BattleManager {
                     // 1. 计算所有中毒效果的总伤害（累加 POISON 类型的 value）
                     // 2. 计算毒抗相关（直接基于你现有 EffectInstance 计算，不新增 Guardian 方法）
                     // 中毒增益：所有 POISON_RESIST 类型效果的 value 总和
-                    int resistUp = calculateTotalVaule(attacker, EffectType.POISON_BOOST);
+                    int resistUp = calculateTotalVaule(defender, EffectType.POISON_BOOST);
                     // 中毒增益百分比：所有 POISON_RESIST 类型效果的 value 乘积
-                    double resistUpPret = calculateTotalUpPretVaule(attacker, EffectType.POISON_BOOST_PRET);
+                    double resistUpPret = calculateTotalUpPretVaule(defender, EffectType.POISON_BOOST_PRET);
                     // 中毒降低：所有 POISON_RESIST_DOWN 类型效果的 value 总和
-                    int resistDown = calculateTotalVaule(attacker, EffectType.POISON_DOWN);
+                    int resistDown = calculateTotalVaule(defender, EffectType.POISON_DOWN);
                     // 中毒降低百分比：所有 POISON_RESIST 类型效果的 value 乘积
-                    double resistDownPret = calculateTotalDownPretVaule(attacker, EffectType.POISON_DOWN_PRET);
+                    double resistDownPret = calculateTotalDownPretVaule(defender, EffectType.POISON_DOWN_PRET);
 
-                    int poisonValue = (int) (totalPoisonDamage * resistUpPret * resistDownPret + (resistUp + attacker.getDsAtk() - resistDown));
-                    poisonValue = applyXilianElement(attacker, attacker, poisonValue);
+                    int poisonValue = (int) (totalPoisonDamage * resistUpPret * resistDownPret + (resistUp + defender.getDsAtk() - resistDown));
+                    // 洗练：幽灵毒击为毒素伤害，施毒者为本体 defender，中毒者为 attacker
+                    poisonValue = applyXilianElement(defender, attacker, poisonValue);
                     attacker.addEffect(EffectType.POISON, poisonValue, 99, defender.getId());
                     addLog("幽灵毒击",
+                            defender.getId(),
+                            defender.getMaxHp(),
+                            defender.getCurrentHp(),
+                            0,
+                            defender.isOnField(),
                             attacker.getId(),
                             attacker.getMaxHp(),
                             attacker.getCurrentHp(),
                             poisonValue,
                             attacker.isOnField(),
-                            defender.getId(),
-                            defender.getMaxHp(),
-                            defender.getCurrentHp(),
-                            poisonValue,
-                            defender.isOnField(),
                             EffectType.POISON,
                             DamageType.POISON,
-                            "中毒" + poisonValue);
+                            "中毒+" + poisonValue);
                 }
                 break;
             case "辟寒大王":
@@ -4289,7 +4311,8 @@ public class BattleManager {
                     }
 
                     Integer logIndex=battleLogs.size();
-                    burnDamage=triggerOnAttackedSkills(attacker,burnDamage,EffectType.DAMAGE);
+                    burnDamage = applyXilianPhysical(defender, attacker, burnDamage);
+                                        burnDamage=triggerOnAttackedSkills(attacker,burnDamage,EffectType.DAMAGE);
 
                     attacker.setCurrentHp(attacker.getCurrentHp() - burnDamage);
 
@@ -4654,8 +4677,8 @@ public class BattleManager {
             //萌年兽，爆竹送给你Lv1场上，受到任意攻击后有100%几率对全体敌方造成35~140点随机火焰伤害；幸运年糕Lv1每回合增加自身76点生命点，15点火焰伤害，最多香加5层；不动如山Lv1位居2号位置时，增加自身243点生命上限，24点攻击，12点速度。
             case "萌年兽":
                 // 爆竹送给你：对全体敌方造成火焰伤害（多目标整合日志）
-                //萌年兽在场
-                if (defender.isOnField() && !defender.isDead()) {
+                //萌年兽在场且技能已学习（skillLevel[1]>0），与普攻重载及烛龙的触发条件保持一致，避免未学技能时靠固定火强项打出真实反伤
+                if (defender.isOnField() && !defender.isDead() && skillLevel[1] > 0) {
                     List<Guardian> enemies = defender.getCamp() == Camp.A ? campB : campA;
                     List<Guardian> aliveEnemies = enemies.stream()
                             .filter(g -> !g.isDead())
@@ -4871,7 +4894,8 @@ public class BattleManager {
                         }
 
                         Integer logIndex=battleLogs.size();
-                        burnDamage=triggerOnAttackedSkills(enemie,burnDamage,EffectType.DAMAGE);
+                        burnDamage = applyXilianPhysical(defender, enemie, burnDamage);
+                                                burnDamage=triggerOnAttackedSkills(enemie,burnDamage,EffectType.DAMAGE);
 
                         enemie.setCurrentHp(enemie.getCurrentHp() - burnDamage);
 
@@ -5090,7 +5114,7 @@ public class BattleManager {
                             // 以攻击力百分比套用物理伤害公式
                             int damage = (int) (attacker.getAttack() * totalPretDecimal * atkUpPret * atkDownPret * targetUpPret * targetDownPret
                                     + (atkUp - atkDown + attacker.getWlAtk() - g.getWlDef() - targetUp + targetDown) * totalPretDecimal);
-                            damage = applyXilianElement(attacker, g, damage);
+                            damage = applyXilianPhysical(attacker, g, damage);
                             if (damage < 0) {
                                 damage = 0;
                             }
@@ -5132,6 +5156,10 @@ public class BattleManager {
                             for (Guardian g : deadGuardians) {
                                 triggerOnDeathSkills(g);
                             }
+                        }
+                        // 触发“受到伤害”连锁技能（如烛龙·烛火燎原）：按伤害前存活目标快照逐个触发
+                        for (Guardian g : allAlive) {
+                            triggerOnAttackedSkills(g, EffectType.DAMAGE);
                         }
                     }
                 }
@@ -5427,6 +5455,8 @@ public class BattleManager {
                 //毒伤迸发Lv1攻击中毒敌人时，额外造成247点物理伤害；
                 if (defender.isPoison()) {
                     int damage = 247 * skillLevel[0];
+                                        // 洗练：突击/防护修正额外物理伤害
+                                        damage = applyXilianPhysical(attacker, defender, damage);
                     Map<String, TargetBattleData> deadUnits = new HashMap<>();
                     List<Guardian> deadGuardians = new ArrayList<>();
                     defender.setCurrentHp(defender.getCurrentHp() - damage);
@@ -5477,9 +5507,12 @@ public class BattleManager {
                 //剧毒痛击Lv1攻击中毒单位额外造成80伤害；；
                 if (defender.isPoison()) {
                     int damage = 80 * skillLevel[0];
+                    // 洗练：突击/防护修正额外物理伤害
+                    damage = applyXilianPhysical(attacker, defender, damage);
                     Map<String, TargetBattleData> deadUnits = new HashMap<>();
                     List<Guardian> deadGuardians = new ArrayList<>();
-                    defender.setCurrentHp(defender.getCurrentHp() + damage);
+                    // 剧毒痛击应为对目标造成伤害，修正误写的 +damage（原会回血）
+                    defender.setCurrentHp(defender.getCurrentHp() - damage);
                     if (defender.getCurrentHp() <= 0) {
                         defender.setDead(true);
                         defender.setOnField(false);
@@ -5725,7 +5758,7 @@ public class BattleManager {
                         Integer logIndex=battleLogs.size();
                         fireDamage=triggerOnAttackedSkills(defender,fireDamage,EffectType.FIRE_DAMAGE);
 
-                        attacker.setCurrentHp(attacker.getCurrentHp() - fireDamage);
+                        defender.setCurrentHp(defender.getCurrentHp() - fireDamage);
                         if (defender.getCurrentHp() <= 0) {
                             defender.setDead(true);
                             defender.setOnField(false);
@@ -5776,8 +5809,10 @@ public class BattleManager {
                 if (skillLevel[1] > 0&&defender.isPoison()) {
                     // 芭蕉扇：造成火焰伤害
                     int fireDamage = 60 * skillLevel[1];
+                    // 洗练：芭蕉扇为火焰伤害，走灵能/御灵修正
+                    fireDamage = applyXilianElement(attacker, defender, fireDamage);
                     Integer logIndex=battleLogs.size();
-                    fireDamage=triggerOnAttackedSkills(defender,fireDamage,EffectType.DAMAGE);
+                    fireDamage=triggerOnAttackedSkills(defender,fireDamage,EffectType.FIRE_DAMAGE);
 
                     defender.setCurrentHp(defender.getCurrentHp() - fireDamage);
                     Map<String, TargetBattleData> deadUnits = new HashMap<>();
@@ -5801,8 +5836,8 @@ public class BattleManager {
                             defender.getCurrentHp(),
                             fireDamage,
                             defender.isOnField(),
-                            EffectType.DAMAGE,
-                            DamageType.PHYSICAL,
+                            EffectType.FIRE_DAMAGE,
+                            DamageType.FIRE,
                             "-" + fireDamage,logIndex);
 
                     // 死亡日志
@@ -8255,7 +8290,7 @@ public class BattleManager {
     }
     /**
      * 朱雀·焚尽八荒（1技能）：回合开始时（不限场上/场下）消耗自身生命上限25%血量，
-     * 对敌方全体护法造成2倍消耗血量值的火焰伤害。
+     * 对敌方全体护法造成2倍消耗血量值的火焰伤害（受火强/火抗及洗练元素修正，与烈焰阵公式一致）。
      * 伤害经由 triggerOnAttackedSkills 处理，使目标的减伤/护盾/反击/逐让等受击技能正常生效。
      * 若因消耗自身血量而阵亡，则触发 2 技能归元（凤凰卵）。
      * 处于凤凰卵（归元）状态时视为纯粹肉盾（不能攻击/移动/释放技能），不再释放本技能。
@@ -8271,8 +8306,13 @@ public class BattleManager {
         int hpBefore = zhuque.getCurrentHp();
         int hpCost = (int) (zhuque.getMaxHp() * 0.25);
         zhuque.setCurrentHp(zhuque.getCurrentHp() - hpCost);
-        // 基础火焰伤害 = 2倍消耗血量值（固定量，不叠加攻防）
+        // 基础火焰伤害 = 2倍消耗血量值（后续叠加火强增益与目标火抗修正）
         int baseFireDamage = hpCost * 2;
+        // 火强（攻方）：火伤增益/降低的固定值总和与百分比乘积
+        int fireUp = calculateTotalVaule(zhuque, EffectType.FIRE_BOOST);
+        double fireUpPret = calculateTotalUpPretVaule(zhuque, EffectType.FIRE_BOOST_PRET);
+        int fireDown = calculateTotalVaule(zhuque, EffectType.FIRE_DOWN);
+        double fireDownPret = calculateTotalDownPretVaule(zhuque, EffectType.FIRE_DOWN_PRET);
         List<Guardian> enemyCamp = camp == campA ? campB : campA;
         // 快照目标引用，避免死亡连锁时集合并发修改（凤凰卵可被攻击，故仅排除已阵亡单位）
         List<Guardian> aliveEnemies = enemyCamp.stream()
@@ -8284,7 +8324,16 @@ public class BattleManager {
             Map<String, TargetBattleData> deadUnits = new HashMap<>();
             List<Guardian> deadGuardians = new ArrayList<>();
             for (Guardian g : aliveEnemies) {
-                int dmg = triggerOnAttackedSkills(g, baseFireDamage, EffectType.FIRE_DAMAGE);
+                // 火抗（受方）：火抗增益/降低的固定值总和与百分比乘积
+                int resistUp = calculateTotalVaule(g, EffectType.FIRE_RESIST_BOOST);
+                double resistUpPret = calculateTotalDownPretVaule(g, EffectType.FIRE_RESIST_BOOST_PRET);
+                int resistDown = calculateTotalVaule(g, EffectType.FIRE_RESIST_DOWN);
+                double resistDownPret = calculateTotalUpPretVaule(g, EffectType.FIRE_RESIST_DOWN_PRET);
+                int adjusted = (int) (baseFireDamage * fireUpPret * fireDownPret * resistUpPret * resistDownPret
+                        + (fireUp - fireDown + zhuque.getHyAtk() - g.getHyDef() - resistUp + resistDown));
+                adjusted = applyXilianElement(zhuque, g, adjusted);
+                if (adjusted < 0) adjusted = 0;
+                int dmg = triggerOnAttackedSkills(g, adjusted, EffectType.FIRE_DAMAGE);
                 if (dmg < 0) dmg = 0;
                 g.setCurrentHp(g.getCurrentHp() - dmg);
                 TargetBattleData data = new TargetBattleData(g.getMaxHp(), g.getCurrentHp(), dmg, g.isOnField());
@@ -8315,6 +8364,10 @@ public class BattleManager {
                 for (Guardian g : deadGuardians) {
                     triggerOnDeathSkills(g);
                 }
+            }
+            // 触发“受到伤害”连锁技能（如烛龙·烛火燎原）：按伤害前存活的敌方目标快照逐个触发
+            for (Guardian g : aliveEnemies) {
+                triggerOnAttackedSkills(g, EffectType.FIRE_DAMAGE);
             }
         }
         // 若朱雀因消耗自身血量而阵亡，进入死亡流程（触发归元）
@@ -8526,8 +8579,23 @@ public class BattleManager {
             Map<String, TargetBattleData> deadUnits = new HashMap<>();
             List<Guardian> deadGuardians = new ArrayList<>();
             Integer logIndex = battleLogs.size();
+            // 攻方（亡者献祭）物理攻击增益：固定值总和与百分比乘积
+            int atkUp = calculateTotalVaule(sacrifice, EffectType.ATTACK_UP);
+            double atkUpPret = calculateTotalUpPretVaule(sacrifice, EffectType.ATTACK_UP_PRET);
+            int atkDown = calculateTotalVaule(sacrifice, EffectType.ATTACK_DOWN);
+            double atkDownPret = calculateTotalDownPretVaule(sacrifice, EffectType.ATTACK_DOWN_PRET);
+            double pretDecimal = percent / 100.0;
             for (Guardian g : aliveEnemies) {
-                int dmg = damageValue;
+                // 目标物理抗性：固定值总和与百分比乘积
+                int targetUp = calculateTotalVaule(g, EffectType.ATTACK_RESIST_BOOST);
+                double targetUpPret = calculateTotalDownPretVaule(g, EffectType.ATTACK_RESIST_BOOST_PRET);
+                int targetDown = calculateTotalVaule(g, EffectType.ATTACK_RESIST_DOWN);
+                double targetDownPret = calculateTotalUpPretVaule(g, EffectType.ATTACK_RESIST_DOWN_PRET);
+                // 套用物理公式：damageValue（亡者攻击×%）作为乘算基础，再叠加物强/物抗固定值
+                int dmg = (int) (damageValue * atkUpPret * atkDownPret * targetUpPret * targetDownPret
+                        + (atkUp - atkDown + sacrifice.getWlAtk() - g.getWlDef() - targetUp + targetDown) * pretDecimal);
+                dmg = applyXilianPhysical(sacrifice, g, dmg);
+                if (dmg < 0) dmg = 0;
                 dmg = triggerOnAttackedSkills(g, dmg, EffectType.DAMAGE);
                 if (dmg < 0) dmg = 0;
                 g.setCurrentHp(g.getCurrentHp() - dmg);
@@ -8559,6 +8627,10 @@ public class BattleManager {
                 for (Guardian g : deadGuardians) {
                     triggerOnDeathSkills(g);
                 }
+            }
+            // 触发“受到伤害”连锁技能（如烛龙·烛火燎原）：按伤害前存活的敌方目标快照逐个触发
+            for (Guardian g : aliveEnemies) {
+                triggerOnAttackedSkills(g, EffectType.DAMAGE);
             }
         }
     }
@@ -10110,6 +10182,8 @@ public class BattleManager {
                     //TODO 真实伤害无法防御
                     // 1. 计算所有中毒效果的总伤害（累加 POISON 类型的 value）
                     int totalPoisonDamage = 206 * skillLevel[0];
+                    // 洗练：群鸦箭为飞弹伤害，走灵能/御灵修正
+                    totalPoisonDamage = applyXilianElement(guardian, defender, totalPoisonDamage);
                     Integer logIndex=battleLogs.size();
                     totalPoisonDamage=triggerOnAttackedSkills(defender,totalPoisonDamage,EffectType.MISSILE_DAMAGE);
 
@@ -10177,6 +10251,8 @@ public class BattleManager {
                     // 1. 计算所有中毒效果的总伤害（累加 POISON 类型的 value）
                     int totalPoisonDamage = 206 * skillLevel[0];
 
+                    // 洗练：群鸦箭为飞弹伤害，走灵能/御灵修正
+                    totalPoisonDamage = applyXilianElement(guardian, defender, totalPoisonDamage);
                     Integer logIndex=battleLogs.size();
                     totalPoisonDamage=triggerOnAttackedSkills(defender,totalPoisonDamage,EffectType.MISSILE_DAMAGE);
 
@@ -10244,6 +10320,8 @@ public class BattleManager {
                     // 1. 计算所有中毒效果的总伤害（累加 POISON 类型的 value）
                     int totalPoisonDamage = 41 * skillLevel[0];
 
+                    // 洗练：幻影箭为飞弹伤害，走灵能/御灵修正
+                    totalPoisonDamage = applyXilianElement(guardian, defender, totalPoisonDamage);
                     Integer logIndex=battleLogs.size();
                     totalPoisonDamage=triggerOnAttackedSkills(defender,totalPoisonDamage,EffectType.MISSILE_DAMAGE);
 
@@ -10311,6 +10389,8 @@ public class BattleManager {
                     //TODO 真实伤害无增益也无法防御
                     // 1. 计算所有中毒效果的总伤害（累加 POISON 类型的 value）
                     int totalPoisonDamage = 41 * skillLevel[0];
+                    // 洗练：幻影箭为飞弹伤害，走灵能/御灵修正
+                    totalPoisonDamage = applyXilianElement(guardian, defender, totalPoisonDamage);
                     Integer logIndex=battleLogs.size();
                     totalPoisonDamage=triggerOnAttackedSkills(defender,totalPoisonDamage,EffectType.MISSILE_DAMAGE);
 
