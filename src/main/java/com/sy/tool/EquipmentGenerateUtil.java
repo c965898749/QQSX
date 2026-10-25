@@ -8,7 +8,7 @@ import java.util.*;
 /**
  * 装备生成工具类 - 最终完整版
  * 适配eq_card表 | 8大固定星级 | 1/2/3属性分级 | ID前缀+N属性字母+自增数字
- * 核心规则：1~3星1属性、3.5~4星2属性、4.5~5星3属性，均为不同属性+同数值
+ * 核心规则：1~3星1属性、3.5~4星2属性、4.5~5星3属性，均为不同属性；每条属性数值按星级基准±40%独立随机（同星级不同装备、同装备不同属性均有差异）
  */
 public class EquipmentGenerateUtil {
     // ========== 一、全局常量配置区（集中管理，一键修改） ==========
@@ -180,31 +180,28 @@ public class EquipmentGenerateUtil {
         }
     }
 
-    /** 【核心升级】星级-属性生成规则：1/2/3属性分级生成，保证属性不重复 */
+    /** 【核心升级】星级-属性生成规则：1/2/3属性分级生成，保证属性不重复；每条属性数值独立随机 */
     private static List<String> generateAttrByStar(double star, List<Integer> valueList) {
         List<String> attrList = new ArrayList<>();
-        int baseValue;
         // 1~3星 → 1个属性
         if (star >= 1.0 && star <= 3.0) {
-            baseValue = (int) (star * 4) + RANDOM.nextInt(3);
             String attr = BASE_ATTRS.get(RANDOM.nextInt(BASE_ATTRS.size()));
             attrList.add(attr);
-            valueList.add(baseValue);
+            valueList.add(rollAttrValue(star));
         }
         // 3.5~4星 → 2个不同属性
         else if (star >= 3.5 && star <= 4.0) {
-            baseValue = (int) (star * 5) + RANDOM.nextInt(3);
             int idx1 = RANDOM.nextInt(BASE_ATTRS.size());
             int idx2;
             do { idx2 = RANDOM.nextInt(BASE_ATTRS.size()); } while (idx1 == idx2);
             attrList.add(BASE_ATTRS.get(idx1));
             attrList.add(BASE_ATTRS.get(idx2));
-            valueList.add(baseValue);
-            valueList.add(baseValue);
+            // 每条属性独立随机数值
+            valueList.add(rollAttrValue(star));
+            valueList.add(rollAttrValue(star));
         }
         // 【新增】4.5~5星 → 3个不同属性
         else if (star >= 4.5 && star <= 5.0) {
-            baseValue = (int) (star * 6) + RANDOM.nextInt(3);
             Set<Integer> idxSet = new HashSet<>();
             // 随机3个不重复的属性索引
             while (idxSet.size() < 3) {
@@ -214,12 +211,31 @@ public class EquipmentGenerateUtil {
             for (int idx : idxSet) {
                 attrList.add(BASE_ATTRS.get(idx));
             }
-            // 3个属性同数值，添加3次
-            valueList.add(baseValue);
-            valueList.add(baseValue);
-            valueList.add(baseValue);
+            // 每条属性独立随机数值
+            for (int i = 0; i < 3; i++) {
+                valueList.add(rollAttrValue(star));
+            }
         }
         return attrList;
+    }
+
+    /**
+     * 按星级基准值随机出单条属性数值：
+     * 基准 = 星级 × 系数（1~3星×4，3.5~4星×5，4.5~5星×6），在基准 ±40% 范围内浮动，
+     * 保证同星级不同装备、以及同一装备的不同属性之间都有明显差异，最低不低于 1。
+     */
+    private static int rollAttrValue(double star) {
+        int base;
+        if (star <= 3.0) {
+            base = (int) (star * 4);
+        } else if (star <= 4.0) {
+            base = (int) (star * 5);
+        } else {
+            base = (int) (star * 6);
+        }
+        int spread = Math.max(1, (int) Math.round(base * 0.4));
+        int value = base - spread + RANDOM.nextInt(spread * 2 + 1);
+        return Math.max(1, value);
     }
 
     /** 【核心升级】ID生成：适配1/2/3属性，前缀+N个属性字母+自增数字 */

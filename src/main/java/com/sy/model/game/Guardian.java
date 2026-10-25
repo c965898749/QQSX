@@ -58,9 +58,19 @@ public class Guardian {
         this.physicalBarrier = physicalBarrier;
     }
 
+    public int getMagicBarrier() {
+        return magicBarrier;
+    }
+
+    public void setMagicBarrier(int magicBarrier) {
+        this.magicBarrier = magicBarrier;
+    }
+
     private int buffXuanMins;
     // 物理结界值：吸收物理伤害，每次受击先扣结界再扣血
     private int physicalBarrier;
+    // 魔法护盾值：吸收火焰/飞弹/毒素伤害，盾量>0期间免疫眩晕（青龙·龙威）
+    private int magicBarrier;
     private int wlAtk;
     private int hyAtk;
     private int dsAtk;
@@ -135,6 +145,10 @@ public class Guardian {
      * 是否处于眩晕/昏睡/冰冻等控制中
      */
     public boolean isStunned() {
+        // 魔法护盾存在期间免疫眩晕
+        if (magicBarrier > 0) {
+            return false;
+        }
         return hasEffect(EffectType.STUN);
     }
     public boolean isMaxHpNoDown() {
@@ -145,6 +159,14 @@ public class Guardian {
     }
     public boolean isSilence() {
         return hasEffect(EffectType.SILENCE);
+    }
+    /**
+     * 是否被限制而无法“主动行动”（沉默或眩晕）。
+     * 用于登场技/回合开始/回合中/回合结束的主动释放闸门：眩晕单位不能行动，与沉默一样被挡。
+     * 注意：受击反击/场下受击反应/阵亡触发技等“非行动类”仍应使用 isSilence()，即被眩晕也照常触发。
+     */
+    public boolean isActionBlocked() {
+        return isSilence() || isStunned();
     }
     public boolean isPoison() {
         return hasEffect(EffectType.POISON);
@@ -161,6 +183,8 @@ public class Guardian {
      * 只会保留【回合最长】的那一个，不会叠加多个
      */
     public void addControlEffect(EffectType type, int totalRound, String casterId) {
+        // 凤凰卵（归元）不受任何技能效果影响：免疫眩晕/冰冻/沉默等控制
+        if (isPhoenixEgg()) return;
         // 先看身上有没有这个控制
         EffectInstance existing = null;
         for (EffectInstance e : effects) {
@@ -230,10 +254,14 @@ public class Guardian {
     }
 
     public void addEffect(EffectType type, int value, int round, String casterId, Boolean isSkill) {
+        // 凤凰卵（归元）不受任何技能效果影响：免疫一切增益/中毒/负面状态
+        if (isPhoenixEgg()) return;
         effects.add(new EffectInstance(type, value, round, casterId, isSkill));
     }
 
     public void addEffect(EffectType type, int value, int round, String casterId) {
+        // 凤凰卵（归元）不受任何技能效果影响：免疫一切增益/中毒/负面状态
+        if (isPhoenixEgg()) return;
         effects.add(new EffectInstance(type, value, round, casterId, false));
     }
 

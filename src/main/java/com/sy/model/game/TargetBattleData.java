@@ -11,6 +11,8 @@ public class TargetBattleData {
     private boolean isFireBoost;
     private boolean isHealDown;
     private int shieldRemaining;  // 当前盾（物理结界）剩余值
+    private int magicShieldRemaining;  // 当前魔法护盾剩余值（青龙·龙威）
+    private int healValue;  // 本目标本次受到的治疗量（青龙·龙威吸血回血，0表示无）
 
     public boolean isHealDown() {
         return isHealDown;
@@ -84,5 +86,21 @@ public class TargetBattleData {
 
     public void setShieldRemaining(int shieldRemaining) {
         this.shieldRemaining = shieldRemaining;
+    }
+
+    public int getMagicShieldRemaining() {
+        return magicShieldRemaining;
+    }
+
+    public void setMagicShieldRemaining(int magicShieldRemaining) {
+        this.magicShieldRemaining = magicShieldRemaining;
+    }
+
+    public int getHealValue() {
+        return healValue;
+    }
+
+    public void setHealValue(int healValue) {
+        this.healValue = healValue;
     }
 }

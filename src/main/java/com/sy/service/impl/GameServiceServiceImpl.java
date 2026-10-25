@@ -176,7 +176,7 @@ public class GameServiceServiceImpl implements GameServiceService {
     //    @Autowired
 //    private ThreadPoolTaskExecutor threadPoolTaskExecutor;
     // 最大体力值
-    private static final int MAX_STAMINA = 2000;
+    private static final int MAX_STAMINA = 5000;
     // 每10分钟恢复1点体力
     private static final long RECOVER_INTERVAL_MINUTES = 10;
 
@@ -4177,7 +4177,7 @@ public class GameServiceServiceImpl implements GameServiceService {
         user.setEqCount(user.getEqCount() + 1);
         if (user.getEqCount() > 10) {
             user.setEqCount(0);
-            EqCard drawnCard = EquipmentGenerateUtil.generateEqCard(4);
+            EqCard drawnCard = EquipmentGenerateUtil.batchGenerateEqCard(1).get(0);
             Map map2 = new HashMap();
             map2.put("name", drawnCard.getName());
             map2.put("star", drawnCard.getStar());
@@ -4189,8 +4189,8 @@ public class GameServiceServiceImpl implements GameServiceService {
             map2.put("ds_atk", drawnCard.getDsAtk());
             map2.put("fd_atk", drawnCard.getFdAtk());
             map2.put("wl_def", drawnCard.getWlDef());
-            map2.put("hy_def", drawnCard.getHyAtk());
-            map2.put("ds_def", drawnCard.getDsAtk());
+            map2.put("hy_def", drawnCard.getHyDef());
+            map2.put("ds_def", drawnCard.getDsDef());
             map2.put("fd_def", drawnCard.getFdDef());
             map2.put("zl_def", drawnCard.getZlDef());
             map2.put("zl_atk", drawnCard.getZlAtk());
@@ -5885,8 +5885,8 @@ public class GameServiceServiceImpl implements GameServiceService {
         map2.put("ds_atk", drawnCard.getDsAtk());
         map2.put("fd_atk", drawnCard.getFdAtk());
         map2.put("wl_def", drawnCard.getWlDef());
-        map2.put("hy_def", drawnCard.getHyAtk());
-        map2.put("ds_def", drawnCard.getDsAtk());
+        map2.put("hy_def", drawnCard.getHyDef());
+        map2.put("ds_def", drawnCard.getDsDef());
         map2.put("fd_def", drawnCard.getFdDef());
         map2.put("zl_def", drawnCard.getZlDef());
         map2.put("zl_atk", drawnCard.getZlAtk());
@@ -7615,6 +7615,17 @@ public class GameServiceServiceImpl implements GameServiceService {
                 addBagItem(userId, 14, random5.nextInt(401) + 599);
                 // 紫金矿 id:15，范围 199 ~ 599    差值：599 - 199 = 400
                 addBagItem(userId, 15, random5.nextInt(401) + 199);
+                break;
+            case 100: // 青龙许愿福袋：青龙魂魄1~10枚、青铜矿999~1999枚、玄铁矿599~999枚、紫金矿199~599枚
+                Random random6 = new Random();
+                // 青龙魂魄（id 1114）：1~10枚，进背包
+                addBagItem(userId, 1114, random6.nextInt(10) + 1);
+                // 青铜矿 id:13，范围 999 ~ 1999
+                addBagItem(userId, 13, random6.nextInt(1001) + 999);
+                // 玄铁矿 id:14，范围 599 ~ 999
+                addBagItem(userId, 14, random6.nextInt(401) + 599);
+                // 紫金矿 id:15，范围 199 ~ 599
+                addBagItem(userId, 15, random6.nextInt(401) + 199);
                 break;
             default:
                 // 功勋商城定向物品（itemId>=1105000，如 1105000、1106000…）：使用后记录用户热点 redian（去除后三位得到英雄卡id，如 1105000→1105）；
@@ -10254,6 +10265,23 @@ public class GameServiceServiceImpl implements GameServiceService {
                 gamePlayerBagMapper.insert(playerBag);
             }
         } else {
+            // 风珠(457~506)/血玉(507~556)仅可镶面对法器（eq_type=3）
+            int gemItemId = Integer.parseInt(token.getId());
+            if (gemItemId >= 457 && gemItemId <= 556) {
+                int eqType = -1;
+                List<EqCharacters> userEqList = eqCharactersMapper.selectByUserId(Integer.parseInt(userId));
+                for (EqCharacters eq : userEqList) {
+                    if (eq.getUuid() != null && (eq.getUuid() + "").equals(token.getStr())) {
+                        eqType = eq.getEqType() == null ? -1 : eq.getEqType();
+                        break;
+                    }
+                }
+                if (eqType != EquipmentGenerateUtil.EQ_TYPE_MAGIC) {
+                    baseResp.setSuccess(0);
+                    baseResp.setErrorMsg("风珠/血玉只能镶面在法器上");
+                    return baseResp;
+                }
+            }
             Map itemMap = new HashMap();
             itemMap.put("item_id", token.getId());
             itemMap.put("user_id", userId);
@@ -11117,25 +11145,23 @@ public class GameServiceServiceImpl implements GameServiceService {
                 if (Xtool.isNotNull(eqCharacter.getGemList())) {
                     List<GameEquipInlay> gemList = eqCharacter.getGemList();
                     if (eqCharacter.getWlAtk() > 0) {
-                        List<Integer> itemIds = gemList.stream()
-                                .filter(gem -> gem.getItemId() >= 39 && gem.getItemId() <= 88).map(GameEquipInlay::getItemId)
-                                .collect(Collectors.toList());
-                        // 当前装备上所有太阳石总等级
-                        int gemLv = craftEqList.stream()
-                                .filter(inlay -> itemIds.contains(inlay.getItemId()))
-                                .mapToInt(CraftEq::getLevel)
+                        // 当前装备上所有太阳石总等级（逐颗累加，相同宝石可叠加；按 itemId 查图鉴等级，避免多 type 行重复计入）
+                        int gemLv = gemList.stream()
+                                .filter(gem -> gem.getItemId() >= 39 && gem.getItemId() <= 88)
+                                .mapToInt(gem -> craftEqList.stream()
+                                        .filter(inlay -> inlay.getItemId().equals(gem.getItemId()))
+                                        .mapToInt(CraftEq::getLevel).max().orElse(0))
                                 .sum();
                         double rate = 1 + gemLv * 0.01;
                         eqCharacter.setWlAtk((int) Math.round(eqCharacter.getWlAtk() * rate));
                     }
                     if (1 == 1) {
-                        List<Integer> itemIds = gemList.stream()
-                                .filter(gem -> gem.getItemId() >= 200 && gem.getItemId() <= 249).map(GameEquipInlay::getItemId)
-                                .collect(Collectors.toList());
-                        // 当前装备上所有月亮石总等级（法术抗性：火抗/毒抗/弹抗）
-                        int gemLv = craftEqList.stream()
-                                .filter(inlay -> itemIds.contains(inlay.getItemId()))
-                                .mapToInt(CraftEq::getLevel)
+                        // 当前装备上所有月亮石总等级（法术抗性：火抗/毒抗/弹抗；逐颗累加，相同宝石可叠加；按 itemId 查图鉴等级，避免多 type 行重复计入）
+                        int gemLv = gemList.stream()
+                                .filter(gem -> gem.getItemId() >= 200 && gem.getItemId() <= 249)
+                                .mapToInt(gem -> craftEqList.stream()
+                                        .filter(inlay -> inlay.getItemId().equals(gem.getItemId()))
+                                        .mapToInt(CraftEq::getLevel).max().orElse(0))
                                 .sum();
                         double rate = 1 + gemLv * 0.01;
                         if (eqCharacter.getHyDef() > 0) {
@@ -11149,13 +11175,12 @@ public class GameServiceServiceImpl implements GameServiceService {
                         }
                     }
                     if (1 == 1) {
-                        List<Integer> itemIds = gemList.stream()
-                                .filter(gem -> gem.getItemId() >= 250 && gem.getItemId() <= 299).map(GameEquipInlay::getItemId)
-                                .collect(Collectors.toList());
-                        // 当前装备上所有红玛瑙总等级（法术伤害：火焰/毒素/飞弹）
-                        int gemLv = craftEqList.stream()
-                                .filter(inlay -> itemIds.contains(inlay.getItemId()))
-                                .mapToInt(CraftEq::getLevel)
+                        // 当前装备上所有红玛瑙总等级（法术伤害：火焰/毒素/飞弹；逐颗累加，相同宝石可叠加；按 itemId 查图鉴等级，避免多 type 行重复计入）
+                        int gemLv = gemList.stream()
+                                .filter(gem -> gem.getItemId() >= 250 && gem.getItemId() <= 299)
+                                .mapToInt(gem -> craftEqList.stream()
+                                        .filter(inlay -> inlay.getItemId().equals(gem.getItemId()))
+                                        .mapToInt(CraftEq::getLevel).max().orElse(0))
                                 .sum();
                         double rate = 1 + gemLv * 0.01;
                         if (eqCharacter.getHyAtk() > 0) {
@@ -11169,37 +11194,34 @@ public class GameServiceServiceImpl implements GameServiceService {
                         }
                     }
                     if (eqCharacter.getZlDef() > 0) {
-                        List<Integer> itemIds = gemList.stream()
-                                .filter(gem -> gem.getItemId() >= 300 && gem.getItemId() <= 349).map(GameEquipInlay::getItemId)
-                                .collect(Collectors.toList());
-                        // 当前装备上所有黑玉石总等级（治疗效果）
-                        int gemLv = craftEqList.stream()
-                                .filter(inlay -> itemIds.contains(inlay.getItemId()))
-                                .mapToInt(CraftEq::getLevel)
+                        // 当前装备上所有黑玉石总等级（治疗效果；逐颗累加，相同宝石可叠加；按 itemId 查图鉴等级，避免多 type 行重复计入）
+                        int gemLv = gemList.stream()
+                                .filter(gem -> gem.getItemId() >= 300 && gem.getItemId() <= 349)
+                                .mapToInt(gem -> craftEqList.stream()
+                                        .filter(inlay -> inlay.getItemId().equals(gem.getItemId()))
+                                        .mapToInt(CraftEq::getLevel).max().orElse(0))
                                 .sum();
                         double rate = 1 + gemLv * 0.01;
                         eqCharacter.setZlDef((int) Math.round(eqCharacter.getZlDef() * rate));
                     }
                     if (eqCharacter.getWlDef() > 0) {
-                        List<Integer> itemIds = gemList.stream()
-                                .filter(gem -> gem.getItemId() >= 350 && gem.getItemId() <= 399).map(GameEquipInlay::getItemId)
-                                .collect(Collectors.toList());
-                        // 当前装备上所有光芒石总等级（物理抗性）
-                        int gemLv = craftEqList.stream()
-                                .filter(inlay -> itemIds.contains(inlay.getItemId()))
-                                .mapToInt(CraftEq::getLevel)
+                        // 当前装备上所有光芒石总等级（物理抗性；逐颗累加，相同宝石可叠加；按 itemId 查图鉴等级，避免多 type 行重复计入）
+                        int gemLv = gemList.stream()
+                                .filter(gem -> gem.getItemId() >= 350 && gem.getItemId() <= 399)
+                                .mapToInt(gem -> craftEqList.stream()
+                                        .filter(inlay -> inlay.getItemId().equals(gem.getItemId()))
+                                        .mapToInt(CraftEq::getLevel).max().orElse(0))
                                 .sum();
                         double rate = 1 + gemLv * 0.01;
                         eqCharacter.setWlDef((int) Math.round(eqCharacter.getWlDef() * rate));
                     }
                     if (eqCharacter.getZlAtk() > 0) {
-                        List<Integer> itemIds = gemList.stream()
-                                .filter(gem -> gem.getItemId() >= 400 && gem.getItemId() <= 449).map(GameEquipInlay::getItemId)
-                                .collect(Collectors.toList());
-                        // 当前装备上所有神秘石总等级（被治疗效果）
-                        int gemLv = craftEqList.stream()
-                                .filter(inlay -> itemIds.contains(inlay.getItemId()))
-                                .mapToInt(CraftEq::getLevel)
+                        // 当前装备上所有神秘石总等级（被治疗效果；逐颗累加，相同宝石可叠加；按 itemId 查图鉴等级，避免多 type 行重复计入）
+                        int gemLv = gemList.stream()
+                                .filter(gem -> gem.getItemId() >= 400 && gem.getItemId() <= 449)
+                                .mapToInt(gem -> craftEqList.stream()
+                                        .filter(inlay -> inlay.getItemId().equals(gem.getItemId()))
+                                        .mapToInt(CraftEq::getLevel).max().orElse(0))
                                 .sum();
                         double rate = 1 + gemLv * 0.01;
                         eqCharacter.setZlAtk((int) Math.round(eqCharacter.getZlAtk() * rate));
@@ -11221,15 +11243,35 @@ public class GameServiceServiceImpl implements GameServiceService {
             // 洗练属性：速度和生命直接加到面板
             for (EqCharacters eq : eqCharacters) {
                 if (Xtool.isNotNull(eq.getXilianList())) {
+                    // 风珠(457~506)/血玉(507~556)仅法器可镶：逐颗累加等级，每级 +1%，分别放大本装备的洗练速度/生命
+                    double speedRate = 1.0;
+                    double hpRate = 1.0;
+                    if (eq.getEqType() != null && eq.getEqType() == EquipmentGenerateUtil.EQ_TYPE_MAGIC && Xtool.isNotNull(eq.getGemList())) {
+                        int windLv = eq.getGemList().stream()
+                                .filter(gem -> gem.getItemId() >= 457 && gem.getItemId() <= 506)
+                                .mapToInt(gem -> craftEqList.stream()
+                                        .filter(inlay -> inlay.getItemId().equals(gem.getItemId()))
+                                        .mapToInt(CraftEq::getLevel).max().orElse(0))
+                                .sum();
+                        int bloodLv = eq.getGemList().stream()
+                                .filter(gem -> gem.getItemId() >= 507 && gem.getItemId() <= 556)
+                                .mapToInt(gem -> craftEqList.stream()
+                                        .filter(inlay -> inlay.getItemId().equals(gem.getItemId()))
+                                        .mapToInt(CraftEq::getLevel).max().orElse(0))
+                                .sum();
+                        speedRate = 1 + windLv * 0.01;
+                        hpRate = 1 + bloodLv * 0.01;
+                    }
                     for (Xilian x : eq.getXilianList()) {
                         if (x.getXilian() == null || x.getValue() == null) continue;
                         double val;
                         try { val = Double.parseDouble(x.getValue()); } catch (NumberFormatException e) { continue; }
-                        if (x.getXilian() == 8) { // 速度
-                            character.setSpeed(character.getSpeed() + (int) val);
-                        } else if (x.getXilian() == 9) { // 生命
-                            character.setMaxHp(character.getMaxHp() + (int) val);
-                            character.setHp(character.getHp() + (int) val);
+                        if (x.getXilian() == 8) { // 速度（受风珠加成）
+                            character.setSpeed(character.getSpeed() + (int) Math.round(val * speedRate));
+                        } else if (x.getXilian() == 9) { // 生命（受血玉加成）
+                            int hpVal = (int) Math.round(val * hpRate);
+                            character.setMaxHp(character.getMaxHp() + hpVal);
+                            character.setHp(character.getHp() + hpVal);
                         }
                     }
                 }
