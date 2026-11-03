@@ -18,6 +18,7 @@ import com.sy.model.game.Character;
 import com.sy.model.resp.BaseResp;
 import com.sy.service.GameServiceService;
 import com.sy.service.UserServic;
+import com.sy.service.WorldBossService;
 import com.sy.tool.*;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.BeanUtils;
@@ -68,6 +69,8 @@ public class GameServiceServiceImpl implements GameServiceService {
     private AppVersionMapper appVersionMapper;
     @Autowired
     private RedisTemplate redisTemplate;
+    @Autowired
+    private WorldBossService worldBossService;
     @Autowired
     private CharactersMapper charactersMapper;
     @Autowired
@@ -375,7 +378,7 @@ public class GameServiceServiceImpl implements GameServiceService {
     //格式化装备
     public List<EqCharacters> formateEqCharacter(List<EqCharacters> characterList) {
         for (EqCharacters eqCharacters : characterList) {
-            // 飞升加成：每级flyup增加3%属性
+            // 飞升加成：装备飞升每级 flyup 增加 3% 属性
             if (Xtool.isNotNull(eqCharacters.getFlyup())) {
                 BigDecimal flyupRate = new BigDecimal("1").add(new BigDecimal(eqCharacters.getFlyup()).multiply(new BigDecimal("0.03")));
                 eqCharacters.setWlAtk(new BigDecimal(eqCharacters.getWlAtk()).multiply(flyupRate).intValue());
@@ -9638,6 +9641,209 @@ public class GameServiceServiceImpl implements GameServiceService {
     }
 
     @Override
+    public BaseResp worldBossChallenge(TokenDto token, HttpServletRequest request) throws Exception {
+        BaseResp baseResp = new BaseResp();
+        if (token == null || Xtool.isNull(token.getToken())) {
+            baseResp.setSuccess(0);
+            baseResp.setErrorMsg("登录过期");
+            return baseResp;
+        }
+        String userId = token.getUserId();
+        if (Xtool.isNull(userId)) {
+            baseResp.setSuccess(0);
+            baseResp.setErrorMsg("登录过期");
+            return baseResp;
+        }
+        User user = userMapper.selectUserByUserId(Integer.parseInt(userId));
+        if (user == null) {
+            baseResp.setSuccess(0);
+            baseResp.setErrorMsg("用户不存在");
+            return baseResp;
+        }
+        // 世界BOSS从当天排班定位：world_boss_daily.base_boss_id -> world_boss_base 模板
+        LocalDate today = LocalDate.now();
+        WorldBossDaily bossDaily = worldBossService.getScheduleByDate(today);
+        WorldBossBase worldBoss = null;
+        if (bossDaily == null) {
+            baseResp.setSuccess(0);
+            baseResp.setErrorMsg("今日无世界BOSS排班");
+            return baseResp;
+        }
+        if (bossDaily.getBaseBossId() != null) {
+            worldBoss = worldBossService.getBossTemplate(bossDaily.getBaseBossId());
+        }
+        if (worldBoss == null) {
+            baseResp.setSuccess(0);
+            baseResp.setErrorMsg("暂无世界BOSS");
+            return baseResp;
+        }
+        // 基准三维防呆：缺失/为0无法建模与回写倍率
+        if (worldBoss.getBaseHp() == null || worldBoss.getBaseHp() <= 0
+                || worldBoss.getBaseAtk() == null || worldBoss.getBaseAtk() <= 0
+                || worldBoss.getBaseSpeed() == null || worldBoss.getBaseSpeed() <= 0) {
+            baseResp.setSuccess(0);
+            baseResp.setErrorMsg("世界BOSS基准属性未配置");
+            return baseResp;
+        }
+        // 当日倍率（缺省按满值1.00）：hp_rate=0 表示今日已被击杀
+        BigDecimal dailyHpRate = bossDaily.getHpRate() == null ? new BigDecimal("1.00") : bossDaily.getHpRate();
+        BigDecimal dailyAtkRate = bossDaily.getAtkRate() == null ? new BigDecimal("1.00") : bossDaily.getAtkRate();
+        BigDecimal dailySpeedRate = bossDaily.getSpeedRate() == null ? new BigDecimal("1.00") : bossDaily.getSpeedRate();
+        if (dailyHpRate.compareTo(BigDecimal.ZERO) <= 0) {
+            baseResp.setSuccess(0);
+            baseResp.setErrorMsg("今日BOSS已被击败，明日重置后再来挑战");
+            return baseResp;
+        }
+        // 每次挑战CD 1分钟：以 Redis 原子占位(setIfAbsent+60s TTL)实现，冷却期内不可重复挑战
+        String cdKey = "worldboss:challenge:cd:" + userId;
+        Boolean acquired = redisTemplate.opsForValue().setIfAbsent(cdKey, "1", 60, TimeUnit.SECONDS);
+        if (acquired == null || !acquired) {
+            baseResp.setSuccess(0);
+            baseResp.setErrorMsg("挑战冷却中，请稍后再试");
+            return baseResp;
+        }
+        // 玩家出战战队
+        List<Characters> leftCharacter = charactersMapper.goIntoListById(userId);
+        if (CollectionUtils.isEmpty(leftCharacter)) {
+            baseResp.setSuccess(0);
+            baseResp.setErrorMsg("你没有配置战队无法战斗");
+            return baseResp;
+        }
+        fillCharacterEquip(userId, leftCharacter);
+        // 敌方阵容：1号位BOSS（三维=基准×当日倍率）+ 2~5号位四象护法
+        List<Characters> rightCharacter = buildWorldBossEnemies(worldBoss, dailyHpRate, dailyAtkRate, dailySpeedRate);
+        // 每次挑战增加用户功勋 5（gongxun 由 updateuser 落库到主库）
+        int curGx = user.getGongxun() == null ? 0 : user.getGongxun();
+        user.setGongxun(curGx + 5);
+        userMapper.updateuser(user);
+        // 真打一场（PVE：toUserId=0，type="0"）并落盘战报供前端 FightMap 回放
+        Battle battle = this.battle(leftCharacter, Integer.parseInt(userId), user.getNickname(), rightCharacter, 0, worldBoss.getBossName(), user.getGameImg(), "0");
+        saveBattleLogToFile(battle.getId(), JsonUtils.toJson(battle.getJson()));
+        // 按战后BOSS最终三维回写当天倍率：rate = 最终值/基准值（clamp 0~1）
+        long bossBaseHp = worldBoss.getBaseHp() == null ? 0L : worldBoss.getBaseHp();
+        long bossBaseAtk = worldBoss.getBaseAtk() == null ? 0L : worldBoss.getBaseAtk();
+        long bossBaseSpeed = worldBoss.getBaseSpeed() == null ? 0L : worldBoss.getBaseSpeed();
+        int bossStartHp = (int) Math.round(bossBaseHp * dailyHpRate.doubleValue());
+        int bossStartAtk = (int) Math.round(bossBaseAtk * dailyAtkRate.doubleValue());
+        int bossStartSpeed = (int) Math.round(bossBaseSpeed * dailySpeedRate.doubleValue());
+        String bossUnitId = "B" + WORLD_BOSS_CARRIER_CARD_ID;
+        int bossFinalHp = bossStartHp;
+        int bossHitCount = 0;
+        long bossDamage = 0L;
+        List<BattleLog> bossLogs = (List<BattleLog>) battle.getJson().get("battleLogs");
+        if (bossLogs != null) {
+            for (BattleLog bl : bossLogs) {
+                // 单目标事件：直接读 targetUnitId/targetHpAfter
+                if (bossUnitId.equals(bl.getTargetUnitId())) {
+                    if (bl.getTargetHpAfter() >= 0) {
+                        bossFinalHp = bl.getTargetHpAfter();
+                    }
+                    if (bl.getSingleTargetValue() > 0) {
+                        bossHitCount++;
+                    }
+                }
+                // 多目标(AoE)事件：从 multiTargetDataMap 中取 boss 的目标数据
+                if (bl.getMultiTargetDataMap() != null && bl.getMultiTargetDataMap().containsKey(bossUnitId)) {
+                    TargetBattleData td = bl.getMultiTargetDataMap().get(bossUnitId);
+                    if (td.getHpAfter() >= 0) {
+                        bossFinalHp = td.getHpAfter();
+                    }
+                    if (td.getValue() != null && td.getValue() > 0) {
+                        bossHitCount++;
+                    }
+                }
+            }
+        }
+        bossFinalHp = Math.max(0, Math.min(bossFinalHp, bossStartHp));
+        bossDamage = Math.max(0L, (long) bossStartHp - bossFinalHp);
+        BigDecimal hpRate = clampWorldBossRate(BigDecimal.valueOf(bossFinalHp).divide(BigDecimal.valueOf(bossBaseHp), 6, RoundingMode.HALF_UP));
+        BigDecimal atkRate = clampWorldBossRate(BigDecimal.valueOf(bossStartAtk).divide(BigDecimal.valueOf(bossBaseAtk), 6, RoundingMode.HALF_UP));
+        BigDecimal speedRate = clampWorldBossRate(BigDecimal.valueOf(bossStartSpeed).divide(BigDecimal.valueOf(bossBaseSpeed), 6, RoundingMode.HALF_UP));
+        worldBossService.writeDailyRates(today, hpRate, atkRate, speedRate);
+        // 伤害记录：累计本次对BOSS的伤害与命中次数
+        worldBossService.accumulateDamage(today, Long.parseLong(userId), user.getNickname(), bossDamage, bossHitCount);
+        // 击杀（hp_rate回写为0）：全服广播
+        if (hpRate.compareTo(BigDecimal.ZERO) <= 0) {
+            GameNotice gameNotice = new GameNotice();
+            gameNotice.setDescription("恭喜 " + user.getNickname() + " 击杀世界BOSS【" + worldBoss.getBossName() + "】！");
+            gameNoticeMapper.insert(gameNotice);
+        }
+        UserInfo userInfo = new UserInfo();
+        BeanUtils.copyProperties(user, userInfo);
+        Map map = new HashMap();
+        map.put("userInfo", userInfo);
+        map.put("worldBoss", worldBoss);
+        map.put("battle", battle);
+        baseResp.setData(map);
+        baseResp.setSuccess(1);
+        return baseResp;
+    }
+
+    /** 世界BOSS战斗载体卡牌ID（应龙）：仅提供阵营/职业/技能框架，三维被 world_boss_base×倍率 覆写 */
+    private static final String WORLD_BOSS_CARRIER_CARD_ID = "15";
+    /** 世界BOSS战斗等级 */
+    private static final int WORLD_BOSS_LV = 300;
+    /** 四象护法卡牌ID（站位2~5）：白虎/青龙/朱雀/玄武 */
+    private static final String[] WORLD_BOSS_GUARDIAN_IDS = {"1115", "1114", "1113", "1104"};
+    /** 四象护法预制等级（与站位对应） */
+    private static final int[] WORLD_BOSS_GUARDIAN_LVS = {400, 400, 300, 200};
+
+    /**
+     * 组装世界BOSS敌方阵容：
+     * 1号位BOSS：以应龙卡(WORLD_BOSS_CARRIER_CARD_ID)为载体，三维走 world_boss_base 基准×当日倍率；
+     * 2~5号位：四象护法按卡牌配置+预制等级参战。
+     */
+    private List<Characters> buildWorldBossEnemies(WorldBossBase worldBoss, BigDecimal hpRate, BigDecimal atkRate, BigDecimal speedRate) throws Exception {
+        Card carrier = GameConfigCache.getCard(WORLD_BOSS_CARRIER_CARD_ID);
+        if (carrier == null) {
+            throw new Exception("世界BOSS战斗载体卡牌缺失：" + WORLD_BOSS_CARRIER_CARD_ID);
+        }
+        Characters boss = new Characters();
+        BeanUtils.copyProperties(carrier, boss);
+        boss.setGoIntoNum(1);
+        boss.setLv(WORLD_BOSS_LV);
+        boss.setName(worldBoss.getBossName());
+        // 参战单位不走卡牌成长值/协同被动：清空协同被动标记（该字段为String，协同块按equals判空）
+        boss.setPassiveIntroduceThree(null);
+        // 三维覆写：引擎按 lv×growth×星级系数×(lv/80+0.8) 计算，故反推成长值使最终值=基准×倍率（战斗内不回写atk/speed，只取整不四舍五入）
+        BigDecimal lvBd = new BigDecimal(WORLD_BOSS_LV);
+        BigDecimal starFactor = boss.getStar().subtract(BigDecimal.ONE).multiply(new BigDecimal("0.15")).add(BigDecimal.ONE);
+        BigDecimal factor = lvBd.divide(new BigDecimal(80)).add(new BigDecimal("0.8")).multiply(starFactor).multiply(lvBd);
+        long targetHp = Math.round((worldBoss.getBaseHp() == null ? 0L : worldBoss.getBaseHp()) * hpRate.doubleValue());
+        long targetAtk = Math.round((worldBoss.getBaseAtk() == null ? 0L : worldBoss.getBaseAtk()) * atkRate.doubleValue());
+        long targetSpeed = Math.round((worldBoss.getBaseSpeed() == null ? 0L : worldBoss.getBaseSpeed()) * speedRate.doubleValue());
+        boss.setHpGrowth(BigDecimal.valueOf(targetHp).divide(factor, 20, RoundingMode.DOWN));
+        boss.setAttackGrowth(BigDecimal.valueOf(targetAtk).divide(factor, 20, RoundingMode.DOWN));
+        boss.setSpeedGrowth(BigDecimal.valueOf(targetSpeed).divide(factor, 20, RoundingMode.DOWN));
+        List<Characters> rightCharacter = new ArrayList<>();
+        rightCharacter.add(boss);
+        // 四象护法：卡牌配置+预制等级，站位 2~5；取不到卡则跳过该护法
+        for (int i = 0; i < WORLD_BOSS_GUARDIAN_IDS.length; i++) {
+            Card gCard = GameConfigCache.getCard(WORLD_BOSS_GUARDIAN_IDS[i]);
+            if (gCard == null) {
+                continue;
+            }
+            Characters g = new Characters();
+            BeanUtils.copyProperties(gCard, g);
+            g.setGoIntoNum(i + 2);
+            g.setLv(WORLD_BOSS_GUARDIAN_LVS[i]);
+            rightCharacter.add(g);
+        }
+        return rightCharacter;
+    }
+
+    /** 世界BOSS倍率 clamp 到 0~1（防御越界，保证只降不升） */
+    private BigDecimal clampWorldBossRate(BigDecimal rate) {
+        if (rate.compareTo(BigDecimal.ZERO) < 0) {
+            return BigDecimal.ZERO;
+        }
+        if (rate.compareTo(BigDecimal.ONE) > 0) {
+            return BigDecimal.ONE;
+        }
+        return rate.setScale(4, RoundingMode.HALF_UP);
+    }
+
+    @Override
     @Transactional
     @NoRepeatSubmit(limitSeconds = 1)
     public BaseResp start6(TokenDto token, HttpServletRequest request) throws Exception {
@@ -11075,9 +11281,9 @@ public class GameServiceServiceImpl implements GameServiceService {
             BigDecimal maxHp = lv.multiply(characters.getHpGrowth().multiply(((characters.getStar().subtract(new BigDecimal(1))).multiply(new BigDecimal("0.15")).add(new BigDecimal(1))).multiply((lv.divide(new BigDecimal(80)).add(new BigDecimal("0.8"))))));
             BigDecimal attack = lv.multiply(characters.getAttackGrowth().multiply(((characters.getStar().subtract(new BigDecimal(1))).multiply(new BigDecimal("0.15")).add(new BigDecimal(1))).multiply((lv.divide(new BigDecimal(80)).add(new BigDecimal("0.8"))))));
             BigDecimal speed = lv.multiply(characters.getSpeedGrowth().multiply(((characters.getStar().subtract(new BigDecimal(1))).multiply(new BigDecimal("0.15")).add(new BigDecimal(1))).multiply((lv.divide(new BigDecimal(80)).add(new BigDecimal("0.8"))))));
-            // 飞升加成：每级flyup增加3%属性
+            // 飞升加成：英雄卡牌飞升每级 flyup 增加 5% 属性
             if (Xtool.isNotNull(characters.getFlyup())) {
-                BigDecimal flyupRate = new BigDecimal("1").add(new BigDecimal(characters.getFlyup()).multiply(new BigDecimal("0.03")));
+                BigDecimal flyupRate = new BigDecimal("1").add(new BigDecimal(characters.getFlyup()).multiply(new BigDecimal("0.05")));
                 maxHp = maxHp.multiply(flyupRate);
                 attack = attack.multiply(flyupRate);
                 speed = speed.multiply(flyupRate);
@@ -11101,9 +11307,9 @@ public class GameServiceServiceImpl implements GameServiceService {
         BigDecimal maxHp = lv.multiply(characters.getHpGrowth().multiply(((characters.getStar().subtract(new BigDecimal(1))).multiply(new BigDecimal("0.15")).add(new BigDecimal(1))).multiply((lv.divide(new BigDecimal(80)).add(new BigDecimal("0.8"))))));
         BigDecimal attack = lv.multiply(characters.getAttackGrowth().multiply(((characters.getStar().subtract(new BigDecimal(1))).multiply(new BigDecimal("0.15")).add(new BigDecimal(1))).multiply((lv.divide(new BigDecimal(80)).add(new BigDecimal("0.8"))))));
         BigDecimal speed = lv.multiply(characters.getSpeedGrowth().multiply(((characters.getStar().subtract(new BigDecimal(1))).multiply(new BigDecimal("0.15")).add(new BigDecimal(1))).multiply((lv.divide(new BigDecimal(80)).add(new BigDecimal("0.8"))))));
-        // 飞升加成：每级flyup增加3%属性
+        // 飞升加成：英雄卡牌飞升每级 flyup 增加 5% 属性
         if (Xtool.isNotNull(characters.getFlyup())) {
-            BigDecimal flyupRate = new BigDecimal("1").add(new BigDecimal(characters.getFlyup()).multiply(new BigDecimal("0.03")));
+            BigDecimal flyupRate = new BigDecimal("1").add(new BigDecimal(characters.getFlyup()).multiply(new BigDecimal("0.05")));
             maxHp = maxHp.multiply(flyupRate);
             attack = attack.multiply(flyupRate);
             speed = speed.multiply(flyupRate);
@@ -11415,6 +11621,19 @@ public class GameServiceServiceImpl implements GameServiceService {
             }
         }
 
+        // 应龙·龙族始祖（4技能）：位居1号位置时，按 collHp/collAttack/collSpeed × 技能等级 增加自身生命上限/攻击/速度
+        if ("15".equals(character.getId()) && characters.getGoIntoNum() == 1 && skillLevel[3] > 0) {
+            if (Xtool.isNotNull(characters.getCollHp())) {
+                character.setMaxHp(character.getMaxHp() + skillLevel[3] * characters.getCollHp());
+                character.setHp(character.getHp() + skillLevel[3] * characters.getCollHp());
+            }
+            if (Xtool.isNotNull(characters.getCollAttack())) {
+                character.setAttack(character.getAttack() + skillLevel[3] * characters.getCollAttack());
+            }
+            if (Xtool.isNotNull(characters.getCollSpeed())) {
+                character.setSpeed(character.getSpeed() + skillLevel[3] * characters.getCollSpeed());
+            }
+        }
 
         return character;
     }

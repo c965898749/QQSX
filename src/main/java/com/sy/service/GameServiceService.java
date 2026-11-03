@@ -99,6 +99,12 @@ public interface GameServiceService {
     BaseResp start5(TokenDto token, HttpServletRequest request) throws Exception;
     BaseResp getTower(TokenDto token, HttpServletRequest request) throws Exception;
     BaseResp start4(TokenDto token, HttpServletRequest request) throws Exception;
+
+    /**
+     * 世界BOSS挑战：按当天排班(world_boss_daily.base_boss_id)定位BOSS，真打一场战斗；
+     * 战后按BOSS最终三维回写当日倍率，击杀(hp_rate=0)时全服广播；每次挑战增加用户功勋5，每次挑战CD 1分钟
+     */
+    BaseResp worldBossChallenge(TokenDto token, HttpServletRequest request) throws Exception;
     BaseResp start6(TokenDto token, HttpServletRequest request) throws Exception;
     BaseResp feiShenhechen(TokenDto token, HttpServletRequest request) throws Exception;
     BaseResp jingji(TokenDto token, HttpServletRequest request) throws Exception;

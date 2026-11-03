@@ -11,7 +11,7 @@ import org.springframework.scheduling.annotation.EnableScheduling;
  * YIMEM Spring Boot 启动类
  */
 @SpringBootApplication
-@MapperScan("com.sy.mapper")
+@MapperScan(basePackages = "com.sy.mapper", sqlSessionFactoryRef = "masterSqlSessionFactory")
 @ServletComponentScan(basePackages = "com.sy")
 @ComponentScan(basePackages = {"com.sy"})
 @EnableScheduling

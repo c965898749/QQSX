@@ -846,6 +846,27 @@ public class GameContoller {
     }
 
     /**
+     * 世界BOSS挑战（从 world_boss_base 读取，每次挑战+5功勋，CD 1分钟）
+     *
+     * @param token
+     * @param request
+     * @return
+     */
+    @PostMapping("worldBossChallenge")
+    @CrossOrigin
+    public BaseResp worldBossChallenge(@RequestBody TokenDto token, HttpServletRequest request) {
+        BaseResp baseResp = new BaseResp();
+        try {
+            baseResp = gameServiceService.worldBossChallenge(token, request);
+            return baseResp;
+        } catch (Exception e) {
+            e.printStackTrace();
+            baseResp.setSuccess(0);
+            return baseResp;
+        }
+    }
+
+    /**
      * 夺取，抢夺
      *
      * @param token

@@ -33,6 +33,16 @@ public class Guardian {
     private int buffDongyues;
     // 谛听返璞归真已触发次数（每次减伤和反弹数值减少5%）
     private int buffDiTingFanPu;
+    // 白虎·血战到底叠层数（我方兽族死亡时全体各自+1，封顶99，永久保留）
+    private int xueZhanLayers;
+    // 应龙·应龙印记层数（护法自损/受增益等累积，上限50；阈值解锁被动，部分消耗型能力会扣减）
+    private int yinjiCount;
+    // 应龙·本回合自损刻印次数（每回合最多+3，防一波卖血刷满）
+    private int yinjiSelfRound;
+    // 应龙·本回合已获得“血刻加命”增益标记（每人每回合最多1次）
+    private boolean yinjiBuffedThisRound;
+    // 应龙·还魂：剩余回合数（>0 表示该阵亡单位已被施加还魂、处于待复活态；回合开始递减，降至0时满血复活。固魂/凤凰卵不可被施加）
+    private int huanhunRounds;
     // 谛听返璞归真本回合是否已触发（防止同一回合多次受击重复递增计数器）
     private boolean fanPuTriggeredThisRound;
     // 玄武守卫本回合是否已触发（仅当本回合确实代队友承受过伤害，回合结束才恢复生命）
@@ -383,6 +393,16 @@ public class Guardian {
     public void setBuffDongyues(int buffDongyues) { this.buffDongyues = buffDongyues; }
     public int getBuffDiTingFanPu() { return buffDiTingFanPu; }
     public void setBuffDiTingFanPu(int buffDiTingFanPu) { this.buffDiTingFanPu = buffDiTingFanPu; }
+    public int getXueZhanLayers() { return xueZhanLayers; }
+    public void setXueZhanLayers(int xueZhanLayers) { this.xueZhanLayers = xueZhanLayers; }
+    public int getYinjiCount() { return yinjiCount; }
+    public void setYinjiCount(int yinjiCount) { this.yinjiCount = yinjiCount; }
+    public int getYinjiSelfRound() { return yinjiSelfRound; }
+    public void setYinjiSelfRound(int yinjiSelfRound) { this.yinjiSelfRound = yinjiSelfRound; }
+    public boolean isYinjiBuffedThisRound() { return yinjiBuffedThisRound; }
+    public void setYinjiBuffedThisRound(boolean yinjiBuffedThisRound) { this.yinjiBuffedThisRound = yinjiBuffedThisRound; }
+    public int getHuanhunRounds() { return huanhunRounds; }
+    public void setHuanhunRounds(int huanhunRounds) { this.huanhunRounds = huanhunRounds; }
     public boolean isFanPuTriggeredThisRound() { return fanPuTriggeredThisRound; }
     public void setFanPuTriggeredThisRound(boolean fanPuTriggeredThisRound) { this.fanPuTriggeredThisRound = fanPuTriggeredThisRound; }
     public boolean isGuardTriggeredThisRound() { return guardTriggeredThisRound; }

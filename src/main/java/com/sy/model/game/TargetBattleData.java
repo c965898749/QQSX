@@ -13,6 +13,9 @@ public class TargetBattleData {
     private int shieldRemaining;  // 当前盾（物理结界）剩余值
     private int magicShieldRemaining;  // 当前魔法护盾剩余值（青龙·龙威）
     private int healValue;  // 本目标本次受到的治疗量（青龙·龙威吸血回血，0表示无）
+    private int shieldChange;  // 本次物理护盾变化量（+授予 / -被吸取），0表示无
+    private int magicShieldChange;  // 本次魔法护盾变化量（+授予 / -被吸取），0表示无
+    private Integer yinjiCount;  // 该目标本次变动后的绝对印记层数（苍龙吸水印记分发等多目标日志用，null表示本条不涉及该目标印记）
 
     public boolean isHealDown() {
         return isHealDown;
@@ -102,5 +105,29 @@ public class TargetBattleData {
 
     public void setHealValue(int healValue) {
         this.healValue = healValue;
+    }
+
+    public int getShieldChange() {
+        return shieldChange;
+    }
+
+    public void setShieldChange(int shieldChange) {
+        this.shieldChange = shieldChange;
+    }
+
+    public int getMagicShieldChange() {
+        return magicShieldChange;
+    }
+
+    public void setMagicShieldChange(int magicShieldChange) {
+        this.magicShieldChange = magicShieldChange;
+    }
+
+    public Integer getYinjiCount() {
+        return yinjiCount;
+    }
+
+    public void setYinjiCount(Integer yinjiCount) {
+        this.yinjiCount = yinjiCount;
     }
 }

@@ -100,6 +100,16 @@ public class BattleManager {
         return speedA-speedB >= 0;
     }
 
+    // 单单位有效速度：基础速度经 SPEED_UP/SPEED_DOWN（含百分比）修正后的取值，用于回合开始按速度排序释放
+    private int effectiveSpeed(Guardian g) {
+        int base = g.getSpeed();
+        int up = calculateTotalVaule(g, EffectType.SPEED_UP);
+        double upPret = calculateTotalUpPretVaule(g, EffectType.SPEED_UP_PRET);
+        int down = calculateTotalVaule(g, EffectType.SPEED_DOWN);
+        double downPret = calculateTotalDownPretVaule(g, EffectType.SPEED_DOWN_PRET);
+        return (int) (base * upPret * downPret + up - down);
+    }
+
     // 初始化战斗
 // 初始化战斗
     private void initBattle() {
@@ -598,6 +608,9 @@ public class BattleManager {
         processLongWei(campA, fieldB);
         processLongWei(campB, fieldA);
 
+        // 苍龙吸水·印记分发（回合结束）：应龙把自身印记转给同阵营站位在其之后的存活护法各+2层（转移，不够则不分）
+        distributeYinjiOnRoundEnd();
+
         List<Guardian> allUnits = new ArrayList<>();
         allUnits.addAll(campA);
         allUnits.addAll(campB);
@@ -644,7 +657,7 @@ public class BattleManager {
     /**
      * 青龙·龙威（2技能）：回合结束时（合并为一条日志，吸血+加盾+青龙回血同时表现）
      * 对场上双方所有兽族(Race.ORC)护法各吸取其当前生命的 技能等级%（保底留 1 点、不吸死）；
-     * 吸取总量：①回复青龙自身生命(healValue)；②均分给本阵营全体存活单位作为魔法护盾数值池(magicBarrier)。
+     * 吸取总量：①回复青龙自身生命(healValue)；②本阵营全体存活单位(含非兽族)各获得等于总吸血量的等量魔法护盾(magicBarrier)。
      */
     private void processLongWei(List<Guardian> camp, Guardian enemyField) {
         Guardian qinglong = camp.stream()
@@ -656,9 +669,9 @@ public class BattleManager {
         // 吸取比例＝技能等级%，但封顶 50%（避免高等级/高星时过度吸取）
         double drainPercent = Math.min(0.5, skillLevel[1] / 100.0);
 
-        // 我方全体存活兽族（场上+场下，含青龙自身）
+        // 我方全体存活兽族（场上+场下，含青龙自身）；凤凰卵（归元）为纯肉盾不受技能影响，排除在吸取对象之外
         List<Guardian> beasts = new ArrayList<>();
-        for (Guardian g : camp) if (!g.isDead() && g.getRace() == Race.ORC) beasts.add(g);
+        for (Guardian g : camp) if (!g.isDead() && !g.isPhoenixEgg() && g.getRace() == Race.ORC) beasts.add(g);
         if (beasts.isEmpty()) return;
 
         // 1) 吸取兽族生命：每个兽族吸取其当前生命的 技能等级%（保底留 1 点，不致死）
@@ -679,17 +692,10 @@ public class BattleManager {
         qinglong.setCurrentHp(Math.min(qinglong.getMaxHp(), qlBefore + drained));
         int qlHeal = qinglong.getCurrentHp() - qlBefore;
 
-        // 3) 实吸总量均分给本阵营全体存活单位作魔法护盾
-        List<Guardian> allies = camp.stream().filter(g -> !g.isDead()).collect(Collectors.toList());
-        if (!allies.isEmpty()) {
-            int perShield = drained / allies.size();
-            int remainder = drained % allies.size();
-            for (int i = 0; i < allies.size(); i++) {
-                Guardian a = allies.get(i);
-                int add = perShield + (i < remainder ? 1 : 0);
-                if (add <= 0) continue;
-                a.setMagicBarrier(a.getMagicBarrier() + add);
-            }
+        // 3) 护盾给全体存活友方（含非兽族）：把吸取的总量作为等量魔法护盾加给每一位友方（如共吸 5000，则每人 +5000）；凤凰卵（归元）为纯肉盾不受技能影响，不分盾
+        List<Guardian> allies = camp.stream().filter(g -> !g.isDead() && !g.isPhoenixEgg()).collect(Collectors.toList());
+        for (Guardian a : allies) {
+            a.setMagicBarrier(a.getMagicBarrier() + drained);
         }
 
         // 4) 合并为一条日志：吸血(双方兽族掉血) + 加盾(我方) + 青龙吸血回血，同一时刻表现
@@ -702,6 +708,7 @@ public class BattleManager {
             int drainVal = drainedMap.getOrDefault(g.getId(), 0);
             TargetBattleData d = new TargetBattleData(g.getMaxHp(), g.getCurrentHp(), drainVal, g.isOnField());
             d.setMagicShieldRemaining(g.getMagicBarrier());
+            if (allies.contains(g)) d.setMagicShieldChange(drained);   // 本次授予法盾（供前端飘"法盾+xxx"）
             if (g == qinglong) d.setHealValue(qlHeal);
             longWeiStatus.put(g.getId(), d);
         }
@@ -800,7 +807,8 @@ public class BattleManager {
                 defender.setPhysicalBarrier(0);
             }
         }
-        defender.setCurrentHp(defender.getCurrentHp() - burnDamage);
+        // 应龙·免疫致命（阈值1）：普攻将造成超过生命上限10%的致死伤害时，消耗同阵营应龙1层印记免疫此次伤害（统一走 applyDefenderDamage，命中自动补发“免疫致命”子日志）
+        burnDamage = applyDefenderDamage(defender, burnDamage);
         addLog("NORMAL_ATTACK",
                 attacker.getId(),
                 attacker.getMaxHp(), attacker.getCurrentHp(),
@@ -872,7 +880,19 @@ public class BattleManager {
                     boolean teammateLowHp = (long) defender.getCurrentHp() * 100 < (long) defender.getMaxHp() * guardThreshold;
                     boolean teammateWeakerThanGuardian = (long) defender.getCurrentHp() * guardian.getMaxHp() < (long) guardian.getCurrentHp() * defender.getMaxHp();
                     if (teammateLowHp && teammateWeakerThanGuardian) {
-                    guardian.setCurrentHp(guardian.getCurrentHp() - burnDamage);
+                    // 新增设定：物理伤害且被守护友方场上有物理结界时，先扣除该友方物理盾，多余(溢出)的伤害才转移给玄武
+                    int toGuardian = burnDamage;
+                    if (defender.getPhysicalBarrier() > 0 && toGuardian > 0) {
+                        if (defender.getPhysicalBarrier() >= toGuardian) {
+                            defender.setPhysicalBarrier(defender.getPhysicalBarrier() - toGuardian);
+                            toGuardian = 0;
+                        } else {
+                            toGuardian = toGuardian - defender.getPhysicalBarrier();
+                            defender.setPhysicalBarrier(0);
+                        }
+                    }
+                    if (toGuardian > 0) {
+                    guardian.setCurrentHp(guardian.getCurrentHp() - toGuardian);
                     // 标记本回合守卫已触发，回合结束才恢复 40% 生命上限
                     guardian.setGuardTriggeredThisRound(true);
                     addLog("守卫",
@@ -884,17 +904,17 @@ public class BattleManager {
                             guardian.getId(),
                             guardian.getMaxHp(),
                             guardian.getCurrentHp(),
-                            burnDamage,
+                            toGuardian,
                             guardian.isOnField(),
                             EffectType.DAMAGE,
                             DamageType.TRUE,
-                            "-" + burnDamage);
+                            "-" + toGuardian);
                     Map<String, TargetBattleData> deadUnits = new HashMap<>();
 
                     if (guardian.getCurrentHp() <= 0) {
                         guardian.setDead(true);
                         guardian.setOnField(false);
-                        TargetBattleData data = new TargetBattleData(guardian.getMaxHp(), guardian.getCurrentHp(), burnDamage, guardian.isOnField());
+                        TargetBattleData data = new TargetBattleData(guardian.getMaxHp(), guardian.getCurrentHp(), toGuardian, guardian.isOnField());
                         deadUnits.put(guardian.getId(), data);
                     }
                     // 死亡日志
@@ -915,6 +935,8 @@ public class BattleManager {
                         //触发受击技能
                         triggerOnAttackedSkills(guardian, defender);
                     }
+                    }
+                    // 伤害已由“友方物理盾+玄武代承”共同消化完毕，友方本体不再额外掉血（盾已在上方扣除）
                     burnDamage=0;
                     }
                 }
@@ -1093,7 +1115,7 @@ public class BattleManager {
                             if (ProbabilityBooleanUtils.randomByProbability(prob)) {
                                 // 遁让只与后场未阵亡的仙族护法换位
                                 List<Guardian> offFieldAllies = (defender.getCamp() == Camp.A ? campA : campB).stream()
-                                        .filter(g -> !g.isDead() && !g.isOnField() && !g.isPhoenixEgg() && g.getRace() == Race.IMMORTAL).collect(Collectors.toList());
+                                        .filter(g -> !g.isDead() && !g.isOnField() && !g.isPhoenixEgg() && !isYinglong(g) && g.getRace() == Race.IMMORTAL).collect(Collectors.toList());
                                 if (!offFieldAllies.isEmpty() && !swapInProgress) {
                                     // 统一换位防护：遁让换位后触发的登场技能不得再次引发换位
                                     swapInProgress = true;
@@ -1187,7 +1209,7 @@ public class BattleManager {
                                     g.setPhysicalBarrier(0);
                                 }
                             }
-                            g.setCurrentHp(g.getCurrentHp() - burnDamage);
+                            burnDamage = applyDefenderDamage(g, burnDamage);
                             TargetBattleData data = new TargetBattleData(g.getMaxHp(), g.getCurrentHp(), burnDamage, g.isOnField());
                             data.setShieldRemaining(g.getPhysicalBarrier());
                             qlTargetStatus.put(g.getId(), data);
@@ -1445,7 +1467,7 @@ public class BattleManager {
                             burnDamage=triggerOnAttackedSkills(g,burnDamage,EffectType.FIRE_DAMAGE);
 
                             // 4. 扣除伤害
-                            g.setCurrentHp(g.getCurrentHp() - burnDamage);
+                            burnDamage = applyDefenderDamage(g, burnDamage);
                             TargetBattleData data = new TargetBattleData(g.getMaxHp(), g.getCurrentHp(), burnDamage, g.isOnField());
                             targetStatus.put(g.getId(), data);
                             if (g.isDead()) {
@@ -1537,7 +1559,7 @@ public class BattleManager {
                             burnDamage=triggerOnAttackedSkills(g,burnDamage,EffectType.FIRE_DAMAGE);
 
                             // 4. 扣除伤害
-                            g.setCurrentHp(g.getCurrentHp() - burnDamage);
+                            burnDamage = applyDefenderDamage(g, burnDamage);
                             TargetBattleData data = new TargetBattleData(g.getMaxHp(), g.getCurrentHp(), burnDamage, g.isOnField());
                             targetStatus.put(g.getId(), data);
                             if (g.isDead()) {
@@ -1629,7 +1651,7 @@ public class BattleManager {
                             burnDamage=triggerOnAttackedSkills(g,burnDamage,EffectType.FIRE_DAMAGE);
 
                             // 4. 扣除伤害
-                            g.setCurrentHp(g.getCurrentHp() - burnDamage);
+                            burnDamage = applyDefenderDamage(g, burnDamage);
                             TargetBattleData data = new TargetBattleData(g.getMaxHp(), g.getCurrentHp(), burnDamage, g.isOnField());
                             targetStatus.put(g.getId(), data);
                             if (g.isDead()) {
@@ -1721,7 +1743,7 @@ public class BattleManager {
                             burnDamage=triggerOnAttackedSkills(g,burnDamage,EffectType.FIRE_DAMAGE);
 
                             // 4. 扣除伤害
-                            g.setCurrentHp(g.getCurrentHp() - burnDamage);
+                            burnDamage = applyDefenderDamage(g, burnDamage);
                             TargetBattleData data = new TargetBattleData(g.getMaxHp(), g.getCurrentHp(), burnDamage, g.isOnField());
                             targetStatus.put(g.getId(), data);
                             if (g.isDead()) {
@@ -1813,7 +1835,7 @@ public class BattleManager {
                             burnDamage=triggerOnAttackedSkills(g,burnDamage,EffectType.FIRE_DAMAGE);
 
                             // 4. 扣除伤害
-                            g.setCurrentHp(g.getCurrentHp() - burnDamage);
+                            burnDamage = applyDefenderDamage(g, burnDamage);
                             TargetBattleData data = new TargetBattleData(g.getMaxHp(), g.getCurrentHp(), burnDamage, g.isOnField());
                             targetStatus.put(g.getId(), data);
                             if (g.isDead()) {
@@ -1905,7 +1927,7 @@ public class BattleManager {
                             burnDamage=triggerOnAttackedSkills(g,burnDamage,EffectType.FIRE_DAMAGE);
 
                             // 4. 扣除伤害
-                            g.setCurrentHp(g.getCurrentHp() - burnDamage);
+                            burnDamage = applyDefenderDamage(g, burnDamage);
                             TargetBattleData data = new TargetBattleData(g.getMaxHp(), g.getCurrentHp(), burnDamage, g.isOnField());
                             targetStatus.put(g.getId(), data);
                             if (g.isDead()) {
@@ -1997,7 +2019,7 @@ public class BattleManager {
                             burnDamage=triggerOnAttackedSkills(g,burnDamage,EffectType.FIRE_DAMAGE);
 
                             // 4. 扣除伤害
-                            g.setCurrentHp(g.getCurrentHp() - burnDamage);
+                            burnDamage = applyDefenderDamage(g, burnDamage);
                             TargetBattleData data = new TargetBattleData(g.getMaxHp(), g.getCurrentHp(), burnDamage, g.isOnField());
                             targetStatus.put(g.getId(), data);
                             if (g.isDead()) {
@@ -2089,7 +2111,7 @@ public class BattleManager {
                             burnDamage=triggerOnAttackedSkills(g,burnDamage,EffectType.FIRE_DAMAGE);
 
                             // 4. 扣除伤害
-                            g.setCurrentHp(g.getCurrentHp() - burnDamage);
+                            burnDamage = applyDefenderDamage(g, burnDamage);
                             TargetBattleData data = new TargetBattleData(g.getMaxHp(), g.getCurrentHp(), burnDamage, g.isOnField());
                             targetStatus.put(g.getId(), data);
                             if (g.isDead()) {
@@ -2181,7 +2203,7 @@ public class BattleManager {
                             burnDamage=triggerOnAttackedSkills(g,burnDamage,EffectType.FIRE_DAMAGE);
 
                             // 4. 扣除伤害
-                            g.setCurrentHp(g.getCurrentHp() - burnDamage);
+                            burnDamage = applyDefenderDamage(g, burnDamage);
                             TargetBattleData data = new TargetBattleData(g.getMaxHp(), g.getCurrentHp(), burnDamage, g.isOnField());
                             targetStatus.put(g.getId(), data);
                             if (g.isDead()) {
@@ -2273,7 +2295,7 @@ public class BattleManager {
                             burnDamage=triggerOnAttackedSkills(g,burnDamage,EffectType.FIRE_DAMAGE);
 
                             // 4. 扣除伤害
-                            g.setCurrentHp(g.getCurrentHp() - burnDamage);
+                            burnDamage = applyDefenderDamage(g, burnDamage);
                             TargetBattleData data = new TargetBattleData(g.getMaxHp(), g.getCurrentHp(), burnDamage, g.isOnField());
                             targetStatus.put(g.getId(), data);
                             if (g.isDead()) {
@@ -2362,7 +2384,7 @@ public class BattleManager {
                         }
                         burnDamage=triggerOnAttackedSkills(g,burnDamage,EffectType.FIRE_DAMAGE);
                         // 4. 扣除伤害
-                        g.setCurrentHp(g.getCurrentHp() - burnDamage);
+                        burnDamage = applyDefenderDamage(g, burnDamage);
                         TargetBattleData data = new TargetBattleData(g.getMaxHp(), g.getCurrentHp(), burnDamage, g.isOnField());
                         targetStatus.put(g.getId(), data);
                         if (g.isDead()) {
@@ -2409,7 +2431,7 @@ public class BattleManager {
                 // ，禁术咒Lv1登场时,让对面场上英雄沉默99回合；
                 if (1 == 1) {
                     Guardian enemy = guardian.getCamp() == Camp.A ? fieldB : fieldA;
-                    if (enemy != null) {
+                    if (enemy != null && !isYinglong(enemy)) {
                         enemy.addEffect(EffectType.SILENCE, 0, 99, guardian.getId());
                         addLog("禁术咒",
                                 guardian.getId(),
@@ -2436,7 +2458,7 @@ public class BattleManager {
                         int damage = (int) (enemy.getMaxHp() * 0.04 * skillLevel[0]);
                         Integer logIndex=battleLogs.size();
                         damage=triggerOnAttackedSkills(enemy,damage,EffectType.DAMAGE);
-                        enemy.setCurrentHp(enemy.getCurrentHp() - damage);
+                        damage = applyDefenderDamage(enemy, damage);
                         addLog("北极剑意",
                                 guardian.getId(),
                                 guardian.getMaxHp(),
@@ -3063,6 +3085,9 @@ public class BattleManager {
                    int damage = (int) (defender.getCurrentHp() * 0.06 * skillLevel[0]);
                    Integer logIndex=battleLogs.size();
                    damage=triggerOnAttackedSkills(defender,damage,EffectType.DAMAGE);
+                   // 应龙·免疫致命（阈值1）：定海神针高技能段可造成超10%生命上限的致死伤害，消耗应龙1层印记免疫
+                   Guardian immuneYlDh = consumeYinjiForLethalImmune(defender, damage);
+                   if (immuneYlDh != null) damage = 0;
                    defender.setCurrentHp(defender.getCurrentHp() - damage);
                    // 死亡检查
                    Map<String, TargetBattleData> deadUnits = new HashMap<>();
@@ -3086,6 +3111,13 @@ public class BattleManager {
                            EffectType.DAMAGE,
                            DamageType.TRUE,
                            "-" + damage,logIndex);
+                   // 免疫致命子效果日志：排在定海神针主日志之后
+                   if (immuneYlDh != null) {
+                       addLog("免疫致命", immuneYlDh.getId(), immuneYlDh.getMaxHp(), immuneYlDh.getCurrentHp(), 0, immuneYlDh.isOnField(),
+                               defender.getId(), defender.getMaxHp(), defender.getCurrentHp(), 0, defender.isOnField(),
+                               EffectType.HP_UP, DamageType.BUFF, "免疫致命");
+                       battleLogs.get(battleLogs.size() - 1).setYinjiCount(immuneYlDh.getYinjiCount());
+                   }
                    // 死亡日志
                    if (!deadUnits.isEmpty()) {
                        addMultiTargetLog("UNIT_DEATH",
@@ -3146,7 +3178,7 @@ public class BattleManager {
                         Integer logIndex=battleLogs.size();
                         totalPoisonDamage=triggerOnAttackedSkills(defender,totalPoisonDamage,EffectType.DAMAGE);
 
-                        defender.setCurrentHp(defender.getCurrentHp() - totalPoisonDamage);
+                        totalPoisonDamage = applyDefenderDamage(defender, totalPoisonDamage);
                         Map<String, TargetBattleData> deadUnits = new HashMap<>();
                         if (defender.getCurrentHp() <= 0) {
                             defender.setDead(true);
@@ -3224,7 +3256,7 @@ public class BattleManager {
                     burnDamage=triggerOnAttackedSkills(defender,burnDamage,EffectType.FIRE_DAMAGE);
 
                     // 4. 扣除伤害
-                    defender.setCurrentHp(defender.getCurrentHp() - burnDamage);
+                    burnDamage = applyDefenderDamage(defender, burnDamage);
                     Map<String, TargetBattleData> deadUnits = new HashMap<>();
                     // 死亡检查
                     if (defender.getCurrentHp() <= 0) {
@@ -3314,7 +3346,7 @@ public class BattleManager {
                         burnDamage=triggerOnAttackedSkills(defender,burnDamage,EffectType.FIRE_DAMAGE);
 
                         // 4. 扣除伤害
-                        defender.setCurrentHp(defender.getCurrentHp() - burnDamage);
+                        burnDamage = applyDefenderDamage(defender, burnDamage);
                         Map<String, TargetBattleData> deadUnits = new HashMap<>();
                         // 死亡检查
                         if (defender.getCurrentHp() <= 0) {
@@ -3431,6 +3463,8 @@ public class BattleManager {
                                 0, attacker.isOnField(),
                                 null, null,
                                 attacker.getName() + "阵亡");
+                        // 龙血刻印(a)：谛听撞击自耗致死仍应触发（确实消耗了血量）
+                        if (hpCost > 0) awardYinjiOnSelfCost(attacker);
                         triggerOnDeathSkills(attacker);
                         break;
                     }
@@ -3441,6 +3475,9 @@ public class BattleManager {
                                         damage = applyXilianPhysical(attacker, defender, damage);
                     Integer logIndex = battleLogs.size();
                     damage = triggerOnAttackedSkills(defender, damage, EffectType.DAMAGE);
+                    // 应龙·免疫致命（阈值1）：撞击将造成超过生命上限10%的致死伤害时，消耗同阵营应龙1层印记免疫此次伤害
+                    Guardian immuneYlZhuang = consumeYinjiForLethalImmune(defender, damage);
+                    if (immuneYlZhuang != null) damage = 0;
                     defender.setCurrentHp(defender.getCurrentHp() - damage);
 
                     addLog("撞击",
@@ -3454,6 +3491,15 @@ public class BattleManager {
                             defender.isOnField(),
                             EffectType.DAMAGE, DamageType.PHYSICAL,
                             "-" + damage, logIndex);
+                    // 免疫致命子效果日志：排在撞击主日志之后，避免前端动画抢播
+                    if (immuneYlZhuang != null) {
+                        addLog("免疫致命", immuneYlZhuang.getId(), immuneYlZhuang.getMaxHp(), immuneYlZhuang.getCurrentHp(), 0, immuneYlZhuang.isOnField(),
+                                defender.getId(), defender.getMaxHp(), defender.getCurrentHp(), 0, defender.isOnField(),
+                                EffectType.HP_UP, DamageType.BUFF, "免疫致命");
+                        battleLogs.get(battleLogs.size() - 1).setYinjiCount(immuneYlZhuang.getYinjiCount());
+                    }
+                    // 龙血刻印(a)：谛听撞击消耗自身血量 → 同阵营应龙+10印记（排在撞击主日志之后）
+                    if (hpCost > 0) awardYinjiOnSelfCost(attacker);
 
                     // 触发受击技能（反击类等）
                     triggerOnAttackedSkills(defender, attacker);
@@ -3685,7 +3731,7 @@ public class BattleManager {
         // 查找互换目标：从所有存活队友中随机选择（排除自己）
         final String jianLouId = jianLou.getId();
         List<Guardian> teammates = camp.stream()
-                .filter(g -> !g.isDead() && !g.isPhoenixEgg() && !g.getId().equals(jianLouId))
+                .filter(g -> !g.isDead() && !g.isPhoenixEgg() && !isYinglong(g) && !g.getId().equals(jianLouId))
                 .collect(Collectors.toList());
         if (teammates.isEmpty()) return;
         Guardian swapTarget = teammates.get(random.nextInt(teammates.size()));
@@ -3817,7 +3863,7 @@ public class BattleManager {
             shotDamage = triggerOnAttackedSkills(defender, shotDamage, EffectType.DAMAGE);
 
             // 扣除伤害
-            defender.setCurrentHp(defender.getCurrentHp() - shotDamage);
+            shotDamage = applyDefenderDamage(defender, shotDamage);
             Map<String, TargetBattleData> deadUnits = new HashMap<>();
             if (defender.getCurrentHp() <= 0) {
                 defender.setDead(true);
@@ -4148,7 +4194,7 @@ public class BattleManager {
                             finalDamage=triggerOnAttackedSkills(g,finalDamage,EffectType.MISSILE_DAMAGE);
 
                             // 4. 扣除伤害
-                            g.setCurrentHp(g.getCurrentHp() - finalDamage);
+                            finalDamage = applyDefenderDamage(g, finalDamage);
                             TargetBattleData data = new TargetBattleData(g.getMaxHp(), g.getCurrentHp(), finalDamage, g.isOnField());
                             targetStatus.put(g.getId(), data);
                             if (g.isDead()) {
@@ -4243,7 +4289,7 @@ public class BattleManager {
                             }
                             finalDamage=triggerOnAttackedSkills(g,finalDamage,EffectType.FIRE_DAMAGE);
                             // 4. 扣除伤害
-                            g.setCurrentHp(g.getCurrentHp() - finalDamage);
+                            finalDamage = applyDefenderDamage(g, finalDamage);
                             TargetBattleData data = new TargetBattleData(g.getMaxHp(), g.getCurrentHp(), finalDamage, g.isOnField());
 
                             targetStatus.put(g.getId(), data);
@@ -4490,7 +4536,7 @@ public class BattleManager {
                     burnDamage = applyXilianPhysical(defender, attacker, burnDamage);
                                         burnDamage=triggerOnAttackedSkills(attacker,burnDamage,EffectType.DAMAGE);
 
-                    attacker.setCurrentHp(attacker.getCurrentHp() - burnDamage);
+                    burnDamage = applyDefenderDamage(attacker, burnDamage);
 
 
                     addLog("绝地反击",
@@ -4610,7 +4656,7 @@ public class BattleManager {
                         burnDamage=triggerOnAttackedSkills(enemy,burnDamage,EffectType.MISSILE_DAMAGE);
 
                         // 4. 扣除伤害
-                        enemy.setCurrentHp(enemy.getCurrentHp() - burnDamage);
+                        burnDamage = applyDefenderDamage(enemy, burnDamage);
                         Map<String, TargetBattleData> deadUnits = new HashMap<>();
 
                         if (enemy.getCurrentHp() <= 0) {
@@ -4694,7 +4740,7 @@ public class BattleManager {
                         burnDamage=triggerOnAttackedSkills(enemy,burnDamage,EffectType.MISSILE_DAMAGE);
 
                         // 4. 扣除伤害
-                        enemy.setCurrentHp(enemy.getCurrentHp() - burnDamage);
+                        burnDamage = applyDefenderDamage(enemy, burnDamage);
                         Map<String, TargetBattleData> deadUnits = new HashMap<>();
 
                         if (enemy.getCurrentHp() <= 0) {
@@ -4806,7 +4852,7 @@ public class BattleManager {
                             finalDamage=triggerOnAttackedSkills(g,finalDamage,EffectType.FIRE_DAMAGE);
 
                             // 4. 扣除伤害
-                            g.setCurrentHp(g.getCurrentHp() - finalDamage);
+                            finalDamage = applyDefenderDamage(g, finalDamage);
                             TargetBattleData data = new TargetBattleData(g.getMaxHp(), g.getCurrentHp(), finalDamage, g.isOnField());
                             targetStatus.put(g.getId(), data);
                             if (g.isDead()) {
@@ -4905,7 +4951,7 @@ public class BattleManager {
                             finalDamage=triggerOnAttackedSkills(g,finalDamage,EffectType.FIRE_DAMAGE);
 
                             // 4. 扣除伤害
-                            g.setCurrentHp(g.getCurrentHp() - finalDamage);
+                            finalDamage = applyDefenderDamage(g, finalDamage);
                             TargetBattleData data = new TargetBattleData(g.getMaxHp(), g.getCurrentHp(), finalDamage, g.isOnField());
                             targetStatus.put(g.getId(), data);
                             if (g.isDead()) {
@@ -5073,7 +5119,7 @@ public class BattleManager {
                         burnDamage = applyXilianPhysical(defender, enemie, burnDamage);
                                                 burnDamage=triggerOnAttackedSkills(enemie,burnDamage,EffectType.DAMAGE);
 
-                        enemie.setCurrentHp(enemie.getCurrentHp() - burnDamage);
+                        burnDamage = applyDefenderDamage(enemie, burnDamage);
 
                         addLog("新月反击",
                                 defender.getId(),
@@ -5295,7 +5341,7 @@ public class BattleManager {
                                 damage = 0;
                             }
                             damage = triggerOnAttackedSkills(g, damage, EffectType.DAMAGE);
-                            g.setCurrentHp(g.getCurrentHp() - damage);
+                            damage = applyDefenderDamage(g, damage);
                             TargetBattleData data = new TargetBattleData(g.getMaxHp(), g.getCurrentHp(), damage, g.isOnField());
                             targetStatus.put(g.getId(), data);
                             if (g.getCurrentHp() <= 0) {
@@ -5538,7 +5584,7 @@ public class BattleManager {
                             finalDamage=triggerOnAttackedSkills(g,finalDamage,EffectType.FIRE_DAMAGE);
 
                             // 4. 扣除伤害
-                            g.setCurrentHp(g.getCurrentHp() - finalDamage);
+                            finalDamage = applyDefenderDamage(g, finalDamage);
                             TargetBattleData data = new TargetBattleData(g.getMaxHp(), g.getCurrentHp(), finalDamage, g.isOnField());
                             targetStatus.put(g.getId(), data);
                             if (g.isDead()) {
@@ -5635,7 +5681,7 @@ public class BattleManager {
                                         damage = applyXilianPhysical(attacker, defender, damage);
                     Map<String, TargetBattleData> deadUnits = new HashMap<>();
                     List<Guardian> deadGuardians = new ArrayList<>();
-                    defender.setCurrentHp(defender.getCurrentHp() - damage);
+                    damage = applyDefenderDamage(defender, damage);
                     if (defender.getCurrentHp() <= 0) {
                         defender.setDead(true);
                         defender.setOnField(false);
@@ -5688,7 +5734,7 @@ public class BattleManager {
                     Map<String, TargetBattleData> deadUnits = new HashMap<>();
                     List<Guardian> deadGuardians = new ArrayList<>();
                     // 剧毒痛击应为对目标造成伤害，修正误写的 +damage（原会回血）
-                    defender.setCurrentHp(defender.getCurrentHp() - damage);
+                    damage = applyDefenderDamage(defender, damage);
                     if (defender.getCurrentHp() <= 0) {
                         defender.setDead(true);
                         defender.setOnField(false);
@@ -5770,7 +5816,7 @@ public class BattleManager {
                     }
 
                     // 4. 扣除伤害
-                    defender.setCurrentHp(defender.getCurrentHp() - finalDamage);
+                    finalDamage = applyDefenderDamage(defender, finalDamage);
                     if (defender.getCurrentHp() <= 0) {
                         defender.setDead(true);
                         defender.setOnField(false);
@@ -5934,7 +5980,7 @@ public class BattleManager {
                         Integer logIndex=battleLogs.size();
                         fireDamage=triggerOnAttackedSkills(defender,fireDamage,EffectType.FIRE_DAMAGE);
 
-                        defender.setCurrentHp(defender.getCurrentHp() - fireDamage);
+                        fireDamage = applyDefenderDamage(defender, fireDamage);
                         if (defender.getCurrentHp() <= 0) {
                             defender.setDead(true);
                             defender.setOnField(false);
@@ -5990,7 +6036,7 @@ public class BattleManager {
                     Integer logIndex=battleLogs.size();
                     fireDamage=triggerOnAttackedSkills(defender,fireDamage,EffectType.FIRE_DAMAGE);
 
-                    defender.setCurrentHp(defender.getCurrentHp() - fireDamage);
+                    fireDamage = applyDefenderDamage(defender, fireDamage);
                     Map<String, TargetBattleData> deadUnits = new HashMap<>();
                     List<Guardian> deadGuardians = new ArrayList<>();
                     if (defender.getCurrentHp() <= 0) {
@@ -6120,7 +6166,7 @@ public class BattleManager {
                         Integer logIndex=battleLogs.size();
                         fireDamage=triggerOnAttackedSkills(defender,fireDamage,EffectType.DAMAGE);
 
-                        defender.setCurrentHp(defender.getCurrentHp() - fireDamage);
+                        fireDamage = applyDefenderDamage(defender, fireDamage);
                         if (defender.getCurrentHp() <= 0) {
                             defender.setDead(true);
                             defender.setOnField(false);
@@ -6179,7 +6225,7 @@ public class BattleManager {
                         Integer logIndex=battleLogs.size();
                         fireDamage=triggerOnAttackedSkills(guardian,fireDamage,EffectType.DAMAGE);
 
-                        guardian.setCurrentHp(guardian.getCurrentHp() - fireDamage);
+                        fireDamage = applyDefenderDamage(guardian, fireDamage);
                         if (guardian.getCurrentHp() <= 0) {
                             guardian.setDead(true);
                             guardian.setOnField(false);
@@ -6238,7 +6284,7 @@ public class BattleManager {
                         Integer logIndex=battleLogs.size();
                         fireDamage=triggerOnAttackedSkills(guardian,fireDamage,EffectType.DAMAGE);
 
-                        guardian.setCurrentHp(guardian.getCurrentHp() - fireDamage);
+                        fireDamage = applyDefenderDamage(guardian, fireDamage);
                         if (guardian.getCurrentHp() <= 0) {
                             guardian.setDead(true);
                             guardian.setOnField(false);
@@ -6298,7 +6344,7 @@ public class BattleManager {
                         Integer logIndex=battleLogs.size();
                         fireDamage=triggerOnAttackedSkills(guardian,fireDamage,EffectType.TRUE_DAMAGE);
 
-                        guardian.setCurrentHp(guardian.getCurrentHp() - fireDamage);
+                        fireDamage = applyDefenderDamage(guardian, fireDamage);
                         if (guardian.getCurrentHp() <= 0) {
                             guardian.setDead(true);
                             guardian.setOnField(false);
@@ -6357,7 +6403,7 @@ public class BattleManager {
                         Integer logIndex=battleLogs.size();
                         fireDamage=triggerOnAttackedSkills(guardian,fireDamage,EffectType.DAMAGE);
 
-                        guardian.setCurrentHp(guardian.getCurrentHp() - fireDamage);
+                        fireDamage = applyDefenderDamage(guardian, fireDamage);
                         if (guardian.getCurrentHp() <= 0) {
                             guardian.setDead(true);
                             guardian.setOnField(false);
@@ -6416,7 +6462,7 @@ public class BattleManager {
                         Integer logIndex=battleLogs.size();
                         fireDamage=triggerOnAttackedSkills(guardian,fireDamage,EffectType.DAMAGE);
 
-                        guardian.setCurrentHp(guardian.getCurrentHp() - fireDamage);
+                        fireDamage = applyDefenderDamage(guardian, fireDamage);
                         if (guardian.getCurrentHp() <= 0) {
                             guardian.setDead(true);
                             guardian.setOnField(false);
@@ -6514,7 +6560,7 @@ public class BattleManager {
                             finalDamage=triggerOnAttackedSkills(g,finalDamage,EffectType.FIRE_DAMAGE);
 
                             // 4. 扣除伤害
-                            g.setCurrentHp(g.getCurrentHp() - finalDamage);
+                            finalDamage = applyDefenderDamage(g, finalDamage);
                             TargetBattleData data = new TargetBattleData(g.getMaxHp(), g.getCurrentHp(), finalDamage, g.isOnField());
                             targetStatus.put(g.getId(), data);
                             if (g.isDead()) {
@@ -6612,7 +6658,7 @@ public class BattleManager {
                             finalDamage=triggerOnAttackedSkills(g,finalDamage,EffectType.FIRE_DAMAGE);
 
                             // 4. 扣除伤害
-                            g.setCurrentHp(g.getCurrentHp() - finalDamage);
+                            finalDamage = applyDefenderDamage(g, finalDamage);
                             TargetBattleData data = new TargetBattleData(g.getMaxHp(), g.getCurrentHp(), finalDamage, g.isOnField());
                             targetStatus.put(g.getId(), data);
                             if (g.isDead()) {
@@ -6707,7 +6753,7 @@ public class BattleManager {
                             finalDamage=triggerOnAttackedSkills(g,finalDamage,EffectType.FIRE_DAMAGE);
 
                             // 4. 扣除伤害
-                            g.setCurrentHp(g.getCurrentHp() - finalDamage);
+                            finalDamage = applyDefenderDamage(g, finalDamage);
                             TargetBattleData data = new TargetBattleData(g.getMaxHp(), g.getCurrentHp(), finalDamage, g.isOnField());
                             targetStatus.put(g.getId(), data);
                             if (g.isDead()) {
@@ -6809,7 +6855,7 @@ public class BattleManager {
                             finalDamage=triggerOnAttackedSkills(g,finalDamage,EffectType.FIRE_DAMAGE);
 
                             // 4. 扣除伤害
-                            g.setCurrentHp(g.getCurrentHp() - finalDamage);
+                            finalDamage = applyDefenderDamage(g, finalDamage);
                             TargetBattleData data = new TargetBattleData(g.getMaxHp(), g.getCurrentHp(), finalDamage, g.isOnField());
                             targetStatus.put(g.getId(), data);
                             if (g.isDead()) {
@@ -6902,7 +6948,7 @@ public class BattleManager {
                             finalDamage=triggerOnAttackedSkills(g,finalDamage,EffectType.FIRE_DAMAGE);
 
                             // 4. 扣除伤害
-                            g.setCurrentHp(g.getCurrentHp() - finalDamage);
+                            finalDamage = applyDefenderDamage(g, finalDamage);
                             TargetBattleData data = new TargetBattleData(g.getMaxHp(), g.getCurrentHp(), finalDamage, g.isOnField());
                             targetStatus.put(g.getId(), data);
                             if (g.isDead()) {
@@ -6998,7 +7044,7 @@ public class BattleManager {
                             finalDamage=triggerOnAttackedSkills(g,finalDamage,EffectType.FIRE_DAMAGE);
 
                             // 4. 扣除伤害
-                            g.setCurrentHp(g.getCurrentHp() - finalDamage);
+                            finalDamage = applyDefenderDamage(g, finalDamage);
                             TargetBattleData data = new TargetBattleData(g.getMaxHp(), g.getCurrentHp(), finalDamage, g.isOnField());
 
                             targetStatus.put(g.getId(), data);
@@ -7096,7 +7142,7 @@ public class BattleManager {
                             finalDamage=triggerOnAttackedSkills(g,finalDamage,EffectType.FIRE_DAMAGE);
 
                             // 4. 扣除伤害
-                            g.setCurrentHp(g.getCurrentHp() - finalDamage);
+                            finalDamage = applyDefenderDamage(g, finalDamage);
                             TargetBattleData data = new TargetBattleData(g.getMaxHp(), g.getCurrentHp(), finalDamage, g.isOnField());
 
                             targetStatus.put(g.getId(), data);
@@ -7256,7 +7302,7 @@ public class BattleManager {
                     burnDamage=triggerOnAttackedSkills(minHpPerson,burnDamage,EffectType.MISSILE_DAMAGE);
 
                     // 4. 扣除伤害
-                    minHpPerson.setCurrentHp(minHpPerson.getCurrentHp() - burnDamage);
+                    burnDamage = applyDefenderDamage(minHpPerson, burnDamage);
                     if (minHpPerson.isDead()) {
                         TargetBattleData data = new TargetBattleData(minHpPerson.getMaxHp(), minHpPerson.getCurrentHp(), burnDamage, minHpPerson.isOnField());
                         deadUnits.put(minHpPerson.getId(), data);
@@ -7536,6 +7582,46 @@ public class BattleManager {
         }
 
 
+        // 白虎·血战到底（2技能）：我方兽族单位死亡时，本阵营全体存活友方(场上+场下,排除凤凰卵)各自 +1 层(封顶99)，每层 +生命上限 技能等级*1000、+攻击 技能等级*200
+        if (v.getRace() == Race.ORC) {
+            List<Guardian> baihuCamp = v.getCamp() == Camp.A ? campA : campB;
+            Guardian baihu = baihuCamp.stream()
+                    .filter(g -> g.getName().equals("白虎") && !g.isDead() && !g.isSilence())
+                    .findFirst().orElse(null);
+            if (baihu != null) {
+                int[] skillLevel = CardSkillLevelUtil.calculateSkillLevels(baihu.getLevel(), baihu.getStar().doubleValue());
+                int skill2 = skillLevel[1];
+                if (skill2 > 0) {
+                    int addHp = 1000 * skill2;
+                    int addAtk = 200 * skill2;
+                    Map<String, TargetBattleData> targetStatus = new LinkedHashMap<>();
+                    List<Guardian> allies = baihuCamp.stream()
+                            .filter(g -> !g.isDead() && !g.isPhoenixEgg())
+                            .collect(Collectors.toList());
+                    for (Guardian a : allies) {
+                        if (a.getXueZhanLayers() >= 99) continue; // 满层不再叠加
+                        a.setXueZhanLayers(a.getXueZhanLayers() + 1);
+                        a.setMaxHp(a.getMaxHp() + addHp);
+                        a.setCurrentHp(a.getCurrentHp() + addHp);
+                        a.setAttack(a.getAttack() + addAtk);
+                        TargetBattleData data = new TargetBattleData(a.getMaxHp(), a.getCurrentHp(), addHp, a.isOnField());
+                        targetStatus.put(a.getId(), data);
+                    }
+                    if (!targetStatus.isEmpty()) {
+                        addMultiTargetLog("血战到底",
+                                baihu.getId(),
+                                baihu.getMaxHp(),
+                                baihu.getCurrentHp(),
+                                baihu.isOnField(),
+                                targetStatus,
+                                EffectType.HP_UP,
+                                DamageType.BUFF,
+                                "生命上限+" + addHp + "，攻击+" + addAtk);
+                    }
+                }
+            }
+        }
+
         //句芒，残酷收割Lv1每当有生物死亡时，回复自身6%最大生命；
         if (campA.stream().anyMatch(g -> g.getName().equals("句芒") && !g.isDead())) {
             Guardian changsheng = campA.stream()
@@ -7641,7 +7727,7 @@ public class BattleManager {
                     burnDamage=triggerOnAttackedSkills(minHpPerson,burnDamage,EffectType.DAMAGE);
 
                     // 4. 扣除伤害
-                    minHpPerson.setCurrentHp(minHpPerson.getCurrentHp() - burnDamage);
+                    burnDamage = applyDefenderDamage(minHpPerson, burnDamage);
                     if (minHpPerson.isDead()) {
                         TargetBattleData data = new TargetBattleData(minHpPerson.getMaxHp(), minHpPerson.getCurrentHp(), burnDamage, minHpPerson.isOnField());
                         deadUnits.put(minHpPerson.getId(), data);
@@ -7737,7 +7823,7 @@ public class BattleManager {
                     burnDamage=triggerOnAttackedSkills(minHpPerson,burnDamage,EffectType.DAMAGE);
 
                     // 4. 扣除伤害
-                    minHpPerson.setCurrentHp(minHpPerson.getCurrentHp() - burnDamage);
+                    burnDamage = applyDefenderDamage(minHpPerson, burnDamage);
                     if (minHpPerson.isDead()) {
                         TargetBattleData data = new TargetBattleData(minHpPerson.getMaxHp(), minHpPerson.getCurrentHp(), burnDamage, minHpPerson.isOnField());
                         deadUnits.put(minHpPerson.getId(), data);
@@ -8250,7 +8336,7 @@ public class BattleManager {
                         burnDamage=triggerOnAttackedSkills(hitTarget,burnDamage,EffectType.MISSILE_DAMAGE);
 
                         // 4. 扣除伤害
-                        hitTarget.setCurrentHp(hitTarget.getCurrentHp() - burnDamage);
+                        burnDamage = applyDefenderDamage(hitTarget, burnDamage);
                         Map<String, TargetBattleData> deadUnits = new HashMap<>();
 
                         if (hitTarget.getCurrentHp() <= 0) {
@@ -8341,7 +8427,7 @@ public class BattleManager {
                     burnDamage=triggerOnAttackedSkills(hitTarget,burnDamage,EffectType.MISSILE_DAMAGE);
 
                     // 4. 扣除伤害
-                    hitTarget.setCurrentHp(hitTarget.getCurrentHp() - burnDamage);
+                    burnDamage = applyDefenderDamage(hitTarget, burnDamage);
                     Map<String, TargetBattleData> deadUnits = new HashMap<>();
 
                     if (hitTarget.getCurrentHp() <= 0) {
@@ -8433,6 +8519,9 @@ public class BattleManager {
                             DamageType.BUFF,
                             "复活"  + reviveHp);
 
+                    // 龙血刻印(a)：嫦娥月满重生消耗自身血量 → 同阵营应龙+10印记（排在月满重生主日志之后）
+                    if (hpCost > 0) awardYinjiOnSelfCost(change);
+
                     // 检查嫦娥是否因扣血而死亡
                     if (change.getCurrentHp() <= 0) {
                         change.setDead(true);
@@ -8477,7 +8566,12 @@ public class BattleManager {
         Guardian zhuque = camp.stream()
                 .filter(g -> g.getName().equals("朱雀") && !g.isDead() && !g.isActionBlocked() && !g.isPhoenixEgg())
                 .findFirst().orElse(null);
-        if (zhuque == null) return;
+        triggerZhuQueFenJinBaHuangUnit(zhuque);
+    }
+
+    private void triggerZhuQueFenJinBaHuangUnit(Guardian zhuque) {
+        if (zhuque == null || zhuque.isDead() || zhuque.isActionBlocked() || zhuque.isPhoenixEgg()) return;
+        List<Guardian> camp = zhuque.getCamp() == Camp.A ? campA : campB;
         int[] skillLevel = CardSkillLevelUtil.calculateSkillLevels(zhuque.getLevel(), zhuque.getStar().doubleValue());
         if (skillLevel[0] <= 0) return;
         // 消耗自身生命上限25%血量
@@ -8513,7 +8607,7 @@ public class BattleManager {
                 if (adjusted < 0) adjusted = 0;
                 int dmg = triggerOnAttackedSkills(g, adjusted, EffectType.FIRE_DAMAGE);
                 if (dmg < 0) dmg = 0;
-                g.setCurrentHp(g.getCurrentHp() - dmg);
+                dmg = applyDefenderDamage(g, dmg);
                 TargetBattleData data = new TargetBattleData(g.getMaxHp(), g.getCurrentHp(), dmg, g.isOnField());
                 targetStatus.put(g.getId(), data);
                 if (g.getCurrentHp() <= 0) {
@@ -8548,6 +8642,8 @@ public class BattleManager {
                 triggerOnAttackedSkills(g, EffectType.FIRE_DAMAGE);
             }
         }
+        // 龙血刻印(a)：朱雀焚尽八荒消耗自身血量 → 其同阵营应龙+1印记（排在焚尽主日志之后）
+        awardYinjiOnSelfCost(zhuque);
         // 若朱雀因消耗自身血量而阵亡，进入死亡流程（触发归元）
         if (zhuque.getCurrentHp() <= 0) {
             zhuque.setDead(true);
@@ -8566,6 +8662,418 @@ public class BattleManager {
                     zhuque.getName() + "阵亡");
             triggerOnDeathSkills(zhuque);
         }
+    }
+
+    // 印记通用被动：任何持有印记的非应龙护法，回合开始按自身印记数给自己加防御系增益（≥3 血限不降 / ≥6 物抗+ / ≥9 驱散负面）；应龙自身走其全体路径，故此处排除
+    private void applyYinjiSelfBuffs() {
+        List<Guardian> all = new ArrayList<>();
+        all.addAll(campA);
+        all.addAll(campB);
+        for (Guardian u : all) {
+            if (u.isDead() || isYinglong(u)) continue;
+            int yj = u.getYinjiCount();
+            if (yj <= 0) continue;
+            int[] sk = CardSkillLevelUtil.calculateSkillLevels(u.getLevel(), u.getStar().doubleValue());
+            int ownS2 = sk[1];
+            if (yj >= 3 && !u.hasEffect(EffectType.MAX_HP_NO_DOWN)) u.addEffect(EffectType.MAX_HP_NO_DOWN, 0, 2, u.getId());
+            if (yj >= 6 && ownS2 > 0) {
+                int v = 100 * ownS2;
+                u.remove(EffectType.ATTACK_RESIST_BOOST);
+                u.addEffect(EffectType.ATTACK_RESIST_BOOST, v, 2, u.getId());
+            }
+            if (yj >= 9) purgeNegatives(u);
+        }
+    }
+
+    // 应龙·应龙逆鳞（阈值被动）+ 苍龙吸水（3技能）：按单个存活应龙(卡牌id15)当前印记结算，回合开始按速度排序触发
+    private void processYinglongForUnit(Guardian yl) {
+        if (yl == null || yl.isDead()) return;
+        List<Guardian> camp = yl.getCamp() == Camp.A ? campA : campB;
+        int yinji = yl.getYinjiCount();
+        if (yinji <= 0) return;
+        List<Guardian> enemyCamp = camp == campA ? campB : campA;
+        int[] ylSkill = CardSkillLevelUtil.calculateSkillLevels(yl.getLevel(), yl.getStar().doubleValue());
+        int s2 = ylSkill[1];
+        int s3 = ylSkill[2];
+        List<Guardian> allies = camp.stream().filter(g -> !g.isDead() && !g.isPhoenixEgg()).collect(Collectors.toList());
+
+        // 阈值5：血限不降（我方全体，未持有才加，避免叠加）
+        if (yinji >= 5) {
+            for (Guardian a : allies) if (!a.hasEffect(EffectType.MAX_HP_NO_DOWN)) a.addEffect(EffectType.MAX_HP_NO_DOWN, 0, 2, yl.getId());
+        }
+        // 阈值10：我方全体物理减伤 +100*技能等级（remove后重加=刷新，值随印记成长）
+        if (yinji >= 10 && s2 > 0) {
+            int v = 100 * s2;
+            for (Guardian a : allies) { a.remove(EffectType.ATTACK_RESIST_BOOST); a.addEffect(EffectType.ATTACK_RESIST_BOOST, v, 2, yl.getId()); }
+        }
+        // 阈值15：回合开始只驱散应龙自身负面（有负面才发日志让前端播动画）
+        if (yinji >= 15 && hasAnyNegativeEffect(yl)) {
+            purgeNegatives(yl);
+            Map<String, TargetBattleData> purgeMap = new HashMap<>();
+            purgeMap.put(yl.getId(), new TargetBattleData(yl.getMaxHp(), yl.getCurrentHp(), 0, yl.isOnField()));
+            addMultiTargetLog("应龙逆鳞", yl.getId(), yl.getMaxHp(), yl.getCurrentHp(), yl.isOnField(),
+                    purgeMap, EffectType.HEAL, DamageType.BUFF, "净化");
+            battleLogs.get(battleLogs.size() - 1).setYinjiCount(yl.getYinjiCount());
+        }
+        // 阈值20：消耗1层印记，回合开始随机对1名敌方护法中毒（毒量=100*应龙逆鳞技能等级）
+        if (yinji >= 20 && s2 > 0) {
+            List<Guardian> foes12 = enemyCamp.stream()
+                    .filter(g -> !g.isDead() && !g.isPhoenixEgg()).collect(Collectors.toList());
+            if (!foes12.isEmpty()) {
+                yl.setYinjiCount(yl.getYinjiCount() - 1);   // 消耗1层印记
+                Guardian poisonTarget = foes12.get(random.nextInt(foes12.size()));
+                int poisonDmg = 100 * s2;
+                poisonTarget.addEffect(EffectType.POISON, poisonDmg, 3, yl.getId());
+                Map<String, TargetBattleData> poisonMap = new HashMap<>();
+                poisonMap.put(poisonTarget.getId(), new TargetBattleData(poisonTarget.getMaxHp(), poisonTarget.getCurrentHp(), poisonDmg, poisonTarget.isOnField()));
+                addMultiTargetLog("应龙逆鳞", yl.getId(), yl.getMaxHp(), yl.getCurrentHp(), yl.isOnField(),
+                        poisonMap, EffectType.POISON, DamageType.POISON, "中毒+" + poisonDmg);
+                battleLogs.get(battleLogs.size() - 1).setYinjiCount(yl.getYinjiCount());
+            }
+        }
+        // 阈值25：敌方"对位"护法物理减伤 -100*技能等级（remove后重加=刷新，发日志让前端播debuff动画）
+        if (yinji >= 25 && s2 > 0) {
+            int v = 100 * s2;
+            Guardian foe30 = enemyCamp.stream().filter(g -> !g.isDead() && !g.isPhoenixEgg() && g.getPosition() == yl.getPosition()).findFirst().orElse(null);
+            if (foe30 != null) {
+                foe30.remove(EffectType.ATTACK_RESIST_DOWN);
+                foe30.addEffect(EffectType.ATTACK_RESIST_DOWN, v, 2, yl.getId());
+                addLog("应龙逆鳞", yl.getId(), yl.getMaxHp(), yl.getCurrentHp(), 0, yl.isOnField(),
+                        foe30.getId(), foe30.getMaxHp(), foe30.getCurrentHp(), v, foe30.isOnField(),
+                        EffectType.ATTACK_RESIST_DOWN, DamageType.BUFF, "物抗-" + v);
+                battleLogs.get(battleLogs.size() - 1).setYinjiCount(yl.getYinjiCount());
+            }
+        }
+        // 阈值30 应龙飞弹：消耗1层印记，对敌方随机护法造成飞弹伤害
+        if (yinji >= 30) {
+            yl.setYinjiCount(yl.getYinjiCount() - 1);
+            List<Guardian> foes18 = enemyCamp.stream().filter(g -> !g.isDead() && !g.isPhoenixEgg()).collect(Collectors.toList());
+            Guardian foe40 = foes18.isEmpty() ? null : foes18.get(random.nextInt(foes18.size()));
+            if (foe40 != null) {
+                int base = 100 * s2;   // 飞弹基础伤害=100*应龙逆鳞技能等级（再经飞弹增益/目抗修正）
+                Integer lyLogIndex = battleLogs.size();
+                int mUp = calculateTotalVaule(yl, EffectType.MISSILE_BOOST);
+                double mUpPret = calculateTotalUpPretVaule(yl, EffectType.MISSILE_BOOST_PRET);
+                int mDown = calculateTotalVaule(yl, EffectType.MISSILE_DOWN);
+                double mDownPret = calculateTotalDownPretVaule(yl, EffectType.MISSILE_DOWN_PRET);
+                int tUp = calculateTotalVaule(foe40, EffectType.MISSILE_RESIST_BOOST);
+                double tUpPret = calculateTotalDownPretVaule(foe40, EffectType.MISSILE_RESIST_BOOST_PRET);
+                int tDown = calculateTotalVaule(foe40, EffectType.MISSILE_RESIST_DOWN);
+                double tDownPret = calculateTotalUpPretVaule(foe40, EffectType.MISSILE_RESIST_DOWN_PRET);
+                int adjusted = (int) (base * mUpPret * mDownPret * tUpPret * tDownPret
+                        + (mUp - mDown + yl.getFdAtk() - foe40.getFdDef() - tUp + tDown));
+                adjusted = applyXilianElement(yl, foe40, adjusted);
+                if (adjusted < 0) adjusted = 0;
+                int dmg = triggerOnAttackedSkills(foe40, adjusted, EffectType.MISSILE_DAMAGE);
+                if (dmg < 0) dmg = 0;
+                dmg = applyDefenderDamage(foe40, dmg);
+                Map<String, TargetBattleData> targetStatus = new HashMap<>();
+                Map<String, TargetBattleData> deadUnits = new HashMap<>();
+                TargetBattleData data = new TargetBattleData(foe40.getMaxHp(), foe40.getCurrentHp(), dmg, foe40.isOnField());
+                targetStatus.put(foe40.getId(), data);
+                if (foe40.getCurrentHp() <= 0) {
+                    foe40.setDead(true); foe40.setOnField(false);
+                    data = new TargetBattleData(foe40.getMaxHp(), foe40.getCurrentHp(), dmg, foe40.isOnField());
+                    targetStatus.put(foe40.getId(), data);
+                    deadUnits.put(foe40.getId(), data);
+                }
+                addMultiTargetLog("逆鳞飞弹", yl.getId(), yl.getMaxHp(), yl.getCurrentHp(), yl.isOnField(),
+                        targetStatus, EffectType.MISSILE_DAMAGE, DamageType.MISSILE, "消耗印记·对敌方随机护法飞弹伤害", lyLogIndex);
+                battleLogs.get(lyLogIndex).setYinjiCount(yl.getYinjiCount());
+                if (!deadUnits.isEmpty()) {
+                    addMultiTargetLog("UNIT_DEATH", null, 0, 0, false, deadUnits, null, null, "死亡");
+                    triggerOnDeathSkills(foe40);
+                } else {
+                    triggerOnAttackedSkills(foe40, EffectType.MISSILE_DAMAGE);
+                }
+            }
+        }
+        // 阈值35 消耗印记复活：应龙印记>35时，从本方全体护法均衡凑30层印记消耗，随机复活1个已阵亡单位
+        if (yinji > 35) {
+            List<Guardian> deadAllies = camp.stream()
+                    .filter(g -> g.isDead() && !g.isFixedSoul() && !g.isPhoenixEgg() && g.getHuanhunRounds() <= 0)
+                    .collect(Collectors.toList());
+            int campYinji = camp.stream().mapToInt(Guardian::getYinjiCount).sum();
+            if (!deadAllies.isEmpty() && campYinji >= 30) {
+                consumeYinjiBalanced(camp, 30);   // 全体护法均衡消耗共30层印记
+                Guardian rv = deadAllies.get(random.nextInt(deadAllies.size()));
+                rv.setHuanhunRounds(2);
+                addLog("还魂", yl.getId(), yl.getMaxHp(), yl.getCurrentHp(), 0, yl.isOnField(),
+                        rv.getId(), rv.getMaxHp(), rv.getCurrentHp(), 0, rv.isOnField(),
+                        EffectType.HEAL, DamageType.BUFF, "全体护法均衡消耗30层印记施加还魂（2回合后满血复活）");
+                battleLogs.get(battleLogs.size() - 1).setYinjiCount(yl.getYinjiCount());
+            }
+        }
+        // 阈值40 狂暴：每回合开始消耗1层印记，将自身生命上限-10%血量转化为自身攻击+100*s2、速度+100*s2（永久叠加）
+        if (yinji >= 40 && s2 > 0) {
+            int hpCost = (int) Math.round(yl.getMaxHp() * 0.10);
+            if (hpCost > 0) {
+                yl.setYinjiCount(yl.getYinjiCount() - 1);   // 消耗1层印记
+                yl.setCurrentHp(Math.max(0, yl.getCurrentHp() - hpCost));
+                int atkUp = 100 * s2;
+                int spdUp = 100 * s2;
+                yl.setAttack(yl.getAttack() + atkUp);
+                yl.setSpeed(yl.getSpeed() + spdUp);
+                addLog("应龙逆鳞", yl.getId(), yl.getMaxHp(), yl.getCurrentHp(), hpCost, yl.isOnField(),
+                        yl.getId(), yl.getMaxHp(), yl.getCurrentHp(), 0, yl.isOnField(),
+                        EffectType.ATTACK_UP, DamageType.BUFF, "攻击+" + atkUp + " 速度+" + spdUp);
+                battleLogs.get(battleLogs.size() - 1).setYinjiCount(yl.getYinjiCount());
+                // 自耗触发龙血刻印
+                if (yl.getCurrentHp() > 0) awardYinjiOnSelfCost(yl);
+                // 狂暴致死检查
+                if (yl.getCurrentHp() <= 0 && !yl.isDead()) {
+                    yl.setDead(true);
+                    yl.setOnField(false);
+                    if (fieldA == yl) fieldA = null;
+                    if (fieldB == yl) fieldB = null;
+                    Map<String, TargetBattleData> deathMap = new HashMap<>();
+                    deathMap.put(yl.getId(), new TargetBattleData(yl.getMaxHp(), 0, 0, false));
+                    addMultiTargetLog("UNIT_DEATH", null, 0, 0, false, deathMap, null, null, "狂暴致死");
+                    triggerOnDeathSkills(yl);
+                    return;   // 应龙死亡不再继续后续逻辑
+                }
+            }
+        }
+        // 阈值100 死亡之焰：应龙印记≥100 时触发一次，消耗全部印记，对敌方全体存活护法造成“其当前血量100%”的真实伤害（斩杀；真实伤害不经 applyDefenderDamage，故不受免疫致命抵消）
+        if (yinji >= 100) {
+            yl.setYinjiCount(0);   // 消耗全部印记（前端据 yinjiCount=0 隐藏印记）
+            List<Guardian> foes100 = enemyCamp.stream()
+                    .filter(g -> !g.isDead() && !g.isPhoenixEgg()).collect(Collectors.toList());
+            if (!foes100.isEmpty()) {
+                Map<String, TargetBattleData> hitMap = new LinkedHashMap<>();
+                List<Guardian> killed = new ArrayList<>();
+                for (Guardian foe : foes100) {
+                    int dmg = foe.getCurrentHp();   // 当前血量100% 真实伤害（斩杀）
+                    dmg = triggerOnAttackedSkills(foe, dmg, EffectType.DAMAGE);   // 经减伤/转移类被动修正
+                    if (dmg < 0) dmg = 0;
+                    foe.setCurrentHp(foe.getCurrentHp() - dmg);
+                    TargetBattleData d = new TargetBattleData(foe.getMaxHp(), foe.getCurrentHp(), dmg, foe.isOnField());
+                    hitMap.put(foe.getId(), d);
+                    if (foe.getCurrentHp() <= 0 && !foe.isDead()) {
+                        foe.setDead(true);
+                        foe.setOnField(false);
+                        if (fieldA == foe) fieldA = null;
+                        if (fieldB == foe) fieldB = null;
+                        hitMap.put(foe.getId(), new TargetBattleData(foe.getMaxHp(), foe.getCurrentHp(), dmg, foe.isOnField()));
+                        killed.add(foe);
+                    }
+                }
+                addMultiTargetLog("死亡之焰", yl.getId(), yl.getMaxHp(), yl.getCurrentHp(), yl.isOnField(),
+                        hitMap, EffectType.DAMAGE, DamageType.TRUE, "消耗全部印记·敌方全体当前血量100%真实伤害");
+                battleLogs.get(battleLogs.size() - 1).setYinjiCount(yl.getYinjiCount());
+                if (!killed.isEmpty()) {
+                    Map<String, TargetBattleData> deathMap = new LinkedHashMap<>();
+                    for (Guardian foe : killed) deathMap.put(foe.getId(), new TargetBattleData(foe.getMaxHp(), 0, 0, false));
+                    addMultiTargetLog("UNIT_DEATH", null, 0, 0, false, deathMap, null, null, "死亡之焰");
+                    for (Guardian foe : killed) triggerOnDeathSkills(foe);
+                }
+            }
+        }
+        // 技能3 苍龙吸水：吸取全场(双方,除应龙自身)每单位 1000*技能等级 的物理结界+魔法护盾，吸取多少即为应龙自身叠加多少护盾；若应龙结界总数超过自身生命上限则自身及前后护法回血
+        if (s3 > 0) {
+            int drainCap = 1000 * s3;
+            int gained = 0;
+            int gainedPhysical = 0;
+            int gainedMagic = 0;
+            Map<String, TargetBattleData> drainedMap = new LinkedHashMap<>();
+            for (List<Guardian> c2 : new List[]{campA, campB}) {
+                for (Guardian u : c2) {
+                    if (u.isDead() || u.isPhoenixEgg() || isYinglong(u)) continue;
+                    int p = Math.min(u.getPhysicalBarrier(), drainCap);
+                    int m = Math.min(u.getMagicBarrier(), drainCap);
+                    if (p <= 0 && m <= 0) continue;   // 无盾可吸则跳过
+                    u.setPhysicalBarrier(u.getPhysicalBarrier() - p);
+                    u.setMagicBarrier(u.getMagicBarrier() - m);
+                    gained += p + m;
+                    gainedPhysical += p;
+                    gainedMagic += m;
+                    // 回写该单位被吸后的剩余盾值（shieldChange/magicShieldChange 为负=被吸走，供前端红字飘"物盾-x/法盾-x"）
+                    TargetBattleData d = new TargetBattleData(u.getMaxHp(), u.getCurrentHp(), p + m, u.isOnField());
+                    d.setShieldRemaining(u.getPhysicalBarrier());
+                    d.setMagicShieldRemaining(u.getMagicBarrier());
+                    d.setShieldChange(-p);
+                    d.setMagicShieldChange(-m);
+                    drainedMap.put(u.getId(), d);
+                }
+            }
+            // 吸取多少即加多少护盾：将吸来的物理结界/魔法护盾转给应龙自身，并回写应龙盾值供前端刷新
+            if (gained > 0) {
+                yl.setPhysicalBarrier(yl.getPhysicalBarrier() + gainedPhysical);
+                yl.setMagicBarrier(yl.getMagicBarrier() + gainedMagic);
+                TargetBattleData ylData = new TargetBattleData(yl.getMaxHp(), yl.getCurrentHp(), gained, yl.isOnField());
+                ylData.setShieldRemaining(yl.getPhysicalBarrier());
+                ylData.setMagicShieldRemaining(yl.getMagicBarrier());
+                ylData.setShieldChange(gainedPhysical);
+                ylData.setMagicShieldChange(gainedMagic);
+                drainedMap.put(yl.getId(), ylData);
+            }
+            if (!drainedMap.isEmpty()) {
+                addMultiTargetLog("苍龙吸水", yl.getId(), yl.getMaxHp(), yl.getCurrentHp(), yl.isOnField(), drainedMap, EffectType.PHYSICAL_BARRIER, DamageType.BUFF, "吸取全场护盾" + gained + "点");
+            }
+            int barrierTotal = yl.getPhysicalBarrier() + yl.getMagicBarrier();
+            if (barrierTotal > yl.getMaxHp()) {
+                int excess = barrierTotal - yl.getMaxHp();
+                // 自身以及前后护法各恢复超出差值生命（各自封顶 maxHp）
+                // 前/后各取“同方向最近的一个存活护法”：紧邻那位若已阵亡则顺位往后（往前）顺延到下一个存活者
+                List<Guardian> healTargets = new ArrayList<>();
+                healTargets.add(yl);
+                List<Guardian> mates = camp.stream()
+                        .filter(g -> !g.isDead() && !g.isPhoenixEgg() && !g.getId().equals(yl.getId()))
+                        .collect(Collectors.toList());
+                // 前方（position 更小）中站位最靠后的一位 = 距离应龙最近的存活前位
+                mates.stream().filter(g -> g.getPosition() < yl.getPosition())
+                        .max(Comparator.comparingInt(Guardian::getPosition))
+                        .ifPresent(healTargets::add);
+                // 后方（position 更大）中站位最靠前的一位 = 距离应龙最近的存活后位（紧邻死亡则顺延下一个）
+                mates.stream().filter(g -> g.getPosition() > yl.getPosition())
+                        .min(Comparator.comparingInt(Guardian::getPosition))
+                        .ifPresent(healTargets::add);
+                Map<String, TargetBattleData> mm = new LinkedHashMap<>();
+                for (Guardian g : healTargets) {
+                    int hpBefore = g.getCurrentHp();
+                    int hpAfter = Math.min(g.getMaxHp(), hpBefore + excess);
+                    int healed = hpAfter - hpBefore;
+                    if (healed > 0) {
+                        g.setCurrentHp(hpAfter);
+                        mm.put(g.getId(), new TargetBattleData(g.getMaxHp(), g.getCurrentHp(), healed, g.isOnField()));
+                    }
+                }
+                if (!mm.isEmpty()) {
+                    addMultiTargetLog("苍龙吸水", yl.getId(), yl.getMaxHp(), yl.getCurrentHp(), yl.isOnField(), mm, EffectType.HEAL, DamageType.BUFF, "结界溢出·自身及前后护法各恢复" + excess + "点生命");
+                }
+            }
+        }
+    }
+
+    // ===== 应龙（卡牌id=15 / 战斗id A15·B15）技能组辅助：龙血刻印·应龙逆鳞·苍龙吸水 =====
+    // 从给定护法列表中均衡消耗指定层数印记（每轮从每个持有印记的护法各扣1层，直到扣满 amount 或印记耗尽）
+    private void consumeYinjiBalanced(List<Guardian> pool, int amount) {
+        int remaining = amount;
+        while (remaining > 0) {
+            boolean progressed = false;
+            for (Guardian g : pool) {
+                if (g.getYinjiCount() > 0) {
+                    g.setYinjiCount(g.getYinjiCount() - 1);
+                    remaining--;
+                    progressed = true;
+                    if (remaining <= 0) break;
+                }
+            }
+            if (!progressed) break;
+        }
+    }
+    private boolean isYinglong(Guardian g) {
+        String id = g.getId();
+        return id != null && (id.equals("A15") || id.equals("B15"));
+    }
+    private Guardian findYinglong(List<Guardian> camp) {
+        return camp.stream().filter(g -> isYinglong(g) && !g.isDead()).findFirst().orElse(null);
+    }
+    // 复位每回合印记护栏计数（回合开始最前调用）
+    private void resetYinjiRoundFlags() {
+        for (Guardian g : campA) { g.setYinjiSelfRound(0); g.setYinjiBuffedThisRound(false); }
+        for (Guardian g : campB) { g.setYinjiSelfRound(0); g.setYinjiBuffedThisRound(false); }
+    }
+    // (a) 龙血刻印：任意护法消耗自身血量→场上存活的应龙获得+10印记，不分我方/对面（遍历双方阵营的应龙，每回合≤3次；印记无上限）
+    private void awardYinjiOnSelfCost(Guardian self) {
+        for (List<Guardian> camp : Arrays.asList(campA, campB)) {
+            Guardian yl = findYinglong(camp);
+            if (yl == null) continue;   // 该阵营无存活应龙则跳过
+            // 应龙+10印记（每回合≤3次、无上限）
+            if (yl.getYinjiSelfRound() < 3) {
+                yl.setYinjiSelfRound(yl.getYinjiSelfRound() + 1);
+                yl.setYinjiCount(yl.getYinjiCount() + 10);
+                addLog("龙血刻印", yl.getId(), yl.getMaxHp(), yl.getCurrentHp(), 0, yl.isOnField(),
+                        yl.getId(), yl.getMaxHp(), yl.getCurrentHp(), 0, yl.isOnField(),
+                        EffectType.HP_UP, DamageType.BUFF, "应龙印记+10");
+                battleLogs.get(battleLogs.size() - 1).setYinjiCount(yl.getYinjiCount());
+            }
+        }
+    }
+    // (a-回合开始) 龙血刻印回合开始印记已按新文案移除：印记仅通过护法自耗(应龙+10)与苍龙吸水(后方单位各+3)累积
+    // 苍龙吸水·印记分发（回合结束）：应龙(苍龙吸水已解锁 s3>0)把自身印记转给同阵营站位在其之后的存活护法各+3层（转移：每给出3层应龙自身减3层；应龙印记不足以覆盖每个后方单位各3层则本次不分发）
+    private void distributeYinjiOnRoundEnd() {
+        for (List<Guardian> camp : Arrays.asList(campA, campB)) {
+            Guardian yl = findYinglong(camp);
+            if (yl == null) continue;
+            int[] sk = CardSkillLevelUtil.calculateSkillLevels(yl.getLevel(), yl.getStar().doubleValue());
+            if (sk[2] <= 0) continue;   // 苍龙吸水未解锁则不分发
+            // 候选：同阵营站位在应龙之后的存活护法
+            List<Guardian> rear = camp.stream()
+                    .filter(a -> !a.isDead() && !a.isPhoenixEgg() && !isYinglong(a))
+                    .filter(a -> a.getPosition() > yl.getPosition())
+                    .collect(Collectors.toList());
+            if (rear.isEmpty()) continue;
+            int each = 3;                                 // 苍龙吸水：每个后方单位分发3层印记
+            int need = rear.size() * each;                // 应龙需具备的印记总量
+            if (yl.getYinjiCount() < need) continue;      // 不够则不分（应龙印记 < 需分发总量，整体不转）
+            // 合并为一条日志：应龙先扣 need（作为 source，其场下 num 由 yinjiCount 刷新），
+            // 再把每个后方存活护法 +3 放入 multiTargetDataMap（每个目标携带自身变动后的绝对印记层数供前端刷新）
+            yl.setYinjiCount(yl.getYinjiCount() - need);
+            Map<String, TargetBattleData> yinjiMap = new LinkedHashMap<>();
+            for (Guardian a : rear) {
+                a.setYinjiCount(a.getYinjiCount() + each);
+                TargetBattleData d = new TargetBattleData(a.getMaxHp(), a.getCurrentHp(), each, a.isOnField());
+                d.setYinjiCount(a.getYinjiCount());
+                yinjiMap.put(a.getId(), d);
+            }
+            addMultiTargetLog("龙血刻印", yl.getId(), yl.getMaxHp(), yl.getCurrentHp(), yl.isOnField(),
+                    yinjiMap, EffectType.HP_UP, DamageType.BUFF, "印记-" + need);
+            battleLogs.get(battleLogs.size() - 1).setYinjiCount(yl.getYinjiCount());
+        }
+    }
+    // 判断单位是否持有任意常见负面效果（用于阈值15净化日志判断）
+    private boolean hasAnyNegativeEffect(Guardian g) {
+        EffectType[] negs = {EffectType.POISON, EffectType.BURN, EffectType.STUN, EffectType.SILENCE,
+                EffectType.ATTACK_DOWN, EffectType.ATTACK_DOWN_PRET, EffectType.SPEED_DOWN, EffectType.SPEED_DOWN_PRET,
+                EffectType.MAX_HP_DOWN, EffectType.MAX_HP_DOWN_PRET, EffectType.CRIT_DOWN, EffectType.CRIT_DOWN_PRET,
+                EffectType.DODGE_DOWN, EffectType.DODGE_DOWN_PRET, EffectType.HEAL_DOWN, EffectType.HEAL_DOWNT_PRET,
+                EffectType.FIRE_RESIST_DOWN, EffectType.FIRE_RESIST_DOWN_PRET, EffectType.POISON_RESIST_DOWN,
+                EffectType.POISON_RESIST_DOWN_PRET, EffectType.MISSILE_RESIST_DOWN, EffectType.MISSILE_RESIST_DOWN_PRET};
+        for (EffectType t : negs) if (g.hasEffect(t)) return true;
+        return false;
+    }
+    // 驱散单个友方身上的常见负面效果
+    private void purgeNegatives(Guardian g) {
+        EffectType[] negs = {EffectType.POISON, EffectType.BURN, EffectType.STUN, EffectType.SILENCE,
+                EffectType.ATTACK_DOWN, EffectType.ATTACK_DOWN_PRET, EffectType.SPEED_DOWN, EffectType.SPEED_DOWN_PRET,
+                EffectType.MAX_HP_DOWN, EffectType.MAX_HP_DOWN_PRET, EffectType.CRIT_DOWN, EffectType.CRIT_DOWN_PRET,
+                EffectType.DODGE_DOWN, EffectType.DODGE_DOWN_PRET, EffectType.HEAL_DOWN, EffectType.HEAL_DOWNT_PRET,
+                EffectType.FIRE_RESIST_DOWN, EffectType.FIRE_RESIST_DOWN_PRET, EffectType.POISON_RESIST_DOWN,
+                EffectType.POISON_RESIST_DOWN_PRET, EffectType.MISSILE_RESIST_DOWN, EffectType.MISSILE_RESIST_DOWN_PRET};
+        for (EffectType t : negs) g.remove(t);
+    }
+    // (阈值1) 免疫致命：我方单位将受到"超过生命上限10%的致死伤害"时，消耗1层印记免疫此次伤害（重点克制齐天大圣·定海神针高倍段）
+    // 优先消耗被保护者自身的印记（苍龙吸水转给它、场下图标可见的那部分，num 随之 -1）；其自身无印记时回退到同阵营应龙的大池（应龙 num -1）
+    // 返回实际被扣减印记的护法（供调用处以其为日志 source 刷新对应场下图标），未触发返回 null；凤凰卵不参与
+    private Guardian consumeYinjiForLethalImmune(Guardian defender, int damage) {
+        if (damage <= 0 || defender.isPhoenixEgg()) return null;
+        if (defender.getCurrentHp() - damage > 0) return null;                    // 非致死
+        if (damage <= (int) (defender.getMaxHp() * 0.1)) return null;             // 未超过生命上限10%
+        Guardian owner = defender.getYinjiCount() >= 1
+                ? defender                                                        // 被保护者自带印记：扣自身（其场下 num 可见 -1）
+                : findYinglong(defender.getCamp() == Camp.A ? campA : campB);     // 否则用应龙大池
+        if (owner == null || owner.getYinjiCount() < 1) return null;
+        owner.setYinjiCount(owner.getYinjiCount() - 1);
+        return owner;
+    }
+    // 统一敌方伤害结算入口：先过“应龙·免疫致命”（将造成>生命上限10%的致死伤害时消耗应龙1层印记免疫），再扣血。
+    // 返回实际生效伤害（被免疫时为0），供调用处写日志/TargetBattleData。仅用于“对目标的敌方伤害”；自损/反噬/治疗类不走此入口。
+    // 本方法自带门控（非致死/无印记/凤凰卵 均直接不触发），对非boss阵营为纯no-op。
+    private int applyDefenderDamage(Guardian defender, int damage) {
+        Guardian immuneYl = consumeYinjiForLethalImmune(defender, damage);
+        int applied = (immuneYl != null) ? 0 : damage;
+        defender.setCurrentHp(defender.getCurrentHp() - applied);
+        // 触发免疫致命时补一条子效果日志（源=实际被扣印记者：被保护者自身或应龙，目标=被保护者），供前端播放护盾/免疫动画并刷新对应场下印记 num
+        if (immuneYl != null) addImmuneLethalSubLog(immuneYl, defender);
+        return applied;
+    }
+    // 免疫致命子效果日志：普攻/定海神针/撞击等主日志之后统一走此处；AOE/其它伤害点经 applyDefenderDamage 自动补发。
+    private void addImmuneLethalSubLog(Guardian immuneYl, Guardian defender) {
+        addLog("免疫致命", immuneYl.getId(), immuneYl.getMaxHp(), immuneYl.getCurrentHp(), 0, immuneYl.isOnField(),
+                defender.getId(), defender.getMaxHp(), defender.getCurrentHp(), 0, defender.isOnField(),
+                EffectType.HP_UP, DamageType.BUFF, "免疫致命");
+        battleLogs.get(battleLogs.size() - 1).setYinjiCount(immuneYl.getYinjiCount());
     }
 
     /**
@@ -8592,6 +9100,27 @@ public class BattleManager {
                         EffectType.HEAL,
                         DamageType.BUFF,
                         "凤凰涅槃·破壳重生");
+            }
+        }
+    }
+
+    /**
+     * 应龙·还魂倒计时处理：给被施加还魂的阵亡单位递减剩余回合，降至0时满血(100%生命上限)复活并移除还魂。
+     * 于回合开始、归元之后、印记阈值之前结算，确保本回合新施加的还魂不会被同回合提前递减。
+     */
+    private void processHuanhunRevive(List<Guardian> camp) {
+        for (Guardian g : camp) {
+            if (g.getHuanhunRounds() <= 0) continue;
+            if (!g.isDead()) { g.setHuanhunRounds(0); continue; }   // 异常保护：非阵亡态不处理
+            g.setHuanhunRounds(g.getHuanhunRounds() - 1);
+            if (g.getHuanhunRounds() <= 0) {
+                g.setHuanhunRounds(0);
+                g.setDead(false);
+                g.setCurrentHp(g.getMaxHp());                        // 满血复活
+                addLog("还魂复活",
+                        g.getId(), g.getMaxHp(), g.getCurrentHp(), 0, g.isOnField(),
+                        g.getId(), g.getMaxHp(), g.getCurrentHp(), g.getCurrentHp(), g.isOnField(),
+                        EffectType.HEAL, DamageType.BUFF, "还魂生效·满血复活");
             }
         }
     }
@@ -8639,6 +9168,8 @@ public class BattleManager {
                 EffectType.HEAL,
                 DamageType.BUFF,
                 "复活" + dead.getName());
+        // 龙血刻印(a)：地藏不屈意志消耗自身血量 → 同阵营应龙+10印记（排在不屈意志主日志之后）
+        if (hpCost > 0) awardYinjiOnSelfCost(dizang);
         // 检查地藏是否因扣血而死亡
         if (dizang.getCurrentHp() <= 0) {
             dizang.setDead(true);
@@ -8776,7 +9307,7 @@ public class BattleManager {
                 if (dmg < 0) dmg = 0;
                 dmg = triggerOnAttackedSkills(g, dmg, EffectType.DAMAGE);
                 if (dmg < 0) dmg = 0;
-                g.setCurrentHp(g.getCurrentHp() - dmg);
+                dmg = applyDefenderDamage(g, dmg);
                 TargetBattleData data = new TargetBattleData(g.getMaxHp(), g.getCurrentHp(), dmg, g.isOnField());
                 dmgMap.put(g.getId(), data);
                 if (g.getCurrentHp() <= 0) {
@@ -8815,14 +9346,38 @@ public class BattleManager {
 
     // 处理回合开始效果
     private void processRoundStartEffects() {
+        // 应龙：复位本回合印记护栏计数（自损刻印≤3/血刻加命每人每回合≤1）
+        resetYinjiRoundFlags();
         // 场下中毒效果（批量处理）
         processPoisonEffects();
         // 朱雀·归元（2技能）：先结算凤凰卵倒计时，倒计时结束的回合开始时满血复活
         processZhuQueGuiYuanEgg(campA);
         processZhuQueGuiYuanEgg(campB);
-        // 朱雀·焚尽八荒（1技能）：在场下回合开始时消耗自身25%生命上限，对敌方全体护法造成2倍消耗值的火焰伤害
-        triggerZhuQueFenJinBaHuang(campA);
-        triggerZhuQueFenJinBaHuang(campB);
+        // 应龙·还魂倒计时：结算待复活单位，倒计时结束的回合开始满血复活并移除还魂
+        processHuanhunRevive(campA);
+        processHuanhunRevive(campB);
+        // 龙血刻印回合开始自动印记已移除（新文案：印记仅由护法自耗/苍龙吸水产生）
+        // 朱雀·焚尽八荒（1技能）+ 应龙回合开始结算（阈值+苍龙吸水）：按速度排序释放（快→慢，同速比站位，同站位A先B后）
+        List<Guardian> fastActors = new ArrayList<>();
+        Map<Guardian, Runnable> fastActs = new HashMap<>();
+        for (List<Guardian> camp : Arrays.asList(campA, campB)) {
+            Guardian z = camp.stream()
+                    .filter(g -> g.getName().equals("朱雀") && !g.isDead() && !g.isActionBlocked() && !g.isPhoenixEgg())
+                    .findFirst().orElse(null);
+            if (z != null) { fastActors.add(z); fastActs.put(z, () -> triggerZhuQueFenJinBaHuangUnit(z)); }
+            Guardian yl = camp.stream().filter(this::isYinglong).filter(g -> !g.isDead()).findFirst().orElse(null);
+            if (yl != null) { fastActors.add(yl); fastActs.put(yl, () -> processYinglongForUnit(yl)); }
+        }
+        fastActors.sort((x, y) -> {
+            int s = Integer.compare(effectiveSpeed(y), effectiveSpeed(x));
+            if (s != 0) return s;
+            s = Integer.compare(x.getPosition(), y.getPosition());
+            if (s != 0) return s;
+            return Boolean.compare(x.getCamp() == Camp.B, y.getCamp() == Camp.B);
+        });
+        for (Guardian actor : fastActors) fastActs.get(actor).run();
+        // 印记通用被动：持有印记的非应龙护法按自身印记数给自己加防御系增益（≥5/≥10/≥15）
+        applyYinjiSelfBuffs();
         // 地藏菩萨·不屈意志（1技能）：回合开始概率消耗自身生命复活一名阵亡友方护法
         triggerDiZangBuQuYiZhi(campA);
         triggerDiZangBuQuYiZhi(campB);
@@ -9244,9 +9799,9 @@ public class BattleManager {
             int[] skillLevel = CardSkillLevelUtil.calculateSkillLevels(yuji.getLevel(), yuji.getStar().doubleValue());
             if (skillLevel[0] <= 0) continue;
             int nPercent = Math.min(10 * skillLevel[0], 40); // 每级10%，上限40%
-            // 查找前后护法（position ± 1）
+            // 查找前后护法（position ± 1）；凤凰卵（归元）为纯肉盾不受技能影响，不作为扣血/加盾目标
             List<Guardian> adjacentGuardians = camp.stream()
-                    .filter(g -> !g.isDead() && (g.getPosition() == yuji.getPosition() - 1 || g.getPosition() == yuji.getPosition() + 1))
+                    .filter(g -> !g.isDead() && !g.isPhoenixEgg() && (g.getPosition() == yuji.getPosition() - 1 || g.getPosition() == yuji.getPosition() + 1))
                     .collect(Collectors.toList());
 
             // 扣血目标包含虞姬自己
@@ -9326,6 +9881,66 @@ public class BattleManager {
                 }
             }
         }
+
+        // 白虎·灵佑（1技能）：回合开始时消耗白虎自身生命上限 技能等级*2%（最高20%）的血量，为场上存活友方(排除凤凰卵)施加 2×扣血量的物理结界
+        for (List<Guardian> camp : new List[]{campA, campB}) {
+            Guardian baihu = camp.stream()
+                    .filter(g -> g.getName().equals("白虎") && !g.isDead() && !g.isActionBlocked())
+                    .findFirst().orElse(null);
+            if (baihu == null) continue;
+            int[] skillLevel = CardSkillLevelUtil.calculateSkillLevels(baihu.getLevel(), baihu.getStar().doubleValue());
+            if (skillLevel[0] <= 0) continue;
+            int pct = Math.min(2 * skillLevel[0], 20); // 每级2%，上限20%
+            int hpCost = (int) Math.round(baihu.getMaxHp() * pct / 100.0);
+            if (hpCost <= 0) continue;
+            int barrierValue = hpCost * 2;
+            baihu.setCurrentHp(Math.max(0, baihu.getCurrentHp() - hpCost));
+            // 加盾目标：本阵营场上存活单位（场下不加）；凤凰卵（归元）为纯肉盾不受技能影响，不加盾
+            List<Guardian> allies = camp.stream()
+                    .filter(g -> !g.isDead() && !g.isPhoenixEgg() && g.isOnField())
+                    .collect(Collectors.toList());
+            Map<String, TargetBattleData> targetStatus = new LinkedHashMap<>();
+            for (Guardian a : allies) {
+                a.setPhysicalBarrier(a.getPhysicalBarrier() + barrierValue);
+                // 施法者白虎自身携带自耗血量 hpCost（供前端飘红字），其余友方仅加盾 value=0
+                int selfCost = a.getId().equals(baihu.getId()) ? hpCost : 0;
+                TargetBattleData data = new TargetBattleData(a.getMaxHp(), a.getCurrentHp(), selfCost, a.isOnField());
+                data.setShieldRemaining(a.getPhysicalBarrier());
+                data.setShieldChange(barrierValue);   // 本次授予物盾（供前端场下图标飘"物盾+xxx"）
+                targetStatus.put(a.getId(), data);
+            }
+            // 白虎在场下时（灵佑只加场上单位护盾）自身不吃盾，但仍需在日志中体现自耗掉血（value=hpCost、shieldRemaining=0 表示无盾），否则前端不刷新其血条
+            if (!baihu.isOnField() && !targetStatus.containsKey(baihu.getId())) {
+                targetStatus.put(baihu.getId(), new TargetBattleData(baihu.getMaxHp(), baihu.getCurrentHp(), hpCost, false));
+            }
+            if (!targetStatus.isEmpty()) {
+                addMultiTargetLog("灵佑",
+                        baihu.getId(),
+                        baihu.getMaxHp(),
+                        baihu.getCurrentHp(),
+                        baihu.isOnField(),
+                        targetStatus,
+                        EffectType.PHYSICAL_BARRIER,
+                        DamageType.BUFF,
+                        "物理结界+" + barrierValue);
+            }
+            // 龙血刻印(a)：白虎自耗→本阵营应龙+1印记
+            awardYinjiOnSelfCost(baihu);
+            // 白虎自耗致死结算（扣血后若归零则阵亡，走统一死亡处理）
+            if (baihu.getCurrentHp() <= 0 && !baihu.isDead()) {
+                baihu.setDead(true);
+                baihu.setOnField(false);
+                // 白虎在场上时清除 field 引用（与嫦娥自耗致死一致），下回合 checkAndReplaceGuardians 正常补位
+                if (fieldA == baihu) fieldA = null;
+                if (fieldB == baihu) fieldB = null;
+                Map<String, TargetBattleData> deadUnits = new HashMap<>();
+                deadUnits.put(baihu.getId(), new TargetBattleData(baihu.getMaxHp(), 0, 0, false));
+                addMultiTargetLog("UNIT_DEATH", null, 0, 0, false, deadUnits, null, null, "死亡");
+                triggerOnDeathSkills(baihu);
+            }
+        }
+
+        // 应龙回合开始结算（阈值+苍龙吸水）已上提至焚尽八荒槽位，与朱雀焚尽八荒按速度排序释放；见 processYinglongForUnit
 
         if (campA.stream().anyMatch(g -> g.getName().equals("红孩儿") && !g.isDead() && !g.isActionBlocked())) {
             Guardian nianshou = campA.stream()
@@ -9890,7 +10505,7 @@ public class BattleManager {
                     burnDamage=triggerOnAttackedSkills(hitTarget,burnDamage,EffectType.MISSILE_DAMAGE);
 
                     // 4. 扣除伤害
-                    hitTarget.setCurrentHp(hitTarget.getCurrentHp() - burnDamage);
+                    burnDamage = applyDefenderDamage(hitTarget, burnDamage);
                     Map<String, TargetBattleData> deadUnits = new HashMap<>();
 
                     if (hitTarget.getCurrentHp() <= 0) {
@@ -9981,7 +10596,7 @@ public class BattleManager {
                     burnDamage=triggerOnAttackedSkills(hitTarget,burnDamage,EffectType.MISSILE_DAMAGE);
 
                     // 4. 扣除伤害
-                    hitTarget.setCurrentHp(hitTarget.getCurrentHp() - burnDamage);
+                    burnDamage = applyDefenderDamage(hitTarget, burnDamage);
                     Map<String, TargetBattleData> deadUnits = new HashMap<>();
 
                     if (hitTarget.getCurrentHp() <= 0) {
@@ -10074,7 +10689,7 @@ public class BattleManager {
                     burnDamage=triggerOnAttackedSkills(defender,burnDamage,EffectType.MISSILE_DAMAGE);
 
                     // 4. 扣除伤害
-                    defender.setCurrentHp(defender.getCurrentHp() - burnDamage);
+                    burnDamage = applyDefenderDamage(defender, burnDamage);
                     Map<String, TargetBattleData> deadUnits = new HashMap<>();
 
                     if (defender.getCurrentHp() <= 0) {
@@ -10168,7 +10783,7 @@ public class BattleManager {
                     burnDamage=triggerOnAttackedSkills(defender,burnDamage,EffectType.MISSILE_DAMAGE);
 
                     // 4. 扣除伤害
-                    defender.setCurrentHp(defender.getCurrentHp() - burnDamage);
+                    burnDamage = applyDefenderDamage(defender, burnDamage);
                     Map<String, TargetBattleData> deadUnits = new HashMap<>();
 
                     if (defender.getCurrentHp() <= 0) {
@@ -10233,7 +10848,7 @@ public class BattleManager {
                     burnDamage=triggerOnAttackedSkills(defender,burnDamage,EffectType.TRUE_DAMAGE);
 
                     // 4. 扣除伤害
-                    defender.setCurrentHp(defender.getCurrentHp() - burnDamage);
+                    burnDamage = applyDefenderDamage(defender, burnDamage);
                     Map<String, TargetBattleData> deadUnits = new HashMap<>();
 
                     if (defender.getCurrentHp() <= 0) {
@@ -10299,7 +10914,7 @@ public class BattleManager {
                     burnDamage=triggerOnAttackedSkills(defender,burnDamage,EffectType.TRUE_DAMAGE);
 
                     // 4. 扣除伤害
-                    defender.setCurrentHp(defender.getCurrentHp() - burnDamage);
+                    burnDamage = applyDefenderDamage(defender, burnDamage);
                     Map<String, TargetBattleData> deadUnits = new HashMap<>();
 
                     if (defender.getCurrentHp() <= 0) {
@@ -10366,7 +10981,7 @@ public class BattleManager {
                     totalPoisonDamage=triggerOnAttackedSkills(defender,totalPoisonDamage,EffectType.MISSILE_DAMAGE);
 
                     // 4. 扣除伤害
-                    defender.setCurrentHp(defender.getCurrentHp() - totalPoisonDamage);
+                    totalPoisonDamage = applyDefenderDamage(defender, totalPoisonDamage);
                     Map<String, TargetBattleData> deadUnits = new HashMap<>();
 
                     if (defender.getCurrentHp() <= 0) {
@@ -10435,7 +11050,7 @@ public class BattleManager {
                     totalPoisonDamage=triggerOnAttackedSkills(defender,totalPoisonDamage,EffectType.MISSILE_DAMAGE);
 
                     // 4. 扣除伤害
-                    defender.setCurrentHp(defender.getCurrentHp() - totalPoisonDamage);
+                    totalPoisonDamage = applyDefenderDamage(defender, totalPoisonDamage);
                     Map<String, TargetBattleData> deadUnits = new HashMap<>();
 
                     if (defender.getCurrentHp() <= 0) {
@@ -10504,7 +11119,7 @@ public class BattleManager {
                     totalPoisonDamage=triggerOnAttackedSkills(defender,totalPoisonDamage,EffectType.MISSILE_DAMAGE);
 
                     // 4. 扣除伤害
-                    defender.setCurrentHp(defender.getCurrentHp() - totalPoisonDamage);
+                    totalPoisonDamage = applyDefenderDamage(defender, totalPoisonDamage);
                     Map<String, TargetBattleData> deadUnits = new HashMap<>();
 
                     if (defender.getCurrentHp() <= 0) {
@@ -10573,7 +11188,7 @@ public class BattleManager {
                     totalPoisonDamage=triggerOnAttackedSkills(defender,totalPoisonDamage,EffectType.MISSILE_DAMAGE);
 
                     // 4. 扣除伤害
-                    defender.setCurrentHp(defender.getCurrentHp() - totalPoisonDamage);
+                    totalPoisonDamage = applyDefenderDamage(defender, totalPoisonDamage);
                     Map<String, TargetBattleData> deadUnits = new HashMap<>();
 
                     if (defender.getCurrentHp() <= 0) {
@@ -10671,7 +11286,7 @@ public class BattleManager {
                     burnDamage=triggerOnAttackedSkills(defender,burnDamage,EffectType.MISSILE_DAMAGE);
 
                     // 4. 扣除伤害
-                    defender.setCurrentHp(defender.getCurrentHp() - burnDamage);
+                    burnDamage = applyDefenderDamage(defender, burnDamage);
                     Map<String, TargetBattleData> deadUnits = new HashMap<>();
 
                     if (defender.getCurrentHp() <= 0) {
@@ -10768,7 +11383,7 @@ public class BattleManager {
                     burnDamage=triggerOnAttackedSkills(defender,burnDamage,EffectType.MISSILE_DAMAGE);
 
                     // 4. 扣除伤害
-                    defender.setCurrentHp(defender.getCurrentHp() - burnDamage);
+                    burnDamage = applyDefenderDamage(defender, burnDamage);
                     Map<String, TargetBattleData> deadUnits = new HashMap<>();
 
                     if (defender.getCurrentHp() <= 0) {
@@ -10869,7 +11484,7 @@ public class BattleManager {
                         burnDamage=triggerOnAttackedSkills(g,burnDamage,EffectType.FIRE_DAMAGE);
 
                         // 4. 扣除伤害
-                        g.setCurrentHp(g.getCurrentHp() - burnDamage);
+                        burnDamage = applyDefenderDamage(g, burnDamage);
                         TargetBattleData data = new TargetBattleData(g.getMaxHp(), g.getCurrentHp(), burnDamage, g.isOnField());
                         targetStatus.put(g.getId(), data);
                         if (g.isDead()) {
@@ -10984,7 +11599,7 @@ public class BattleManager {
                         burnDamage=triggerOnAttackedSkills(g,burnDamage,EffectType.FIRE_DAMAGE);
 
                         // 4. 扣除伤害
-                        g.setCurrentHp(g.getCurrentHp() - burnDamage);
+                        burnDamage = applyDefenderDamage(g, burnDamage);
                         TargetBattleData data = new TargetBattleData(g.getMaxHp(), g.getCurrentHp(), burnDamage, g.isOnField());
                         targetStatus.put(g.getId(), data);
                         if (g.isDead()) {
@@ -11333,7 +11948,7 @@ public class BattleManager {
                 }
             }
             // 扣除中毒伤害
-            g.setCurrentHp(g.getCurrentHp() - finalDamage);
+            finalDamage = applyDefenderDamage(g, finalDamage);
             TargetBattleData data = new TargetBattleData(g.getMaxHp(), g.getCurrentHp(), finalDamage, g.isOnField());
             // 回填吸收后的魔法盾剩余值，前端据此让法盾逐跳扣减、耗尽即隐藏
             data.setMagicShieldRemaining(g.getMagicBarrier());
@@ -11932,7 +12547,7 @@ public class BattleManager {
                     burnDamage=triggerOnAttackedSkills(hitTarget,burnDamage,EffectType.MISSILE_DAMAGE);
 
                     // 4. 扣除伤害
-                    hitTarget.setCurrentHp(hitTarget.getCurrentHp() - burnDamage);
+                    burnDamage = applyDefenderDamage(hitTarget, burnDamage);
                     Map<String, TargetBattleData> deadUnits = new HashMap<>();
 
                     if (hitTarget.getCurrentHp() <= 0) {
@@ -11982,7 +12597,7 @@ public class BattleManager {
                         .findFirst().get();
                 int[] skillLevel = CardSkillLevelUtil.calculateSkillLevels(guardian.getLevel(), guardian.getStar().doubleValue());
                 //  禁心咒Lv1场下
-                if (fieldB != null && !fieldB.isDead() && skillLevel[1] > 0 && ProbabilityBooleanUtils.randomByProbability(0.5) && fieldB != null) {
+                if (fieldB != null && !fieldB.isDead() && !isYinglong(fieldB) && skillLevel[1] > 0 && ProbabilityBooleanUtils.randomByProbability(0.5) && fieldB != null) {
                     fieldB.addEffect(EffectType.SILENCE, 0, 2, guardian.getId());
                     addLog("禁心咒",
                             guardian.getId(),
@@ -12044,7 +12659,7 @@ public class BattleManager {
                     burnDamage=triggerOnAttackedSkills(hitTarget,burnDamage,EffectType.MISSILE_DAMAGE);
 
                     // 4. 扣除伤害
-                    hitTarget.setCurrentHp(hitTarget.getCurrentHp() - burnDamage);
+                    burnDamage = applyDefenderDamage(hitTarget, burnDamage);
                     Map<String, TargetBattleData> deadUnits = new HashMap<>();
 
                     if (hitTarget.getCurrentHp() <= 0) {
@@ -12094,7 +12709,7 @@ public class BattleManager {
                         .findFirst().get();
                 int[] skillLevel = CardSkillLevelUtil.calculateSkillLevels(guardian.getLevel(), guardian.getStar().doubleValue());
                 //  禁心咒Lv1场下
-                if (fieldA != null && !fieldA.isDead() && skillLevel[1] > 0 && ProbabilityBooleanUtils.randomByProbability(0.5) && fieldA != null) {
+                if (fieldA != null && !fieldA.isDead() && !isYinglong(fieldA) && skillLevel[1] > 0 && ProbabilityBooleanUtils.randomByProbability(0.5) && fieldA != null) {
                     fieldA.addEffect(EffectType.SILENCE, 0, 2, guardian.getId());
                     addLog("禁心咒",
                             guardian.getId(),
@@ -12156,7 +12771,7 @@ public class BattleManager {
                     burnDamage=triggerOnAttackedSkills(hitTarget,burnDamage,EffectType.MISSILE_DAMAGE);
 
                     // 4. 扣除伤害
-                    hitTarget.setCurrentHp(hitTarget.getCurrentHp() - burnDamage);
+                    burnDamage = applyDefenderDamage(hitTarget, burnDamage);
                     Map<String, TargetBattleData> deadUnits = new HashMap<>();
 
                     if (hitTarget.getCurrentHp() <= 0) {
@@ -12242,7 +12857,7 @@ public class BattleManager {
                     burnDamage=triggerOnAttackedSkills(hitTarget,burnDamage,EffectType.MISSILE_DAMAGE);
 
                     // 4. 扣除伤害
-                    hitTarget.setCurrentHp(hitTarget.getCurrentHp() - burnDamage);
+                    burnDamage = applyDefenderDamage(hitTarget, burnDamage);
                     Map<String, TargetBattleData> deadUnits = new HashMap<>();
 
                     if (hitTarget.getCurrentHp() <= 0) {
@@ -12329,7 +12944,7 @@ public class BattleManager {
                     burnDamage=triggerOnAttackedSkills(hitTarget,burnDamage,EffectType.MISSILE_DAMAGE);
 
                     // 4. 扣除伤害
-                    hitTarget.setCurrentHp(hitTarget.getCurrentHp() - burnDamage);
+                    burnDamage = applyDefenderDamage(hitTarget, burnDamage);
                     Map<String, TargetBattleData> deadUnits = new HashMap<>();
 
                     if (hitTarget.getCurrentHp() <= 0) {
@@ -12415,7 +13030,7 @@ public class BattleManager {
                     burnDamage=triggerOnAttackedSkills(hitTarget,burnDamage,EffectType.MISSILE_DAMAGE);
 
                     // 4. 扣除伤害
-                    hitTarget.setCurrentHp(hitTarget.getCurrentHp() - burnDamage);
+                    burnDamage = applyDefenderDamage(hitTarget, burnDamage);
                     Map<String, TargetBattleData> deadUnits = new HashMap<>();
 
                     if (hitTarget.getCurrentHp() <= 0) {
@@ -12502,7 +13117,7 @@ public class BattleManager {
                     burnDamage=triggerOnAttackedSkills(hitTarget,burnDamage,EffectType.MISSILE_DAMAGE);
 
                     // 4. 扣除伤害
-                    hitTarget.setCurrentHp(hitTarget.getCurrentHp() - burnDamage);
+                    burnDamage = applyDefenderDamage(hitTarget, burnDamage);
                     Map<String, TargetBattleData> deadUnits = new HashMap<>();
 
                     if (hitTarget.getCurrentHp() <= 0) {
@@ -12588,7 +13203,7 @@ public class BattleManager {
                     burnDamage=triggerOnAttackedSkills(hitTarget,burnDamage,EffectType.MISSILE_DAMAGE);
 
                     // 4. 扣除伤害
-                    hitTarget.setCurrentHp(hitTarget.getCurrentHp() - burnDamage);
+                    burnDamage = applyDefenderDamage(hitTarget, burnDamage);
                     Map<String, TargetBattleData> deadUnits = new HashMap<>();
 
                     if (hitTarget.getCurrentHp() <= 0) {
@@ -12675,7 +13290,7 @@ public class BattleManager {
                     burnDamage=triggerOnAttackedSkills(hitTarget,burnDamage,EffectType.MISSILE_DAMAGE);
 
                     // 4. 扣除伤害
-                    hitTarget.setCurrentHp(hitTarget.getCurrentHp() - burnDamage);
+                    burnDamage = applyDefenderDamage(hitTarget, burnDamage);
                     Map<String, TargetBattleData> deadUnits = new HashMap<>();
 
                     if (hitTarget.getCurrentHp() <= 0) {
@@ -12761,7 +13376,7 @@ public class BattleManager {
                     burnDamage=triggerOnAttackedSkills(hitTarget,burnDamage,EffectType.MISSILE_DAMAGE);
 
                     // 4. 扣除伤害
-                    hitTarget.setCurrentHp(hitTarget.getCurrentHp() - burnDamage);
+                    burnDamage = applyDefenderDamage(hitTarget, burnDamage);
                     Map<String, TargetBattleData> deadUnits = new HashMap<>();
 
                     if (hitTarget.getCurrentHp() <= 0) {
@@ -12848,7 +13463,7 @@ public class BattleManager {
                     burnDamage=triggerOnAttackedSkills(hitTarget,burnDamage,EffectType.MISSILE_DAMAGE);
 
                     // 4. 扣除伤害
-                    hitTarget.setCurrentHp(hitTarget.getCurrentHp() - burnDamage);
+                    burnDamage = applyDefenderDamage(hitTarget, burnDamage);
                     Map<String, TargetBattleData> deadUnits = new HashMap<>();
 
                     if (hitTarget.getCurrentHp() <= 0) {
@@ -12934,7 +13549,7 @@ public class BattleManager {
                     burnDamage=triggerOnAttackedSkills(hitTarget,burnDamage,EffectType.MISSILE_DAMAGE);
 
                     // 4. 扣除伤害
-                    hitTarget.setCurrentHp(hitTarget.getCurrentHp() - burnDamage);
+                    burnDamage = applyDefenderDamage(hitTarget, burnDamage);
                     Map<String, TargetBattleData> deadUnits = new HashMap<>();
 
                     if (hitTarget.getCurrentHp() <= 0) {
@@ -13021,7 +13636,7 @@ public class BattleManager {
                     burnDamage=triggerOnAttackedSkills(hitTarget,burnDamage,EffectType.MISSILE_DAMAGE);
 
                     // 4. 扣除伤害
-                    hitTarget.setCurrentHp(hitTarget.getCurrentHp() - burnDamage);
+                    burnDamage = applyDefenderDamage(hitTarget, burnDamage);
                     Map<String, TargetBattleData> deadUnits = new HashMap<>();
 
                     if (hitTarget.getCurrentHp() <= 0) {
@@ -13107,7 +13722,7 @@ public class BattleManager {
                     burnDamage=triggerOnAttackedSkills(hitTarget,burnDamage,EffectType.MISSILE_DAMAGE);
 
                     // 4. 扣除伤害
-                    hitTarget.setCurrentHp(hitTarget.getCurrentHp() - burnDamage);
+                    burnDamage = applyDefenderDamage(hitTarget, burnDamage);
                     Map<String, TargetBattleData> deadUnits = new HashMap<>();
 
                     if (hitTarget.getCurrentHp() <= 0) {
@@ -13194,7 +13809,7 @@ public class BattleManager {
                     burnDamage=triggerOnAttackedSkills(hitTarget,burnDamage,EffectType.MISSILE_DAMAGE);
 
                     // 4. 扣除伤害
-                    hitTarget.setCurrentHp(hitTarget.getCurrentHp() - burnDamage);
+                    burnDamage = applyDefenderDamage(hitTarget, burnDamage);
                     Map<String, TargetBattleData> deadUnits = new HashMap<>();
 
                     if (hitTarget.getCurrentHp() <= 0) {
@@ -13280,7 +13895,7 @@ public class BattleManager {
                     burnDamage=triggerOnAttackedSkills(hitTarget,burnDamage,EffectType.MISSILE_DAMAGE);
 
                     // 4. 扣除伤害
-                    hitTarget.setCurrentHp(hitTarget.getCurrentHp() - burnDamage);
+                    burnDamage = applyDefenderDamage(hitTarget, burnDamage);
                     Map<String, TargetBattleData> deadUnits = new HashMap<>();
 
                     if (hitTarget.getCurrentHp() <= 0) {
@@ -13367,7 +13982,7 @@ public class BattleManager {
                     burnDamage=triggerOnAttackedSkills(hitTarget,burnDamage,EffectType.MISSILE_DAMAGE);
 
                     // 4. 扣除伤害
-                    hitTarget.setCurrentHp(hitTarget.getCurrentHp() - burnDamage);
+                    burnDamage = applyDefenderDamage(hitTarget, burnDamage);
                     Map<String, TargetBattleData> deadUnits = new HashMap<>();
 
                     if (hitTarget.getCurrentHp() <= 0) {
@@ -13453,7 +14068,7 @@ public class BattleManager {
                     burnDamage=triggerOnAttackedSkills(hitTarget,burnDamage,EffectType.MISSILE_DAMAGE);
 
                     // 4. 扣除伤害
-                    hitTarget.setCurrentHp(hitTarget.getCurrentHp() - burnDamage);
+                    burnDamage = applyDefenderDamage(hitTarget, burnDamage);
                     Map<String, TargetBattleData> deadUnits = new HashMap<>();
 
                     if (hitTarget.getCurrentHp() <= 0) {
@@ -13540,7 +14155,7 @@ public class BattleManager {
                     burnDamage=triggerOnAttackedSkills(hitTarget,burnDamage,EffectType.MISSILE_DAMAGE);
 
                     // 4. 扣除伤害
-                    hitTarget.setCurrentHp(hitTarget.getCurrentHp() - burnDamage);
+                    burnDamage = applyDefenderDamage(hitTarget, burnDamage);
                     Map<String, TargetBattleData> deadUnits = new HashMap<>();
 
                     if (hitTarget.getCurrentHp() <= 0) {
@@ -13626,7 +14241,7 @@ public class BattleManager {
                     burnDamage=triggerOnAttackedSkills(hitTarget,burnDamage,EffectType.MISSILE_DAMAGE);
 
                     // 4. 扣除伤害
-                    hitTarget.setCurrentHp(hitTarget.getCurrentHp() - burnDamage);
+                    burnDamage = applyDefenderDamage(hitTarget, burnDamage);
                     Map<String, TargetBattleData> deadUnits = new HashMap<>();
 
                     if (hitTarget.getCurrentHp() <= 0) {
@@ -13714,7 +14329,7 @@ public class BattleManager {
                     burnDamage=triggerOnAttackedSkills(hitTarget,burnDamage,EffectType.MISSILE_DAMAGE);
 
                     // 4. 扣除伤害
-                    hitTarget.setCurrentHp(hitTarget.getCurrentHp() - burnDamage);
+                    burnDamage = applyDefenderDamage(hitTarget, burnDamage);
                     Map<String, TargetBattleData> deadUnits = new HashMap<>();
 
                     if (hitTarget.getCurrentHp() <= 0) {
@@ -13800,7 +14415,7 @@ public class BattleManager {
                     burnDamage=triggerOnAttackedSkills(hitTarget,burnDamage,EffectType.MISSILE_DAMAGE);
 
                     // 4. 扣除伤害
-                    hitTarget.setCurrentHp(hitTarget.getCurrentHp() - burnDamage);
+                    burnDamage = applyDefenderDamage(hitTarget, burnDamage);
                     Map<String, TargetBattleData> deadUnits = new HashMap<>();
 
                     if (hitTarget.getCurrentHp() <= 0) {

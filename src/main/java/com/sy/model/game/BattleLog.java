@@ -34,4 +34,17 @@ public class BattleLog {
     private String extraDesc;               // 额外描述信息（可选）
     private int aoe;
     private int shieldRemaining;        // 目标当前盾（物理结界）剩余值
+    private Integer yinjiCount;         // 应龙当前印记层数（仅应龙相关日志回写，供前端刷新场下 yinji 动画的 num；null 表示该日志不涉及印记变化）
+
+    // 便捷构造：与旧版 20 参全字段构造签名一致（不含 yinjiCount），委托给 Lombok @AllArgsConstructor 生成的 21 参构造，yinjiCount 默认 null。
+    // 这样既有 new BattleLog(20 参) 调用点无需修改即可编译；需要回写印记的应龙日志通过 setYinjiCount 追加。
+    public BattleLog(String battleId, int round, String eventType, Integer flyup,
+                     String sourceUnitId, int sourceHpBefore, int sourceHpAfter, int sourceSelfValue, boolean sourceFieldStatus,
+                     String targetUnitId, int targetHpBefore, int targetHpAfter, int singleTargetValue, boolean targetFieldStatus,
+                     Map<String, TargetBattleData> multiTargetDataMap, EffectType effectType, DamageType damageType, String extraDesc,
+                     int aoe, int shieldRemaining) {
+        this(battleId, round, eventType, flyup, sourceUnitId, sourceHpBefore, sourceHpAfter, sourceSelfValue, sourceFieldStatus,
+                targetUnitId, targetHpBefore, targetHpAfter, singleTargetValue, targetFieldStatus, multiTargetDataMap,
+                effectType, damageType, extraDesc, aoe, shieldRemaining, null);
+    }
 }
