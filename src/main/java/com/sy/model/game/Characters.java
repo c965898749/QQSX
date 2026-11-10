@@ -57,4 +57,7 @@ public class Characters {
     private Integer sex;
 
     private Integer flyup;
+
+    /** 战斗开局的初始当前血量（仅世界BOSS等“血池持久化”场景设置：上限保持满值、当前血量按倍率扣减）；null 表示按满血（=上限）开局 */
+    private Integer initHp;
 }

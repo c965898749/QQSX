@@ -8,9 +8,11 @@
         gib.icon,
         gib.description,
         gips.gem_price,
-        gips.stock
+        gips.stock,
+        gips.sort
         FROM game_item_play_shop gips
         LEFT JOIN game_item_base gib on gib.item_id= gips.item_id
         where  gips.is_delete='0'
+        ORDER BY IFNULL(gips.sort, 0) ASC, gips.item_id ASC
     </select>
 </mapper>

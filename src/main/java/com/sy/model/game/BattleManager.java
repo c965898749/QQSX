@@ -33,6 +33,8 @@ public class BattleManager {
     private static final int MAX_TRIGGER_DEPTH = 5;
     // 后羿乾坤破（2技能）：蓄力满4层后，攻击时以30%攻击力对易死目标连射，箭数随2技能等级提升，封顶10箭
     private static final int HOU_YI_CHARGE_MAX = 4;
+        // 伏羲卦象（2技能）：受到/躲过伤害或回合结束位于场下蓄力+1，蓄力满4层后攻击时为全体友方加物理结界并回复等量血量
+        private static final int FU_XI_CHARGE_MAX = 4;
     private static final int HOU_YI_SHOT_MAX = 10;
     // 人物最高等级：用于把2技能等级均分映射到箭数（满级时正好封顶10箭）
     private static final int HOU_YI_MAX_CARD_LEVEL = 100;
@@ -354,7 +356,9 @@ public class BattleManager {
             }
 
         }
-        while (currentRound < 100 && !isBattleEnd()) {
+        // 胜负判定后置到完整回合结束：即使中途一方全灭，本回合也走完 登场/回合开始/场下/回合结束 全部buff类结算
+        // （应龙·苍龙吸水在回合开始吸盾加血、青龙龙威在回合结束转盾等），保证世界BOSS血池不被跳过续航而失衡，全灭方由方法内存活过滤自然跳过
+        while (currentRound < 100) {
             currentRound++;
             addLog("ROUND_START",
                     null,
@@ -390,6 +394,11 @@ public class BattleManager {
 
             //4. 回合结束处理
             processRoundEndEffects();
+
+            //5. 本回合全部结算完成后才判定战斗结束（参战双方均无存活/可复活单位时收尾）
+            if (isBattleEnd()) {
+                break;
+            }
         }
 
         // 战斗结束判定
@@ -586,6 +595,22 @@ public class BattleManager {
         addHouYiCharge(houyiB);
         triggerHouYiLuoRiYuHui(houyiB);
 
+        // 伏羲场下：卦象（2技能）回合结束时位于后阵蓄力+1，满蓄力可直接在场下释放（无需等到上场攻击）
+        Guardian fuXiA = campA.stream()
+                .filter(g -> g.getName().equals("伏羲") && !g.isDead() && !g.isOnField())
+                .findFirst().orElse(null);
+        addFuXiCharge(fuXiA);
+        if (fuXiA != null && !fuXiA.isActionBlocked()) {
+            triggerFuXiGuaXiang(fuXiA);
+        }
+        Guardian fuXiB = campB.stream()
+                .filter(g -> g.getName().equals("伏羲") && !g.isDead() && !g.isOnField())
+                .findFirst().orElse(null);
+        addFuXiCharge(fuXiB);
+        if (fuXiB != null && !fuXiB.isActionBlocked()) {
+            triggerFuXiGuaXiang(fuXiB);
+        }
+
         // 嫦娥场下：桂影栖身（1技能）每回合闪避+技能等级%，最多叠加30%
         Guardian changEa = campA.stream()
                 .filter(g -> g.getName().equals("嫦娥") && !g.isDead() && !g.isOnField())
@@ -607,6 +632,9 @@ public class BattleManager {
         // 青龙·龙威（2技能）：回合结束吸取场上双方兽族生命，转为我方魔法护盾
         processLongWei(campA, fieldB);
         processLongWei(campB, fieldA);
+
+        // 苍龙吸水·吸盾段（回合结束）：在龙威加盾之后执行，应龙吸取全场护盾叠加自身结界，结界超过生命上限则自身及前后护法回血（续航闭环：加盾→吸盾→回血在同一回合内完成）
+        drainShieldsForYinglong();
 
         // 苍龙吸水·印记分发（回合结束）：应龙把自身印记转给同阵营站位在其之后的存活护法各+2层（转移，不够则不分）
         distributeYinjiOnRoundEnd();
@@ -942,6 +970,91 @@ public class BattleManager {
                 }
                 }
             }
+            //触发场下技能（伏羲守卫，不受场上单位沉默影响，仅受伏羲自身沉默影响）
+        List<Guardian> fuXiGuard = defender.getCamp() == Camp.A ?
+                campA.stream().filter(g -> !g.isDead()&&g.getName().equals("伏羲")).collect(Collectors.toList()) :
+                campB.stream().filter(g -> !g.isDead()&&g.getName().equals("伏羲")).collect(Collectors.toList());
+            if (Xtool.isNotNull(fuXiGuard)&&!defender.getName().equals("伏羲")&&effectType == EffectType.DAMAGE && defender.isOnField()){
+                Guardian guardian=fuXiGuard.get(0);
+                if (!guardian.isSilence()) {
+                int[] skillLevelF = CardSkillLevelUtil.calculateSkillLevels(guardian.getLevel(), guardian.getStar().doubleValue());
+                if (skillLevelF[0]>0){
+                    // 守卫触发条件：队友生命百分比不足 min(70, 10×守卫技能等级)% ，且其生命百分比低于伏羲自身，两个条件都满足才代承受伤害
+                    int guardThresholdF = Math.min(70, 10 * skillLevelF[0]);
+                    boolean teammateLowHpF = (long) defender.getCurrentHp() * 100 < (long) defender.getMaxHp() * guardThresholdF;
+                    boolean teammateWeakerThanFuXi = (long) defender.getCurrentHp() * guardian.getMaxHp() < (long) guardian.getCurrentHp() * defender.getMaxHp();
+                    if (teammateLowHpF && teammateWeakerThanFuXi) {
+                    // 物理伤害且被守护友方有物理结界时，先扣除该友方物理盾，多余(溢出)的伤害才转移给伏羲
+                    int toFuXi = burnDamage;
+                    if (defender.getPhysicalBarrier() > 0 && toFuXi > 0) {
+                        if (defender.getPhysicalBarrier() >= toFuXi) {
+                            defender.setPhysicalBarrier(defender.getPhysicalBarrier() - toFuXi);
+                            toFuXi = 0;
+                        } else {
+                            toFuXi = toFuXi - defender.getPhysicalBarrier();
+                            defender.setPhysicalBarrier(0);
+                        }
+                    }
+                    // 与玄武守卫的差异：伏羲每次代承的物理伤害不超过自身生命上限的 max(10, 100-5×守卫技能等级)%（仅封顶伏羲自身损失；场上友方被完全保护，超出上限的部分不再回落给友方）
+                    if (toFuXi > 0) {
+                        int capPercent = Math.max(10, 100 - 5 * skillLevelF[0]);
+                        int cap = (int) ((long) guardian.getMaxHp() * capPercent / 100);
+                        if (toFuXi > cap) {
+                            toFuXi = cap;
+                        }
+                    }
+                    if (toFuXi > 0) {
+                    guardian.setCurrentHp(guardian.getCurrentHp() - toFuXi);
+                    addLog("守卫",
+                            guardian.getId(),
+                            guardian.getMaxHp(),
+                            guardian.getCurrentHp(),
+                            0,
+                            guardian.isOnField(),
+                            guardian.getId(),
+                            guardian.getMaxHp(),
+                            guardian.getCurrentHp(),
+                            toFuXi,
+                            guardian.isOnField(),
+                            EffectType.DAMAGE,
+                            DamageType.TRUE,
+                            "-" + toFuXi);
+                    Map<String, TargetBattleData> deadUnitsF = new HashMap<>();
+
+                    if (guardian.getCurrentHp() <= 0) {
+                        guardian.setDead(true);
+                        guardian.setOnField(false);
+                        TargetBattleData data = new TargetBattleData(guardian.getMaxHp(), guardian.getCurrentHp(), toFuXi, guardian.isOnField());
+                        deadUnitsF.put(guardian.getId(), data);
+                    }
+                    // 死亡日志
+                    if (!deadUnitsF.isEmpty()) {
+                        addMultiTargetLog("UNIT_DEATH",
+                                null,
+                                0,
+                                0,
+                                false,
+                                deadUnitsF,
+                                null,
+                                null,
+                                "死亡");
+                        //触发死亡技能
+                        triggerOnDeathSkills(guardian);
+
+                    } else {
+                        // 伏羲守卫代承伤害视为“受到伤害”，显式触发卦象蓄力+1（排在上方“守卫”日志之后）。
+                        // ★不能依赖块尾 triggerOnAttackedSkills(guardian, defender)：它绑定 (Guardian,Guardian) 重载(L4132)，其 switch 无 case "伏羲"（伏羲受击蓄力在 (Guardian,EffectType[,int]) 重载的 case "伏羲"），对伏羲是空操作，故必须在此显式调用
+                        addFuXiCharge(guardian);
+                        //触发受击技能
+                        triggerOnAttackedSkills(guardian, defender);
+                    }
+                    }
+                    // 守卫触发后，溢出伤害已按伏羲承伤上限由其自身消化，场上友方本次不掉血（即便盾已全额吸收 toFuXi=0，同样保护友方）
+                    burnDamage = 0;
+                    }
+                }
+                }
+            }
             if (defender.isSilence()) {
                 return burnDamage;
             }
@@ -1115,7 +1228,7 @@ public class BattleManager {
                             if (ProbabilityBooleanUtils.randomByProbability(prob)) {
                                 // 遁让只与后场未阵亡的仙族护法换位
                                 List<Guardian> offFieldAllies = (defender.getCamp() == Camp.A ? campA : campB).stream()
-                                        .filter(g -> !g.isDead() && !g.isOnField() && !g.isPhoenixEgg() && !isYinglong(g) && g.getRace() == Race.IMMORTAL).collect(Collectors.toList());
+                                        .filter(g -> !g.isDead() && !g.isOnField() && !g.isPhoenixEgg() && !isYinglongBoss(g) && g.getRace() == Race.IMMORTAL).collect(Collectors.toList());
                                 if (!offFieldAllies.isEmpty() && !swapInProgress) {
                                     // 统一换位防护：遁让换位后触发的登场技能不得再次引发换位
                                     swapInProgress = true;
@@ -1214,8 +1327,8 @@ public class BattleManager {
                             data.setShieldRemaining(g.getPhysicalBarrier());
                             qlTargetStatus.put(g.getId(), data);
                             // 30% 概率眩晕1回合：直接在该目标的多目标数据上标记(data.stunned)，
-                            // 前端循环群体伤害时对带标记目标逐个补眩晕动画；目标魔法护盾>0 时免疫眩晕，不施加
-                            if (g.getCurrentHp() > 0 && g.getMagicBarrier() <= 0
+                            // 前端循环群体伤害时对带标记目标逐个补眩晕动画；目标魔法护盾>0 或世界boss应龙（免疫眩晕）时不施加
+                            if (g.getCurrentHp() > 0 && g.getMagicBarrier() <= 0 && !isYinglongBoss(g)
                                     && ProbabilityBooleanUtils.randomByProbability(0.30)) {
                                 g.addEffect(EffectType.STUN, 0, 1, guardian.getId());
                                 data.setStunned(true);
@@ -2431,7 +2544,7 @@ public class BattleManager {
                 // ，禁术咒Lv1登场时,让对面场上英雄沉默99回合；
                 if (1 == 1) {
                     Guardian enemy = guardian.getCamp() == Camp.A ? fieldB : fieldA;
-                    if (enemy != null && !isYinglong(enemy)) {
+                    if (enemy != null && !isYinglongBoss(enemy)) {
                         enemy.addEffect(EffectType.SILENCE, 0, 99, guardian.getId());
                         addLog("禁术咒",
                                 guardian.getId(),
@@ -2766,10 +2879,14 @@ public class BattleManager {
                                         // 驱散护盾（同时清除魔法护盾）
                                         g.setPhysicalBarrier(0);
                                         g.setMagicBarrier(0);
+                                        // “元气消散”同时清除应龙/护法印记：印记存在 Guardian.yinjiCount 独立字段里（不在 effects 列表，此前驱散漏掉），导致世界boss应龙印记驱不掉
+                                        boolean hadYinji = g.getYinjiCount() > 0;
+                                        if (hadYinji) g.setYinjiCount(0);
 
                                         TargetBattleData data = new TargetBattleData(g.getMaxHp(), g.getCurrentHp(), 50, g.isOnField());
                                         data.setShieldRemaining(0);
                                         data.setMagicShieldRemaining(0);
+                                        if (hadYinji) data.setYinjiCount(0);   // 仅涉印记的目标回写，前端据此刷新场下印记 num
                                         targetStatus.put(g.getId(), data);
                                     });
                                     addMultiTargetLog("元气消散",
@@ -2995,9 +3112,13 @@ public class BattleManager {
                                         // 驱散护盾（同时清除魔法护盾）
                                         g.setPhysicalBarrier(0);
                                         g.setMagicBarrier(0);
+                                        // “元气消散”同时清除应龙/护法印记：印记存在 Guardian.yinjiCount 独立字段里（不在 effects 列表，此前驱散漏掉），导致世界boss应龙印记驱不掉
+                                        boolean hadYinji = g.getYinjiCount() > 0;
+                                        if (hadYinji) g.setYinjiCount(0);
                                         TargetBattleData data = new TargetBattleData(g.getMaxHp(), g.getCurrentHp(), 50, g.isOnField());
                                         data.setShieldRemaining(0);
                                         data.setMagicShieldRemaining(0);
+                                        if (hadYinji) data.setYinjiCount(0);   // 仅涉印记的目标回写，前端据此刷新场下印记 num
                                         targetStatus.put(g.getId(), data);
                                     });
                                     addMultiTargetLog("元气消散",
@@ -3399,8 +3520,8 @@ public class BattleManager {
                 }
                 break;
             case "九尾狐":
-                // 欺诈宝珠Lv1每次攻击有50%几率令敌方场上英雄定身，持续2回合
-                if (ProbabilityBooleanUtils.randomByProbability(0.5) && defender != null && !defender.isDead()) {
+                // 欺诈宝珠Lv1每次攻击有50%几率令敌方场上英雄定身，持续2回合（世界boss应龙免疫眩晕）
+                if (ProbabilityBooleanUtils.randomByProbability(0.5) && defender != null && !defender.isDead() && !isYinglongBoss(defender)) {
                     defender.addEffect(EffectType.STUN, 0, 2, defender.getId());
                     addLog("欺诈宝珠",
                             attacker.getId(),
@@ -3421,6 +3542,10 @@ public class BattleManager {
             case "后羿":
                 // 乾坤破（2技能）：蓄力满4层后，攻击时以30%攻击力对易死目标连射，箭数随2技能等级提升（封顶10箭）
                 triggerHouYiQianKunPo(attacker);
+                break;
+            case "伏羲":
+                // 卦象（2技能）：蓄力满4层后，攻击时为全体友方施加物理结界并回复等量血量
+                triggerFuXiGuaXiang(attacker);
                 break;
             case "谛听":
                 // 撞击：攻击前消耗自身技能等级%生命值（不超过当前生命值20%），对目标造成消耗生命值2倍的物理伤害
@@ -3475,6 +3600,8 @@ public class BattleManager {
                                         damage = applyXilianPhysical(attacker, defender, damage);
                     Integer logIndex = battleLogs.size();
                     damage = triggerOnAttackedSkills(defender, damage, EffectType.DAMAGE);
+                    // 物理结界吸收：撞击为物理伤害， defender 带卦象/灵佑盾时先扣盾（顺序与普攻一致：受击修正后、免疫致命前）
+                    damage = absorbPhysicalBarrier(defender, damage);
                     // 应龙·免疫致命（阈值1）：撞击将造成超过生命上限10%的致死伤害时，消耗同阵营应龙1层印记免疫此次伤害
                     Guardian immuneYlZhuang = consumeYinjiForLethalImmune(defender, damage);
                     if (immuneYlZhuang != null) damage = 0;
@@ -3491,6 +3618,8 @@ public class BattleManager {
                             defender.isOnField(),
                             EffectType.DAMAGE, DamageType.PHYSICAL,
                             "-" + damage, logIndex);
+                    // 记录目标当前盾剩余值（撞击被物盾吸收后刷新盾数字）
+                    battleLogs.get(logIndex).setShieldRemaining(defender.getPhysicalBarrier());
                     // 免疫致命子效果日志：排在撞击主日志之后，避免前端动画抢播
                     if (immuneYlZhuang != null) {
                         addLog("免疫致命", immuneYlZhuang.getId(), immuneYlZhuang.getMaxHp(), immuneYlZhuang.getCurrentHp(), 0, immuneYlZhuang.isOnField(),
@@ -3557,6 +3686,94 @@ public class BattleManager {
                 EffectType.fromChargeStacks(xuli + 1, HOU_YI_CHARGE_MAX),
                 DamageType.BUFF,
                 "");
+    }
+
+    /**
+     * 伏羲卦象蓄力（1技能·守卫见 triggerOnAttackedSkills 内守卫块；2技能·卦象）：
+     * 受到/躲过伤害，或回合结束时位于场下（后阵），蓄力+1（上限4层）
+     * 蓄力满4层后由 triggerFuXiGuaXiang 释放并清零（攻击时或场下满蓄力于回合结束时直接释放）
+     */
+    private void addFuXiCharge(Guardian fuxi) {
+        if (fuxi == null || fuxi.isDead() || fuxi.isActionBlocked()) {
+            return;
+        }
+        int[] skillLevel = CardSkillLevelUtil.calculateSkillLevels(fuxi.getLevel(), fuxi.getStar().doubleValue());
+        // 卦象为2技能，未解锁不蓄力
+        if (skillLevel[1] <= 0) {
+            return;
+        }
+        // 蓄力已满，等待释放（攻击时或场下满蓄力时）
+        if (fuxi.getBuffStacks() >= FU_XI_CHARGE_MAX) {
+            return;
+        }
+        int xuli = fuxi.getBuffStacks();
+        fuxi.setBuffStacks(xuli + 1);
+        String[] str = {"伏羲蓄力·一", "伏羲蓄力·二", "伏羲蓄力·三", "伏羲蓄力·四"};
+        addLog(str[xuli],
+                fuxi.getId(),
+                fuxi.getMaxHp(),
+                fuxi.getCurrentHp(),
+                0,
+                fuxi.isOnField(),
+                fuxi.getId(),
+                fuxi.getMaxHp(),
+                fuxi.getCurrentHp(),
+                0,
+                fuxi.isOnField(),
+                EffectType.fromChargeStacks(xuli + 1, FU_XI_CHARGE_MAX),
+                DamageType.BUFF,
+                "");
+    }
+
+    /**
+     * 伏羲·卦象（2技能）释放：蓄力满4层后（攻击时或场下满蓄力于回合结束时），为全体友方（含场下）各自施加
+     * 5×技能等级%（按其自身生命上限）的物理结界，并回复等量血量，随后清零蓄力
+     */
+    private void triggerFuXiGuaXiang(Guardian attacker) {
+        int[] skillLevel = CardSkillLevelUtil.calculateSkillLevels(attacker.getLevel(), attacker.getStar().doubleValue());
+        // 卦象为2技能，未解锁不释放
+        if (skillLevel[1] <= 0) {
+            return;
+        }
+        // 蓄力未满4层不释放
+        if (attacker.getBuffStacks() < FU_XI_CHARGE_MAX) {
+            return;
+        }
+        attacker.setBuffStacks(0);
+        List<Guardian> allies = attacker.getCamp() == Camp.A ? campA : campB;
+        List<Guardian> targets = allies.stream()
+                .filter(g -> !g.isDead() && !g.isPhoenixEgg())
+                .collect(Collectors.toList());
+        if (targets.isEmpty()) {
+            return;
+        }
+        // 结界与回复均按各友方自身生命上限的 5×技能等级% 计算，加盾+回血合并为同一条日志：
+        // hpAfter 取回血后血量、value 记本次治疗量，前端通用 AOE 路由统一刷新血条并飘绿色治疗数字（场下友方也能吃到回血表现）
+        Map<String, TargetBattleData> barrierStatus = new LinkedHashMap<>();
+        for (Guardian a : targets) {
+            int barrierValue = (int) ((long) a.getMaxHp() * 5 * skillLevel[1] / 100);
+            if (barrierValue <= 0) continue;
+            a.setPhysicalBarrier(a.getPhysicalBarrier() + barrierValue);
+            // 回复等量血量
+            int before = a.getCurrentHp();
+            a.setCurrentHp(before + barrierValue);
+            int healed = a.getCurrentHp() - before;
+            TargetBattleData bData = new TargetBattleData(a.getMaxHp(), a.getCurrentHp(), healed, a.isOnField());
+            bData.setShieldRemaining(a.getPhysicalBarrier());
+            bData.setShieldChange(barrierValue);   // 本次授予物盾（供前端图标飘"物盾+xxx"）
+            barrierStatus.put(a.getId(), bData);
+        }
+        if (!barrierStatus.isEmpty()) {
+            addMultiTargetLog("卦象",
+                    attacker.getId(),
+                    attacker.getMaxHp(),
+                    attacker.getCurrentHp(),
+                    attacker.isOnField(),
+                    barrierStatus,
+                    EffectType.PHYSICAL_BARRIER,
+                    DamageType.BUFF,
+                    "物理结界");
+        }
     }
 
     /**
@@ -3731,7 +3948,7 @@ public class BattleManager {
         // 查找互换目标：从所有存活队友中随机选择（排除自己）
         final String jianLouId = jianLou.getId();
         List<Guardian> teammates = camp.stream()
-                .filter(g -> !g.isDead() && !g.isPhoenixEgg() && !isYinglong(g) && !g.getId().equals(jianLouId))
+                .filter(g -> !g.isDead() && !g.isPhoenixEgg() && !isYinglongBoss(g) && !g.getId().equals(jianLouId))
                 .collect(Collectors.toList());
         if (teammates.isEmpty()) return;
         Guardian swapTarget = teammates.get(random.nextInt(teammates.size()));
@@ -3861,6 +4078,8 @@ public class BattleManager {
 
             Integer logIndex = battleLogs.size();
             shotDamage = triggerOnAttackedSkills(defender, shotDamage, EffectType.DAMAGE);
+            // 物理结界吸收：乾坤破为物理伤害，目标带卦象/灵佑盾时先扣盾
+            shotDamage = absorbPhysicalBarrier(defender, shotDamage);
 
             // 扣除伤害
             shotDamage = applyDefenderDamage(defender, shotDamage);
@@ -3885,6 +4104,8 @@ public class BattleManager {
                     shotEffectType,
                     DamageType.PHYSICAL,
                     "-" + shotDamage, logIndex);
+            // 记录目标当前盾剩余值（乾坤破被物盾吸收后刷新盾数字）
+            battleLogs.get(logIndex).setShieldRemaining(defender.getPhysicalBarrier());
             // 死亡日志
             if (!deadUnits.isEmpty()) {
                 addMultiTargetLog("UNIT_DEATH",
@@ -4536,6 +4757,8 @@ public class BattleManager {
                     burnDamage = applyXilianPhysical(defender, attacker, burnDamage);
                                         burnDamage=triggerOnAttackedSkills(attacker,burnDamage,EffectType.DAMAGE);
 
+                    // 物理结界吸收：绝地反击为物理伤害，被反击者带卦象/灵佑盾时先扣盾
+                    burnDamage = absorbPhysicalBarrier(attacker, burnDamage);
                     burnDamage = applyDefenderDamage(attacker, burnDamage);
 
 
@@ -4553,6 +4776,8 @@ public class BattleManager {
                             EffectType.DAMAGE,
                             DamageType.PHYSICAL,
                             "-" + burnDamage,logIndex);
+                    // 记录被反击者当前盾剩余值（绝地反击被物盾吸收后刷新盾数字）
+                    battleLogs.get(logIndex).setShieldRemaining(attacker.getPhysicalBarrier());
                     Map<String, TargetBattleData> deadUnits = new HashMap<>();
 
                     if (attacker.getCurrentHp() <= 0) {
@@ -4585,8 +4810,8 @@ public class BattleManager {
             case "太上老君":
                 // 绝地反击：造成敌方攻击10%的伤害
                 if (!defender.isDead()) {
-                    // 任意位置，每当受到伤害时有20%几率令场上敌方晕眩2回合。
-                    if (ProbabilityBooleanUtils.randomByProbability(0.20) && attacker != null && !attacker.isDead()&& skillLevel[1] > 0) {
+                    // 任意位置，每当受到伤害时有20%几率令场上敌方晕眩2回合。（世界boss应龙免疫眩晕）
+                    if (ProbabilityBooleanUtils.randomByProbability(0.20) && attacker != null && !attacker.isDead() && !isYinglongBoss(attacker)&& skillLevel[1] > 0) {
                         attacker.addEffect(EffectType.STUN, 0, 2, defender.getId());
                         addLog("无为而治",
                                 defender.getId(),
@@ -5119,6 +5344,8 @@ public class BattleManager {
                         burnDamage = applyXilianPhysical(defender, enemie, burnDamage);
                                                 burnDamage=triggerOnAttackedSkills(enemie,burnDamage,EffectType.DAMAGE);
 
+                        // 物理结界吸收：新月反击为物理伤害，被反击者带卦象/灵佑盾时先扣盾
+                        burnDamage = absorbPhysicalBarrier(enemie, burnDamage);
                         burnDamage = applyDefenderDamage(enemie, burnDamage);
 
                         addLog("新月反击",
@@ -5135,6 +5362,8 @@ public class BattleManager {
                                 EffectType.DAMAGE,
                                 DamageType.PHYSICAL,
                                 "-" + burnDamage,logIndex);
+                        // 记录被反击者当前盾剩余值（新月反击被物盾吸收后刷新盾数字）
+                        battleLogs.get(logIndex).setShieldRemaining(enemie.getPhysicalBarrier());
                         Map<String, TargetBattleData> deadUnits = new HashMap<>();
 
                         if (enemie.getCurrentHp() <= 0) {
@@ -5221,10 +5450,10 @@ public class BattleManager {
             case "太上老君":
                 // 绝地反击：造成敌方攻击10%的伤害
                 if (!defender.isDead()) {
-                    // 任意位置，每当受到伤害时有20%几率令场上敌方晕眩2回合。
+                    // 任意位置，每当受到伤害时有20%几率令场上敌方晕眩2回合。（世界boss应龙免疫眩晕）
                     Guardian enemie = defender.getCamp() == Camp.A ?
                             fieldB : fieldA;
-                    if (ProbabilityBooleanUtils.randomByProbability(0.20) && enemie != null && !enemie.isDead()&& skillLevel[1] > 0) {
+                    if (ProbabilityBooleanUtils.randomByProbability(0.20) && enemie != null && !enemie.isDead() && !isYinglongBoss(enemie)&& skillLevel[1] > 0) {
                         enemie.addEffect(EffectType.STUN, 0, 2, defender.getId());
                         addLog("无为而治",
                                 defender.getId(),
@@ -5246,6 +5475,10 @@ public class BattleManager {
             case "后羿":
                 // 乾坤破（2技能）：受到/躲过伤害时蓄力+1，蓄力满4层后攻击时释放连射
                 addHouYiCharge(defender);
+                break;
+            case "伏羲":
+                // 卦象（2技能）：受到/躲过伤害时蓄力+1（闪避时 burnDamage=0 也会进入本方法），蓄力满4层后攻击时释放结界；守卫（1技能）在伤害修正流程内结算
+                addFuXiCharge(defender);
                 break;
         }
 
@@ -5341,13 +5574,17 @@ public class BattleManager {
                                 damage = 0;
                             }
                             damage = triggerOnAttackedSkills(g, damage, EffectType.DAMAGE);
+                            // 物理结界吸收：吾乃轩辕对敌我全体追加物理伤害（含场下）应先被卦象盾吸收
+                            damage = absorbPhysicalBarrier(g, damage);
                             damage = applyDefenderDamage(g, damage);
                             TargetBattleData data = new TargetBattleData(g.getMaxHp(), g.getCurrentHp(), damage, g.isOnField());
+                            data.setShieldRemaining(g.getPhysicalBarrier());   // 供前端刷新被吸收后的盾剩余值
                             targetStatus.put(g.getId(), data);
                             if (g.getCurrentHp() <= 0) {
                                 g.setDead(true);
                                 g.setOnField(false);
                                 data = new TargetBattleData(g.getMaxHp(), g.getCurrentHp(), damage, g.isOnField());
+                                data.setShieldRemaining(g.getPhysicalBarrier());
                                 targetStatus.put(g.getId(), data);
                                 deadUnits.put(g.getId(), data);
                                 deadGuardians.add(g);
@@ -5681,6 +5918,8 @@ public class BattleManager {
                                         damage = applyXilianPhysical(attacker, defender, damage);
                     Map<String, TargetBattleData> deadUnits = new HashMap<>();
                     List<Guardian> deadGuardians = new ArrayList<>();
+                    // 物理结界吸收：毒伤迸发为物理伤害，defender 带卦象/灵佑盾时先扣盾
+                    damage = absorbPhysicalBarrier(defender, damage);
                     damage = applyDefenderDamage(defender, damage);
                     if (defender.getCurrentHp() <= 0) {
                         defender.setDead(true);
@@ -5733,6 +5972,8 @@ public class BattleManager {
                     damage = applyXilianPhysical(attacker, defender, damage);
                     Map<String, TargetBattleData> deadUnits = new HashMap<>();
                     List<Guardian> deadGuardians = new ArrayList<>();
+                    // 物理结界吸收：剧毒痛击为物理伤害，defender 带卦象/灵佑盾时先扣盾
+                    damage = absorbPhysicalBarrier(defender, damage);
                     // 剧毒痛击应为对目标造成伤害，修正误写的 +damage（原会回血）
                     damage = applyDefenderDamage(defender, damage);
                     if (defender.getCurrentHp() <= 0) {
@@ -8665,6 +8906,7 @@ public class BattleManager {
     }
 
     // 印记通用被动：任何持有印记的非应龙护法，回合开始按自身印记数给自己加防御系增益（≥3 血限不降 / ≥6 物抗+ / ≥9 驱散负面）；应龙自身走其全体路径，故此处排除
+    // 每次实际触发时发"护法印记"日志（extraDesc 为最终飘字文案），供前端场下图标弹动+飘字
     private void applyYinjiSelfBuffs() {
         List<Guardian> all = new ArrayList<>();
         all.addAll(campA);
@@ -8675,17 +8917,34 @@ public class BattleManager {
             if (yj <= 0) continue;
             int[] sk = CardSkillLevelUtil.calculateSkillLevels(u.getLevel(), u.getStar().doubleValue());
             int ownS2 = sk[1];
-            if (yj >= 3 && !u.hasEffect(EffectType.MAX_HP_NO_DOWN)) u.addEffect(EffectType.MAX_HP_NO_DOWN, 0, 2, u.getId());
+            if (yj >= 3 && !u.hasEffect(EffectType.MAX_HP_NO_DOWN)) {
+                u.addEffect(EffectType.MAX_HP_NO_DOWN, 0, 2, u.getId());
+                addLog("护法印记", u.getId(), u.getMaxHp(), u.getCurrentHp(), 0, u.isOnField(),
+                        u.getId(), u.getMaxHp(), u.getCurrentHp(), 0, u.isOnField(),
+                        EffectType.MAX_HP_NO_DOWN, DamageType.BUFF, "印记3·血限不降");
+                battleLogs.get(battleLogs.size() - 1).setYinjiCount(yj);
+            }
             if (yj >= 6 && ownS2 > 0) {
                 int v = 100 * ownS2;
                 u.remove(EffectType.ATTACK_RESIST_BOOST);
                 u.addEffect(EffectType.ATTACK_RESIST_BOOST, v, 2, u.getId());
+                addLog("护法印记", u.getId(), u.getMaxHp(), u.getCurrentHp(), 0, u.isOnField(),
+                        u.getId(), u.getMaxHp(), u.getCurrentHp(), 0, u.isOnField(),
+                        EffectType.ATTACK_RESIST_BOOST, DamageType.BUFF, "印记6·物抗+");
+                battleLogs.get(battleLogs.size() - 1).setYinjiCount(yj);
             }
-            if (yj >= 9) purgeNegatives(u);
+            if (yj >= 9 && hasAnyNegativeEffect(u)) {
+                purgeNegatives(u);
+                addLog("护法印记", u.getId(), u.getMaxHp(), u.getCurrentHp(), 0, u.isOnField(),
+                        u.getId(), u.getMaxHp(), u.getCurrentHp(), 0, u.isOnField(),
+                        EffectType.HEAL, DamageType.BUFF, "印记9·净化负面");
+                battleLogs.get(battleLogs.size() - 1).setYinjiCount(yj);
+            }
         }
     }
 
     // 应龙·应龙逆鳞（阈值被动）+ 苍龙吸水（3技能）：按单个存活应龙(卡牌id15)当前印记结算，回合开始按速度排序触发
+    // 注：苍龙吸水的“吸盾+溢出回血”已拆出为 drainShieldsForYinglong，改在回合结束青龙龙威加盾后执行（阈值被动仍留在本方法回合开始结算）
     private void processYinglongForUnit(Guardian yl) {
         if (yl == null || yl.isDead()) return;
         List<Guardian> camp = yl.getCamp() == Camp.A ? campA : campB;
@@ -8694,7 +8953,6 @@ public class BattleManager {
         List<Guardian> enemyCamp = camp == campA ? campB : campA;
         int[] ylSkill = CardSkillLevelUtil.calculateSkillLevels(yl.getLevel(), yl.getStar().doubleValue());
         int s2 = ylSkill[1];
-        int s3 = ylSkill[2];
         List<Guardian> allies = camp.stream().filter(g -> !g.isDead() && !g.isPhoenixEgg()).collect(Collectors.toList());
 
         // 阈值5：血限不降（我方全体，未持有才加，避免叠加）
@@ -8731,17 +8989,31 @@ public class BattleManager {
                 battleLogs.get(battleLogs.size() - 1).setYinjiCount(yl.getYinjiCount());
             }
         }
-        // 阈值25：敌方"对位"护法物理减伤 -100*技能等级（remove后重加=刷新，发日志让前端播debuff动画）
+        // 阈值25：敌方"对位"护法物理削减 -100*技能等级；若目标有物理结界(物盾)则先扣物盾，扣完后的溢出部分才作为物抗降低debuff（remove后重加=刷新，发日志让前端播动画/刷盾条）
         if (yinji >= 25 && s2 > 0) {
             int v = 100 * s2;
             Guardian foe30 = enemyCamp.stream().filter(g -> !g.isDead() && !g.isPhoenixEgg() && g.getPosition() == yl.getPosition()).findFirst().orElse(null);
             if (foe30 != null) {
-                foe30.remove(EffectType.ATTACK_RESIST_DOWN);
-                foe30.addEffect(EffectType.ATTACK_RESIST_DOWN, v, 2, yl.getId());
-                addLog("应龙逆鳞", yl.getId(), yl.getMaxHp(), yl.getCurrentHp(), 0, yl.isOnField(),
-                        foe30.getId(), foe30.getMaxHp(), foe30.getCurrentHp(), v, foe30.isOnField(),
-                        EffectType.ATTACK_RESIST_DOWN, DamageType.BUFF, "物抗-" + v);
-                battleLogs.get(battleLogs.size() - 1).setYinjiCount(yl.getYinjiCount());
+                int barrierBefore = foe30.getPhysicalBarrier();
+                int cut = Math.min(barrierBefore, v);   // 有物盾先减物盾，削减量不超过物盾存量
+                int debuff = v - cut;                    // 物盾扣完后的溢出部分才转为物抗降低
+                if (cut > 0) {
+                    foe30.setPhysicalBarrier(barrierBefore - cut);
+                    addLog("应龙逆鳞", yl.getId(), yl.getMaxHp(), yl.getCurrentHp(), 0, yl.isOnField(),
+                            foe30.getId(), foe30.getMaxHp(), foe30.getCurrentHp(), cut, foe30.isOnField(),
+                            EffectType.PHYSICAL_BARRIER, DamageType.BUFF, "物盾-" + cut);
+                    BattleLog cutLog = battleLogs.get(battleLogs.size() - 1);
+                    cutLog.setShieldRemaining(foe30.getPhysicalBarrier());   // 回写削减后剩余物盾，供前端刷新盾条（<=0则隐藏）
+                    cutLog.setYinjiCount(yl.getYinjiCount());
+                }
+                if (debuff > 0) {
+                    foe30.remove(EffectType.ATTACK_RESIST_DOWN);
+                    foe30.addEffect(EffectType.ATTACK_RESIST_DOWN, debuff, 2, yl.getId());
+                    addLog("应龙逆鳞", yl.getId(), yl.getMaxHp(), yl.getCurrentHp(), 0, yl.isOnField(),
+                            foe30.getId(), foe30.getMaxHp(), foe30.getCurrentHp(), debuff, foe30.isOnField(),
+                            EffectType.ATTACK_RESIST_DOWN, DamageType.BUFF, "物抗-" + debuff);
+                    battleLogs.get(battleLogs.size() - 1).setYinjiCount(yl.getYinjiCount());
+                }
             }
         }
         // 阈值30 应龙飞弹：消耗1层印记，对敌方随机护法造成飞弹伤害
@@ -8869,8 +9141,21 @@ public class BattleManager {
                 }
             }
         }
-        // 技能3 苍龙吸水：吸取全场(双方,除应龙自身)每单位 1000*技能等级 的物理结界+魔法护盾，吸取多少即为应龙自身叠加多少护盾；若应龙结界总数超过自身生命上限则自身及前后护法回血
-        if (s3 > 0) {
+        // 技能3 苍龙吸水：已移至回合结束执行（紧跟青龙龙威加盾之后），见 drainShieldsForYinglong；
+        // 若仍在回合开始吸，本方护法全灭时护盾会被玩家整回合攻击敲光，应龙永远吸不到盾、无法续航
+    }
+
+    // 苍龙吸水·吸盾段（回合结束）：吸取全场(双方,除应龙自身)每单位物理结界+魔法护盾，吸取多少即为应龙自身叠加多少护盾；若应龙结界总数超过自身生命上限则自身及前后护法回血
+    // 世界boss应龙(15)：各固定吸取每单位当前盾值50%；应龙·祖魂(1116)：按原逻辑每单位上限 1000*技能等级
+    private void drainShieldsForYinglong() {
+        for (List<Guardian> c1 : Arrays.asList(campA, campB)) {
+            Guardian yl = findYinglong(c1);
+            if (yl == null) continue;
+            int[] ylSkill = CardSkillLevelUtil.calculateSkillLevels(yl.getLevel(), yl.getStar().doubleValue());
+            int s3 = ylSkill[2];
+            List<Guardian> camp = yl.getCamp() == Camp.A ? campA : campB;
+            if (s3 <= 0) continue;
+            boolean bossYl = isYinglongBoss(yl);
             int drainCap = 1000 * s3;
             int gained = 0;
             int gainedPhysical = 0;
@@ -8879,8 +9164,16 @@ public class BattleManager {
             for (List<Guardian> c2 : new List[]{campA, campB}) {
                 for (Guardian u : c2) {
                     if (u.isDead() || u.isPhoenixEgg() || isYinglong(u)) continue;
-                    int p = Math.min(u.getPhysicalBarrier(), drainCap);
-                    int m = Math.min(u.getMagicBarrier(), drainCap);
+                    int p;
+                    int m;
+                    if (bossYl) {
+                        // 世界boss应龙：物理/魔法各吸当前盾值的50%（向下取整），不吃技能等级上限
+                        p = u.getPhysicalBarrier() / 2;
+                        m = u.getMagicBarrier() / 2;
+                    } else {
+                        p = Math.min(u.getPhysicalBarrier(), drainCap);
+                        m = Math.min(u.getMagicBarrier(), drainCap);
+                    }
                     if (p <= 0 && m <= 0) continue;   // 无盾可吸则跳过
                     u.setPhysicalBarrier(u.getPhysicalBarrier() - p);
                     u.setMagicBarrier(u.getMagicBarrier() - m);
@@ -8964,6 +9257,13 @@ public class BattleManager {
     }
     private boolean isYinglong(Guardian g) {
         String id = g.getId();
+        // 15=世界boss应龙载体，1116=玩家版应龙（世界boss奖励卡）：同享应龙机制（印记/逆鳞/苍龙吸水）；
+        // “免疫沉默/换位/眩晕”与“龙血刻印+10印记”为世界boss独享，玩家版削弱，见 isYinglongBoss 与 awardYinjiOnSelfCost（属性加成为1116独享，见 GameServiceServiceImpl 龙族始祖）
+        return id != null && (id.equals("A15") || id.equals("B15") || id.equals("A1116") || id.equals("B1116"));
+    }
+    // 仅世界boss应龙载体(15)：独享免疫沉默/换位/眩晕；玩家版应龙(1116)不免疫
+    private boolean isYinglongBoss(Guardian g) {
+        String id = g.getId();
         return id != null && (id.equals("A15") || id.equals("B15"));
     }
     private Guardian findYinglong(List<Guardian> camp) {
@@ -8974,18 +9274,19 @@ public class BattleManager {
         for (Guardian g : campA) { g.setYinjiSelfRound(0); g.setYinjiBuffedThisRound(false); }
         for (Guardian g : campB) { g.setYinjiSelfRound(0); g.setYinjiBuffedThisRound(false); }
     }
-    // (a) 龙血刻印：任意护法消耗自身血量→场上存活的应龙获得+10印记，不分我方/对面（遍历双方阵营的应龙，每回合≤3次；印记无上限）
+    // (a) 龙血刻印：任意护法消耗自身血量→场上存活的应龙获得印记，不分我方/对面（遍历双方阵营的应龙，每回合≤3次；印记无上限）
+    // 印记数：世界boss应龙(15)+10，玩家版应龙(1116)+5（玩家削弱）
     private void awardYinjiOnSelfCost(Guardian self) {
         for (List<Guardian> camp : Arrays.asList(campA, campB)) {
             Guardian yl = findYinglong(camp);
             if (yl == null) continue;   // 该阵营无存活应龙则跳过
-            // 应龙+10印记（每回合≤3次、无上限）
+            int gain = isYinglongBoss(yl) ? 10 : 5;   // 世界boss+10，玩家版+5
             if (yl.getYinjiSelfRound() < 3) {
                 yl.setYinjiSelfRound(yl.getYinjiSelfRound() + 1);
-                yl.setYinjiCount(yl.getYinjiCount() + 10);
+                yl.setYinjiCount(yl.getYinjiCount() + gain);
                 addLog("龙血刻印", yl.getId(), yl.getMaxHp(), yl.getCurrentHp(), 0, yl.isOnField(),
                         yl.getId(), yl.getMaxHp(), yl.getCurrentHp(), 0, yl.isOnField(),
-                        EffectType.HP_UP, DamageType.BUFF, "应龙印记+10");
+                        EffectType.HP_UP, DamageType.BUFF, "应龙印记+" + gain);
                 battleLogs.get(battleLogs.size() - 1).setYinjiCount(yl.getYinjiCount());
             }
         }
@@ -9067,6 +9368,24 @@ public class BattleManager {
         // 触发免疫致命时补一条子效果日志（源=实际被扣印记者：被保护者自身或应龙，目标=被保护者），供前端播放护盾/免疫动画并刷新对应场下印记 num
         if (immuneYl != null) addImmuneLethalSubLog(immuneYl, defender);
         return applied;
+    }
+
+    /**
+     * 物理结界（PHYSICAL_BARRIER，如伏羲卦象/白虎灵佑）吸收物理伤害：先扣盾、溢出部分才落到血量，返回吸收后的剩余伤害。
+     * 与普攻路径内联吸收顺序一致：triggerOnAttackedSkills 之后、applyDefenderDamage/扣血之前。
+     * 场上/场下单位均生效（卦象给全体友方含场下挂盾，须能抵抗审死等群体物理技能）；真实伤害不吸收。
+     */
+    private int absorbPhysicalBarrier(Guardian defender, int damage) {
+        if (damage > 0 && defender.getPhysicalBarrier() > 0) {
+            if (defender.getPhysicalBarrier() >= damage) {
+                defender.setPhysicalBarrier(defender.getPhysicalBarrier() - damage);
+                return 0;
+            }
+            int remain = damage - defender.getPhysicalBarrier();
+            defender.setPhysicalBarrier(0);
+            return remain;
+        }
+        return damage;
     }
     // 免疫致命子效果日志：普攻/定海神针/撞击等主日志之后统一走此处；AOE/其它伤害点经 applyDefenderDamage 自动补发。
     private void addImmuneLethalSubLog(Guardian immuneYl, Guardian defender) {
@@ -9307,13 +9626,17 @@ public class BattleManager {
                 if (dmg < 0) dmg = 0;
                 dmg = triggerOnAttackedSkills(g, dmg, EffectType.DAMAGE);
                 if (dmg < 0) dmg = 0;
+                // 物理结界吸收：卦象给全体友方（含场下）挂盾后，审死这类群体物理伤害应先被盾吸收，溢出才落到血量
+                dmg = absorbPhysicalBarrier(g, dmg);
                 dmg = applyDefenderDamage(g, dmg);
                 TargetBattleData data = new TargetBattleData(g.getMaxHp(), g.getCurrentHp(), dmg, g.isOnField());
+                data.setShieldRemaining(g.getPhysicalBarrier());   // 供前端刷新被吸收后的盾剩余值
                 dmgMap.put(g.getId(), data);
                 if (g.getCurrentHp() <= 0) {
                     g.setDead(true);
                     g.setOnField(false);
                     data = new TargetBattleData(g.getMaxHp(), g.getCurrentHp(), dmg, g.isOnField());
+                    data.setShieldRemaining(g.getPhysicalBarrier());
                     dmgMap.put(g.getId(), data);
                     deadUnits.put(g.getId(), data);
                     deadGuardians.add(g);
@@ -9348,6 +9671,8 @@ public class BattleManager {
     private void processRoundStartEffects() {
         // 应龙：复位本回合印记护栏计数（自损刻印≤3/血刻加命每人每回合≤1）
         resetYinjiRoundFlags();
+        // 金角大王·玉净瓶（场下）：每回合令随机一名敌方中毒（须在下方中毒结算前挂上，才能本回合即扣血）
+        processJinJiaoPoisonAtRoundStart();
         // 场下中毒效果（批量处理）
         processPoisonEffects();
         // 朱雀·归元（2技能）：先结算凤凰卵倒计时，倒计时结束的回合开始时满血复活
@@ -9376,7 +9701,7 @@ public class BattleManager {
             return Boolean.compare(x.getCamp() == Camp.B, y.getCamp() == Camp.B);
         });
         for (Guardian actor : fastActors) fastActs.get(actor).run();
-        // 印记通用被动：持有印记的非应龙护法按自身印记数给自己加防御系增益（≥5/≥10/≥15）
+        // 印记通用被动：持有印记的非应龙护法按自身印记数给自己加防御系增益（≥3/≥6/≥9，触发时发护法印记日志供前端弹动）
         applyYinjiSelfBuffs();
         // 地藏菩萨·不屈意志（1技能）：回合开始概率消耗自身生命复活一名阵亡友方护法
         triggerDiZangBuQuYiZhi(campA);
@@ -11669,8 +11994,8 @@ public class BattleManager {
             int[] skillLevel = CardSkillLevelUtil.calculateSkillLevels(daji.getLevel(), daji.getStar().doubleValue());
 
 
-            // 妖狐蔽天：3%几率眩晕当前敌人
-            if (ProbabilityBooleanUtils.randomByProbability(0.35) && fieldB != null && !fieldB.isDead()) {
+            // 妖狐蔽天：3%几率眩晕当前敌人（世界boss应龙免疫眩晕）
+            if (ProbabilityBooleanUtils.randomByProbability(0.35) && fieldB != null && !fieldB.isDead() && !isYinglongBoss(fieldB)) {
                 fieldB.addEffect(EffectType.STUN, 0, 2, daji.getId());
                 addLog("妖狐蔽天",
                         daji.getId(),
@@ -11735,8 +12060,8 @@ public class BattleManager {
             int[] skillLevel = CardSkillLevelUtil.calculateSkillLevels(daji.getLevel(), daji.getStar().doubleValue());
 
 
-            // 妖狐蔽天：3%几率眩晕当前敌人
-            if (ProbabilityBooleanUtils.randomByProbability(0.35) && fieldA != null && !fieldA.isDead()) {
+            // 妖狐蔽天：3%几率眩晕当前敌人（世界boss应龙免疫眩晕）
+            if (ProbabilityBooleanUtils.randomByProbability(0.35) && fieldA != null && !fieldA.isDead() && !isYinglongBoss(fieldA)) {
                 fieldA.addEffect(EffectType.STUN, 0, 2, daji.getId());
                 addLog("妖狐蔽天",
                         daji.getId(),
@@ -11886,6 +12211,38 @@ public class BattleManager {
                         DamageType.POISON,
                         "中毒+" + poisonValue);
             }
+        }
+    }
+
+    // 金角大王·玉净瓶（场下每回合中毒）：原实现放在 processOnFieldSkills0（登场触发）里，只有敌方登场那一回合才上毒，
+    // 且上的是 99 回合的持续毒，首个中毒敌方阵亡后就不再更新 → “毒只有第一回合生效”。
+    // 改为回合开始触发：每个场下存活的应龙金角大王对本回合随机一名敌方挂一条仅存活本回合(duration=1)的 POISON，
+    // 由紧随其后的 processPoisonEffects 本回合结算并扣血；duration=1 会在回合结束自动回收，不跨回合叠加，稳定实现“每回合损失X”。
+    private void processJinJiaoPoisonAtRoundStart() {
+        for (List<Guardian> camp : Arrays.asList(campA, campB)) {
+            List<Guardian> enemies = (camp == campA)
+                    ? campB.stream().filter(g -> !g.isDead()).collect(Collectors.toList())
+                    : campA.stream().filter(g -> !g.isDead()).collect(Collectors.toList());
+            if (enemies.isEmpty()) continue;
+            camp.stream()
+                    .filter(g -> g.getName().equals("金角大王") && !g.isDead() && !g.isOnField() && !g.isSilence())
+                    .forEach(guardian -> {
+                        int[] skillLevel = CardSkillLevelUtil.calculateSkillLevels(guardian.getLevel(), guardian.getStar().doubleValue());
+                        Guardian randomEnemy = enemies.get(random.nextInt(enemies.size()));
+                        int totalPoisonDamage = 7 * skillLevel[0] + guardian.getDsAtk();
+                        // 中毒增益/降低（施毒者侧）：与现有一致的 buff 聚合计算
+                        int resistUp = calculateTotalVaule(guardian, EffectType.POISON_BOOST);
+                        double resistUpPret = calculateTotalUpPretVaule(guardian, EffectType.POISON_BOOST_PRET);
+                        int resistDown = calculateTotalVaule(guardian, EffectType.POISON_DOWN);
+                        double resistDownPret = calculateTotalDownPretVaule(guardian, EffectType.POISON_DOWN_PRET);
+                        int poisonValue = (int) (totalPoisonDamage * resistUpPret * resistDownPret + (resistUp + guardian.getDsAtk() - resistDown));
+                        poisonValue = applyXilianElement(guardian, randomEnemy, poisonValue);
+                        randomEnemy.addEffect(EffectType.POISON, poisonValue, 1, guardian.getId());
+                        addLog("玉净瓶",
+                                guardian.getId(), guardian.getMaxHp(), guardian.getCurrentHp(), poisonValue, guardian.isOnField(),
+                                randomEnemy.getId(), randomEnemy.getMaxHp(), randomEnemy.getCurrentHp(), poisonValue, randomEnemy.isOnField(),
+                                EffectType.POISON, DamageType.POISON, "中毒+" + poisonValue);
+                    });
         }
     }
 
@@ -12131,90 +12488,7 @@ public class BattleManager {
 
             }
 
-            if (defender1.getCamp() == Camp.B && campA.stream().anyMatch(g -> g.getName().equals("金角大王") && g.getPosition() == position && !g.isDead() && !g.isOnField() && !g.isSilence())) {
-                Guardian guardian = campA.stream()
-                        .filter(g -> g.getName().equals("金角大王") && g.getPosition() == position && !g.isDead() && !g.isOnField())
-                        .findFirst().get();
-                int[] skillLevel = CardSkillLevelUtil.calculateSkillLevels(guardian.getLevel(), guardian.getStar().doubleValue());
-                //幽冥审判Lv1每当有敌方登场，令随机敌方中毒73；
-                List<Guardian> enemies = guardian.getCamp() == Camp.A ?
-                        campB.stream().filter(g -> !g.isDead()).collect(Collectors.toList()) :
-                        campA.stream().filter(g -> !g.isDead()).collect(Collectors.toList());
-                if (!enemies.isEmpty()) {
-                    Guardian randomEnemy = enemies.get(random.nextInt(enemies.size()));
-                    int totalPoisonDamage = 7 * skillLevel[0];
-                    // 1. 计算所有中毒效果的总伤害（累加 POISON 类型的 value）
-                    // 2. 计算毒抗相关（直接基于你现有 EffectInstance 计算，不新增 Guardian 方法）
-                    // 中毒增益：所有 POISON_RESIST 类型效果的 value 总和
-                    int resistUp = calculateTotalVaule(guardian, EffectType.POISON_BOOST);
-                    // 中毒增益百分比：所有 POISON_RESIST 类型效果的 value 乘积
-                    double resistUpPret = calculateTotalUpPretVaule(guardian, EffectType.POISON_BOOST_PRET);
-                    // 中毒降低：所有 POISON_RESIST_DOWN 类型效果的 value 总和
-                    int resistDown = calculateTotalVaule(guardian, EffectType.POISON_DOWN);
-                    // 中毒降低百分比：所有 POISON_RESIST 类型效果的 value 乘积
-                    double resistDownPret = calculateTotalDownPretVaule(guardian, EffectType.POISON_DOWN_PRET);
-
-                    int poisonValue = (int) (totalPoisonDamage * resistUpPret * resistDownPret + (resistUp + guardian.getDsAtk() - resistDown));
-                    poisonValue = applyXilianElement(guardian, randomEnemy, poisonValue);
-                    randomEnemy.addEffect(EffectType.POISON, poisonValue, 99, guardian.getId());
-                    addLog("玉净瓶",
-                            guardian.getId(),
-                            guardian.getMaxHp(),
-                            guardian.getCurrentHp(),
-                            poisonValue,
-                            guardian.isOnField(),
-                            randomEnemy.getId(),
-                            randomEnemy.getMaxHp(),
-                            randomEnemy.getCurrentHp(),
-                            poisonValue,
-                            randomEnemy.isOnField(),
-                            EffectType.POISON,
-                            DamageType.POISON,
-                            "中毒+" + poisonValue);
-                }
-            }
-            if (defender2!=null&&defender2.getCamp() == Camp.B && campA.stream().anyMatch(g -> g.getName().equals("金角大王") && g.getPosition() == position && !g.isDead() && !g.isOnField() && !g.isSilence())) {
-                Guardian guardian = campA.stream()
-                        .filter(g -> g.getName().equals("金角大王") && g.getPosition() == position && !g.isDead() && !g.isOnField())
-                        .findFirst().get();
-                int[] skillLevel = CardSkillLevelUtil.calculateSkillLevels(guardian.getLevel(), guardian.getStar().doubleValue());
-                //幽冥审判Lv1每当有敌方登场，令随机敌方中毒73；
-                List<Guardian> enemies = guardian.getCamp() == Camp.A ?
-                        campB.stream().filter(g -> !g.isDead()).collect(Collectors.toList()) :
-                        campA.stream().filter(g -> !g.isDead()).collect(Collectors.toList());
-                if (!enemies.isEmpty()) {
-                    Guardian randomEnemy = enemies.get(random.nextInt(enemies.size()));
-                    int totalPoisonDamage = 7 * skillLevel[0];
-                    // 1. 计算所有中毒效果的总伤害（累加 POISON 类型的 value）
-                    // 2. 计算毒抗相关（直接基于你现有 EffectInstance 计算，不新增 Guardian 方法）
-                    // 中毒增益：所有 POISON_RESIST 类型效果的 value 总和
-                    int resistUp = calculateTotalVaule(guardian, EffectType.POISON_BOOST);
-                    // 中毒增益百分比：所有 POISON_RESIST 类型效果的 value 乘积
-                    double resistUpPret = calculateTotalUpPretVaule(guardian, EffectType.POISON_BOOST_PRET);
-                    // 中毒降低：所有 POISON_RESIST_DOWN 类型效果的 value 总和
-                    int resistDown = calculateTotalVaule(guardian, EffectType.POISON_DOWN);
-                    // 中毒降低百分比：所有 POISON_RESIST 类型效果的 value 乘积
-                    double resistDownPret = calculateTotalDownPretVaule(guardian, EffectType.POISON_DOWN_PRET);
-
-                    int poisonValue = (int) (totalPoisonDamage * resistUpPret * resistDownPret + (resistUp + guardian.getDsAtk() - resistDown));
-                    poisonValue = applyXilianElement(guardian, randomEnemy, poisonValue);
-                    randomEnemy.addEffect(EffectType.POISON, poisonValue, 99, guardian.getId());
-                    addLog("玉净瓶",
-                            guardian.getId(),
-                            guardian.getMaxHp(),
-                            guardian.getCurrentHp(),
-                            poisonValue,
-                            guardian.isOnField(),
-                            randomEnemy.getId(),
-                            randomEnemy.getMaxHp(),
-                            randomEnemy.getCurrentHp(),
-                            poisonValue,
-                            randomEnemy.isOnField(),
-                            EffectType.POISON,
-                            DamageType.POISON,
-                            "中毒+" + poisonValue);
-                }
-            }
+            // 金角大王·玉净瓶：已从“登场触发(processOnFieldSkills0)”迁移到回合开始触发 processJinJiaoPoisonAtRoundStart（每回合上毒），此处不再重复上毒
 
             if (defender1.getCamp() == Camp.A && campB.stream().anyMatch(g -> g.getName().equals("阎王") && g.getPosition() == position && !g.isDead() && !g.isOnField())) {
                 Guardian guardian = campB.stream()
@@ -12307,92 +12581,7 @@ public class BattleManager {
 
             }
 
-            if (defender1.getCamp() == Camp.A && campB.stream().anyMatch(g -> g.getName().equals("金角大王") && g.getPosition() == position && !g.isDead() && !g.isOnField() && !g.isSilence())) {
-                Guardian guardian = campB.stream()
-                        .filter(g -> g.getName().equals("金角大王") && g.getPosition() == position && !g.isDead() && !g.isOnField())
-                        .findFirst().get();
-                int[] skillLevel = CardSkillLevelUtil.calculateSkillLevels(guardian.getLevel(), guardian.getStar().doubleValue());
-                //幽冥审判Lv1每当有敌方登场，令随机敌方中毒73；
-                List<Guardian> enemies = guardian.getCamp() == Camp.B ?
-                        campA.stream().filter(g -> !g.isDead()).collect(Collectors.toList()) :
-                        campB.stream().filter(g -> !g.isDead()).collect(Collectors.toList());
-                if (!enemies.isEmpty()) {
-                    Guardian randomEnemy = enemies.get(random.nextInt(enemies.size()));
-                    int totalPoisonDamage = 7 * skillLevel[0] + guardian.getDsAtk();
-                    // 1. 计算所有中毒效果的总伤害（累加 POISON 类型的 value）
-                    // 2. 计算毒抗相关（直接基于你现有 EffectInstance 计算，不新增 Guardian 方法）
-                    // 中毒增益：所有 POISON_RESIST 类型效果的 value 总和
-                    int resistUp = calculateTotalVaule(guardian, EffectType.FIRE_BOOST);
-                    // 中毒增益百分比：所有 POISON_RESIST 类型效果的 value 乘积
-                    double resistUpPret = calculateTotalUpPretVaule(guardian, EffectType.FIRE_BOOST_PRET);
-                    // 中毒降低：所有 POISON_RESIST_DOWN 类型效果的 value 总和
-                    int resistDown = calculateTotalVaule(guardian, EffectType.FIRE_DOWN);
-                    // 中毒降低百分比：所有 POISON_RESIST 类型效果的 value 乘积
-                    double resistDownPret = calculateTotalDownPretVaule(guardian, EffectType.FIRE_DOWN_PRET);
-
-                    int poisonValue = (int) (totalPoisonDamage * resistUpPret * resistDownPret + (resistUp + guardian.getDsAtk() - resistDown));
-                    poisonValue = applyXilianElement(guardian, randomEnemy, poisonValue);
-                    randomEnemy.addEffect(EffectType.POISON, poisonValue, 99, guardian.getId());
-                    addLog("玉净瓶",
-                            guardian.getId(),
-                            guardian.getMaxHp(),
-                            guardian.getCurrentHp(),
-                            poisonValue,
-                            guardian.isOnField(),
-                            randomEnemy.getId(),
-                            randomEnemy.getMaxHp(),
-                            randomEnemy.getCurrentHp(),
-                            poisonValue,
-                            randomEnemy.isOnField(),
-                            EffectType.POISON,
-                            DamageType.POISON,
-                            "中毒+" + poisonValue);
-                }
-
-            }
-            if (defender2!=null&&defender2.getCamp() == Camp.A && campB.stream().anyMatch(g -> g.getName().equals("金角大王") && g.getPosition() == position && !g.isDead() && !g.isOnField() && !g.isSilence())) {
-                Guardian guardian = campB.stream()
-                        .filter(g -> g.getName().equals("金角大王") && g.getPosition() == position && !g.isDead() && !g.isOnField())
-                        .findFirst().get();
-                int[] skillLevel = CardSkillLevelUtil.calculateSkillLevels(guardian.getLevel(), guardian.getStar().doubleValue());
-                //幽冥审判Lv1每当有敌方登场，令随机敌方中毒73；
-                List<Guardian> enemies = guardian.getCamp() == Camp.B ?
-                        campA.stream().filter(g -> !g.isDead()).collect(Collectors.toList()) :
-                        campB.stream().filter(g -> !g.isDead()).collect(Collectors.toList());
-                if (!enemies.isEmpty()) {
-                    Guardian randomEnemy = enemies.get(random.nextInt(enemies.size()));
-                    int totalPoisonDamage = 7 * skillLevel[0] + guardian.getDsAtk();
-                    // 1. 计算所有中毒效果的总伤害（累加 POISON 类型的 value）
-                    // 2. 计算毒抗相关（直接基于你现有 EffectInstance 计算，不新增 Guardian 方法）
-                    // 中毒增益：所有 POISON_RESIST 类型效果的 value 总和
-                    int resistUp = calculateTotalVaule(guardian, EffectType.FIRE_BOOST);
-                    // 中毒增益百分比：所有 POISON_RESIST 类型效果的 value 乘积
-                    double resistUpPret = calculateTotalUpPretVaule(guardian, EffectType.FIRE_BOOST_PRET);
-                    // 中毒降低：所有 POISON_RESIST_DOWN 类型效果的 value 总和
-                    int resistDown = calculateTotalVaule(guardian, EffectType.FIRE_DOWN);
-                    // 中毒降低百分比：所有 POISON_RESIST 类型效果的 value 乘积
-                    double resistDownPret = calculateTotalDownPretVaule(guardian, EffectType.FIRE_DOWN_PRET);
-
-                    int poisonValue = (int) (totalPoisonDamage * resistUpPret * resistDownPret + (resistUp + guardian.getDsAtk() - resistDown));
-                    poisonValue = applyXilianElement(guardian, randomEnemy, poisonValue);
-                    randomEnemy.addEffect(EffectType.POISON, poisonValue, 99, guardian.getId());
-                    addLog("玉净瓶",
-                            guardian.getId(),
-                            guardian.getMaxHp(),
-                            guardian.getCurrentHp(),
-                            poisonValue,
-                            guardian.isOnField(),
-                            randomEnemy.getId(),
-                            randomEnemy.getMaxHp(),
-                            randomEnemy.getCurrentHp(),
-                            poisonValue,
-                            randomEnemy.isOnField(),
-                            EffectType.POISON,
-                            DamageType.POISON,
-                            "中毒+" + poisonValue);
-                }
-
-            }
+            // 金角大王·玉净瓶（B 阵营）：同样已迁移到回合开始触发 processJinJiaoPoisonAtRoundStart，此处不再重复上毒
 //            疫病侵染Lv1场下，我方单位登场时为场上敌人添加疾病效果，疾病令受到治疗的效果降低50%，最多叠加1层
             if (defender1.getCamp() == Camp.A && campA.stream().anyMatch(g -> g.getName().equals("玄冥") && g.getPosition() == position && !g.isDead() && !g.isOnField() && !g.isSilence())) {
                 Guardian guardian = campA.stream()
@@ -12597,7 +12786,7 @@ public class BattleManager {
                         .findFirst().get();
                 int[] skillLevel = CardSkillLevelUtil.calculateSkillLevels(guardian.getLevel(), guardian.getStar().doubleValue());
                 //  禁心咒Lv1场下
-                if (fieldB != null && !fieldB.isDead() && !isYinglong(fieldB) && skillLevel[1] > 0 && ProbabilityBooleanUtils.randomByProbability(0.5) && fieldB != null) {
+                if (fieldB != null && !fieldB.isDead() && !isYinglongBoss(fieldB) && skillLevel[1] > 0 && ProbabilityBooleanUtils.randomByProbability(0.5) && fieldB != null) {
                     fieldB.addEffect(EffectType.SILENCE, 0, 2, guardian.getId());
                     addLog("禁心咒",
                             guardian.getId(),
@@ -12709,7 +12898,7 @@ public class BattleManager {
                         .findFirst().get();
                 int[] skillLevel = CardSkillLevelUtil.calculateSkillLevels(guardian.getLevel(), guardian.getStar().doubleValue());
                 //  禁心咒Lv1场下
-                if (fieldA != null && !fieldA.isDead() && !isYinglong(fieldA) && skillLevel[1] > 0 && ProbabilityBooleanUtils.randomByProbability(0.5) && fieldA != null) {
+                if (fieldA != null && !fieldA.isDead() && !isYinglongBoss(fieldA) && skillLevel[1] > 0 && ProbabilityBooleanUtils.randomByProbability(0.5) && fieldA != null) {
                     fieldA.addEffect(EffectType.SILENCE, 0, 2, guardian.getId());
                     addLog("禁心咒",
                             guardian.getId(),
@@ -14465,7 +14654,7 @@ public class BattleManager {
                 Guardian guardian = campA.stream()
                         .filter(g -> g.getName().equals("瑶姬") && g.getPosition() == position && !g.isDead() && !g.isOnField())
                         .findFirst().get();
-                if (ProbabilityBooleanUtils.randomByProbability(0.5) && fieldB != null && !fieldB.isDead()) {
+                if (ProbabilityBooleanUtils.randomByProbability(0.5) && fieldB != null && !fieldB.isDead() && !isYinglongBoss(fieldB)) {
                     fieldB.addEffect(EffectType.STUN, 0, 2, guardian.getId());
                     addLog("倾盆大雨",
                             guardian.getId(),
@@ -14487,7 +14676,7 @@ public class BattleManager {
                 Guardian guardian = campA.stream()
                         .filter(g -> g.getName().equals("瑶姬") && g.getPosition() == position && !g.isDead() && !g.isOnField())
                         .findFirst().get();
-                if (ProbabilityBooleanUtils.randomByProbability(0.5) && fieldB != null && !fieldB.isDead()) {
+                if (ProbabilityBooleanUtils.randomByProbability(0.5) && fieldB != null && !fieldB.isDead() && !isYinglongBoss(fieldB)) {
                     fieldB.addEffect(EffectType.STUN, 0, 2, guardian.getId());
                     addLog("倾盆大雨",
                             guardian.getId(),
@@ -14510,7 +14699,7 @@ public class BattleManager {
                 Guardian guardian = campB.stream()
                         .filter(g -> g.getName().equals("瑶姬") && g.getPosition() == position && !g.isDead() && !g.isOnField())
                         .findFirst().get();
-                if (ProbabilityBooleanUtils.randomByProbability(0.5) && fieldA != null && !fieldA.isDead()) {
+                if (ProbabilityBooleanUtils.randomByProbability(0.5) && fieldA != null && !fieldA.isDead() && !isYinglongBoss(fieldA)) {
                     fieldA.addEffect(EffectType.STUN, 0, 2, guardian.getId());
                     addLog("倾盆大雨",
                             guardian.getId(),
@@ -14532,7 +14721,7 @@ public class BattleManager {
                 Guardian guardian = campB.stream()
                         .filter(g -> g.getName().equals("瑶姬") && g.getPosition() == position && !g.isDead() && !g.isOnField())
                         .findFirst().get();
-                if (ProbabilityBooleanUtils.randomByProbability(0.5) && fieldA != null && !fieldA.isDead()) {
+                if (ProbabilityBooleanUtils.randomByProbability(0.5) && fieldA != null && !fieldA.isDead() && !isYinglongBoss(fieldA)) {
                     fieldA.addEffect(EffectType.STUN, 0, 2, guardian.getId());
                     addLog("倾盆大雨",
                             guardian.getId(),
@@ -14588,9 +14777,13 @@ public class BattleManager {
                         // 驱散乌江之殇的物理结界（同时清除魔法护盾）
                         g.setPhysicalBarrier(0);
                         g.setMagicBarrier(0);
+                        // “元气消散”同时清除应龙/护法印记：印记存在 Guardian.yinjiCount 独立字段里（不在 effects 列表，此前驱散漏掉），导致世界boss应龙印记驱不掉
+                        boolean hadYinji = g.getYinjiCount() > 0;
+                        if (hadYinji) g.setYinjiCount(0);
                         TargetBattleData data = new TargetBattleData(g.getMaxHp(), g.getCurrentHp(), 50, g.isOnField());
                         data.setShieldRemaining(0);
                         data.setMagicShieldRemaining(0);
+                        if (hadYinji) data.setYinjiCount(0);   // 仅涉印记的目标回写，前端据此刷新场下印记 num
                         targetStatus.put(g.getId(), data);
                     });
                     addMultiTargetLog("元气消散",
@@ -14640,9 +14833,13 @@ public class BattleManager {
                         // 驱散乌江之殇的物理结界（同时清除魔法护盾）
                         g.setPhysicalBarrier(0);
                         g.setMagicBarrier(0);
+                        // “元气消散”同时清除应龙/护法印记：印记存在 Guardian.yinjiCount 独立字段里（不在 effects 列表，此前驱散漏掉），导致世界boss应龙印记驱不掉
+                        boolean hadYinji = g.getYinjiCount() > 0;
+                        if (hadYinji) g.setYinjiCount(0);
                         TargetBattleData data = new TargetBattleData(g.getMaxHp(), g.getCurrentHp(), 50, g.isOnField());
                         data.setShieldRemaining(0);
                         data.setMagicShieldRemaining(0);
+                        if (hadYinji) data.setYinjiCount(0);   // 仅涉印记的目标回写，前端据此刷新场下印记 num
                         targetStatus.put(g.getId(), data);
                     });
                     addMultiTargetLog("元气消散",
@@ -14693,9 +14890,13 @@ public class BattleManager {
                         // 驱散乌江之殇的物理结界（同时清除魔法护盾）
                         g.setPhysicalBarrier(0);
                         g.setMagicBarrier(0);
+                        // “元气消散”同时清除应龙/护法印记：印记存在 Guardian.yinjiCount 独立字段里（不在 effects 列表，此前驱散漏掉），导致世界boss应龙印记驱不掉
+                        boolean hadYinji = g.getYinjiCount() > 0;
+                        if (hadYinji) g.setYinjiCount(0);
                         TargetBattleData data = new TargetBattleData(g.getMaxHp(), g.getCurrentHp(), 50, g.isOnField());
                         data.setShieldRemaining(0);
                         data.setMagicShieldRemaining(0);
+                        if (hadYinji) data.setYinjiCount(0);   // 仅涉印记的目标回写，前端据此刷新场下印记 num
                         targetStatus.put(g.getId(), data);
                     });
                     addMultiTargetLog("元气消散",
@@ -14745,9 +14946,13 @@ public class BattleManager {
                         // 驱散乌江之殇的物理结界（同时清除魔法护盾）
                         g.setPhysicalBarrier(0);
                         g.setMagicBarrier(0);
+                        // “元气消散”同时清除应龙/护法印记：印记存在 Guardian.yinjiCount 独立字段里（不在 effects 列表，此前驱散漏掉），导致世界boss应龙印记驱不掉
+                        boolean hadYinji = g.getYinjiCount() > 0;
+                        if (hadYinji) g.setYinjiCount(0);
                         TargetBattleData data = new TargetBattleData(g.getMaxHp(), g.getCurrentHp(), 50, g.isOnField());
                         data.setShieldRemaining(0);
                         data.setMagicShieldRemaining(0);
+                        if (hadYinji) data.setYinjiCount(0);   // 仅涉印记的目标回写，前端据此刷新场下印记 num
                         targetStatus.put(g.getId(), data);
                     });
                     addMultiTargetLog("元气消散",

@@ -126,6 +126,12 @@ public class GameServiceServiceImpl implements GameServiceService {
     @Autowired
     private EqCharactersMapper eqCharactersMapper;
     @Autowired
+    private EqSkillBaseMapper eqSkillBaseMapper;
+    @Autowired
+    private EqSkillBookMapper eqSkillBookMapper;
+    @Autowired
+    private EqCharacterSkillMapper eqCharacterSkillMapper;
+    @Autowired
     private EqCharactersRecordMapper eqCharactersRecordMapper;
     @Autowired
     private GameNoticeMapper gameNoticeMapper;
@@ -378,6 +384,17 @@ public class GameServiceServiceImpl implements GameServiceService {
     //格式化装备
     public List<EqCharacters> formateEqCharacter(List<EqCharacters> characterList) {
         for (EqCharacters eqCharacters : characterList) {
+            // 装备id在eq_card中匹配不到时属性列为null，兜底置0，避免登录拆箱NPE
+            if (eqCharacters.getWlAtk() == null) eqCharacters.setWlAtk(0);
+            if (eqCharacters.getHyAtk() == null) eqCharacters.setHyAtk(0);
+            if (eqCharacters.getFdAtk() == null) eqCharacters.setFdAtk(0);
+            if (eqCharacters.getDsAtk() == null) eqCharacters.setDsAtk(0);
+            if (eqCharacters.getWlDef() == null) eqCharacters.setWlDef(0);
+            if (eqCharacters.getHyDef() == null) eqCharacters.setHyDef(0);
+            if (eqCharacters.getDsDef() == null) eqCharacters.setDsDef(0);
+            if (eqCharacters.getFdDef() == null) eqCharacters.setFdDef(0);
+            if (eqCharacters.getZlDef() == null) eqCharacters.setZlDef(0);
+            if (eqCharacters.getZlAtk() == null) eqCharacters.setZlAtk(0);
             // 飞升加成：装备飞升每级 flyup 增加 3% 属性
             if (Xtool.isNotNull(eqCharacters.getFlyup())) {
                 BigDecimal flyupRate = new BigDecimal("1").add(new BigDecimal(eqCharacters.getFlyup()).multiply(new BigDecimal("0.03")));
@@ -2807,7 +2824,10 @@ public class GameServiceServiceImpl implements GameServiceService {
         // 9. 发放奖励（调用道具/金币发放接口，此处简化）
         List<GameGiftContent> contents = gameGiftContentMapper.selectByGiftId(giftId);
         for (GameGiftContent content : contents) {
-            if ("1".equals(content.getItemType() + "")) {
+            if ("7".equals(content.getItemType() + "")) {
+                //功勋（世界BOSS排名礼包等，user.gongxun 独立字段，末尾 updateuser 落库）
+                user.setGongxun((user.getGongxun() == null ? 0 : user.getGongxun()) + content.getItemQuantity());
+            } else if ("1".equals(content.getItemType() + "")) {
                 //灵石
                 user.setDiamond(user.getDiamond().add(new BigDecimal(content.getItemQuantity())));
             } else if ("2".equals(content.getItemType() + "")) {
@@ -4178,9 +4198,10 @@ public class GameServiceServiceImpl implements GameServiceService {
             id++;
         }
         user.setEqCount(user.getEqCount() + 1);
-        if (user.getEqCount() > 10) {
+        if (user.getEqCount() >= 10) {
             user.setEqCount(0);
-            EqCard drawnCard = EquipmentGenerateUtil.batchGenerateEqCard(1).get(0);
+            // 保底：4 星～4.5 星（4.0/4.5 二选一），不超过 4.5 星
+            EqCard drawnCard = EquipmentGenerateUtil.batchGenerateEqCard(1, 4.0, 4.5).get(0);
             Map map2 = new HashMap();
             map2.put("name", drawnCard.getName());
             map2.put("star", drawnCard.getStar());
@@ -4241,28 +4262,35 @@ public class GameServiceServiceImpl implements GameServiceService {
         return baseResp;
     }
 
-    // 功勋商城商品在 game_item_base 中的起始 item_id，该 id 及其之后的商品都归属功勋商城
-    private static final int GONGXUN_START_ITEM_ID = 1105000;
+    // 功勋商城定向物品的起始 item_id：使用道具时，itemId >= 该值的视为英雄卡定向物品（记录 redian）。
+    // 注：功勋商城购买已不再按此区间校验（低 id 商品亦可上架购买），此处仅保留给道具使用逻辑。
+    private static final int GONGXUN_START_ITEM_ID = 1100000;
 
     /**
-     * 功勋商城：从 game_item_base 缓存取 item_id >= 1105000 的商品，按 itemId 升序返回。
-     * 价格按品质折算（quality*100，即 1~5 品质对应 100~500），写入瞬态字段 price 供前端展示。
+     * 功勋商城：商品成员/价格/排序/上下架均由配置表 game_gongxun_shop 驱动（启动加载进缓存），
+     * 按 sort 升序（同值按 itemId 升序）返回；商品名/图标/描述取自 game_item_base。
      * 缓存里存的是共享实例，这里逐个拷贝后再回填 price，避免污染缓存。
      */
     @Override
     public BaseResp getGongxunStore(TokenDto token, HttpServletRequest request) throws Exception {
         BaseResp baseResp = new BaseResp();
         baseResp.setSuccess(1);
-        List<GameItemBase> gongxunList = GameConfigCache.getAllItemBases().stream()
-                .filter(x -> x != null && x.getItemId() != null && x.getItemId() >= GONGXUN_START_ITEM_ID)
-                .sorted(Comparator.comparing(GameItemBase::getItemId))
-                .map(base -> {
+        // 商品成员/价格/排序/上下架均由配置表 game_gongxun_shop 驱动；名/图标/描述取自 game_item_base
+        List<GameItemBase> gongxunList = GameConfigCache.getAllGongxunShops().stream()
+                .filter(s -> s != null && s.getItemId() != null && s.getIsValid() != null && s.getIsValid() == 1)
+                .sorted(Comparator.comparing((GameGongxunShop s) -> s.getSort() == null ? 0 : s.getSort())
+                        .thenComparing(GameGongxunShop::getItemId))
+                .map(s -> {
+                    GameItemBase base = GameConfigCache.getItemBase(s.getItemId());
+                    if (base == null) {
+                        return null;   // 配置表引用了已下架/不存在的商品则跳过
+                    }
                     GameItemBase copy = new GameItemBase();
                     BeanUtils.copyProperties(base, copy);
-                    int quality = base.getQuality() == null ? 0 : base.getQuality().intValue();
-                    copy.setPrice(quality * 100);
+                    copy.setPrice(s.getPrice() == null ? 0 : s.getPrice());
                     return copy;
                 })
+                .filter(x -> x != null)
                 .collect(Collectors.toList());
         // 一并按 {items, gongxun} 返回：前端 init3 用 items 渲染、用 gongxun 展示“剩余功勋”
         Map gxMap = new HashMap();
@@ -4281,7 +4309,7 @@ public class GameServiceServiceImpl implements GameServiceService {
     }
 
     /**
-     * 功勋商城兑换：token.id 传商品 itemId（>=1105000），消耗 user.gongxun（价格按 game_item_base 的 quality*100，以服务端为准），
+     * 功勋商城兑换：token.id 传商品 itemId（>=1105000），消耗 user.gongxun（价格取配置表 game_gongxun_shop，以服务端为准），
      * 兑换成功后物品进入背包，返回含最新剩余功勋的用户信息，供前端刷新“价格(剩余功勋)”。
      */
     @Override
@@ -4312,11 +4340,6 @@ public class GameServiceServiceImpl implements GameServiceService {
             baseResp.setErrorMsg("商品不存在");
             return baseResp;
         }
-        if (itemId < GONGXUN_START_ITEM_ID) {
-            baseResp.setSuccess(0);
-            baseResp.setErrorMsg("非法的功勋商品");
-            return baseResp;
-        }
         GameItemBase base = GameConfigCache.getAllItemBases().stream()
                 .filter(x -> x != null && x.getItemId() != null && x.getItemId() == itemId)
                 .findFirst().orElse(null);
@@ -4325,17 +4348,37 @@ public class GameServiceServiceImpl implements GameServiceService {
             baseResp.setErrorMsg("商品不存在或已下架");
             return baseResp;
         }
-        int price = (base.getQuality() == null ? 0 : base.getQuality().intValue()) * 100;
+        // 价格走配置表 game_gongxun_shop；配置缺失/已下架时兜底回退 quality*100（与迁移初值一致）
+        GameGongxunShop shop = GameConfigCache.getGongxunShop(itemId);
+        int price;
+        if (shop != null && shop.getIsValid() != null && shop.getIsValid() == 1 && shop.getPrice() != null) {
+            price = shop.getPrice();
+        } else {
+            price = (base.getQuality() == null ? 0 : base.getQuality().intValue()) * 100;
+        }
+        // 兑换数量：token.str 传数量（缺省/非法/小于 1 均归正为 1），总价 = 单价 × 数量
+        int count = 1;
+        if (!Xtool.isNull(token.getStr())) {
+            try {
+                count = Integer.parseInt(token.getStr().trim());
+            } catch (NumberFormatException e) {
+                count = 1;
+            }
+        }
+        if (count < 1) {
+            count = 1;
+        }
+        int total = price * count;
         User user = userMapper.selectUserByUserId(Integer.parseInt(userId));
         int curGx = user.getGongxun() == null ? 0 : user.getGongxun();
-        if (curGx < price) {
+        if (curGx < total) {
             baseResp.setSuccess(0);
             baseResp.setErrorMsg("功勋不足");
             return baseResp;
         }
-        // 扣功勋 + 物品进背包
-        user.setGongxun(curGx - price);
-        addBagItem(userId, itemId, 1);
+        // 扣功勋 + 物品进背包（按数量）
+        user.setGongxun(curGx - total);
+        addBagItem(userId, itemId, count);
         userMapper.updateuser(user);
         UserInfo info = new UserInfo();
         BeanUtils.copyProperties(user, info);
@@ -6871,9 +6914,136 @@ public class GameServiceServiceImpl implements GameServiceService {
         map.put("baiyingRanking", baiyingRanking);
         List<User> huangjinRanking = userMapper.getBronzeRanking100("goldentower");
         map.put("huangjinRanking", huangjinRanking);
+        // 世界BOSS伤害榜（当日）：第二数据源取伤害记录，关联主库 user 补等级头像；查询异常不影响其余榜单展示
+        List<Map<String, Object>> worldBossRanking = new ArrayList<>();
+        try {
+            List<WorldBossRecord> bossRecords = worldBossService.rankList(LocalDate.now(), 100);
+            for (WorldBossRecord bossRecord : bossRecords) {
+                Map<String, Object> item = new HashMap<>();
+                User bossUser = bossRecord.getRoleId() != null ? userMapper.selectUserByUserId(bossRecord.getRoleId().intValue()) : null;
+                item.put("userId", bossRecord.getRoleId());
+                item.put("nickname", bossUser != null ? bossUser.getNickname() : bossRecord.getRoleName());
+                item.put("lv", bossUser != null ? bossUser.getLv() : 0);
+                item.put("gameImg", bossUser != null ? bossUser.getGameImg() : "");
+                item.put("totalDamage", bossRecord.getTotalDamage());
+                item.put("bossRank", bossRecord.getBossRank());
+                item.put("hitCount", bossRecord.getHitCount());
+                worldBossRanking.add(item);
+            }
+        } catch (Exception e) {
+            log.error("世界BOSS伤害榜查询异常，返回空榜", e);
+        }
+        map.put("worldBossRanking", worldBossRanking);
         baseResp.setData(map);
         baseResp.setSuccess(1);
         return baseResp;
+    }
+
+    /** 世界BOSS排名奖励发放的魂道具id（game_item_base.item_id） */
+    private static final long WORLD_BOSS_REWARD_SOUL_ID = 1100015L;
+
+    /**
+     * 世界BOSS每日伤害排行结算（每天23:05 boss结束后由定时任务触发）。
+     * <p>先按 total_damage 降序回写前100名 rank，再分三档生成兑换码礼包：
+     * 第1名：魂*4+功勋2000+钻石1000+金币500万；2-10名减半；11-100名再减半。
+     */
+    @Override
+    @Transactional
+    public void worldBossSendReward() {
+        LocalDate today = LocalDate.now();
+        int ranked = worldBossService.assignRanks(today, 100);
+        if (ranked <= 0) {
+            log.info("世界BOSS结算：{} 无伤害记录，跳过", today);
+            return;
+        }
+        List<WorldBossRecord> top100 = worldBossService.rankList(today, 100);
+        // 幂等保护：榜单记录均已标记已结算则跳过，防止定时任务重复执行导致重复发奖
+        boolean allSettled = top100.stream().allMatch(r -> r.getIsRewardGet() != null && r.getIsRewardGet() == 1);
+        if (allSettled) {
+            log.info("世界BOSS结算：{} 已结算过，跳过重复", today);
+            return;
+        }
+        // 礼包兑换截止：一个月后（与竞技场排名奖励一致）
+        Calendar calendar = Calendar.getInstance();
+        calendar.setTime(new Date());
+        calendar.add(Calendar.MONTH, 1);
+        Date endTime = calendar.getTime();
+        // 第一档：第1名
+        settleWorldBossTier(top100.subList(0, Math.min(1, top100.size())), today,
+                4, 2000, 1000, 5000000, "第 1 名", endTime);
+        // 第二档：2-10名，奖励减半
+        if (top100.size() > 1) {
+            settleWorldBossTier(top100.subList(1, Math.min(10, top100.size())), today,
+                    2, 1000, 500, 2500000, "前 10 名", endTime);
+        }
+        // 第三档：11-100名，再减半
+        if (top100.size() > 10) {
+            settleWorldBossTier(top100.subList(10, Math.min(100, top100.size())), today,
+                    1, 500, 250, 1250000, "前 100 名", endTime);
+        }
+    }
+
+    /**
+     * 世界BOSS结算单个档次：生成一个兑换码礼包（魂/功勋/钻石/金币四项内容），
+     * 给档内每名玩家绑定兑换记录，并把伤害记录标记为已结算。
+     */
+    private void settleWorldBossTier(List<WorldBossRecord> tierRecords, LocalDate bossDate,
+                                     int soulNum, int gongxunNum, int diamondNum, int goldNum,
+                                     String rankDesc, Date endTime) {
+        if (tierRecords == null || tierRecords.isEmpty()) {
+            return;
+        }
+        String code = RandomCodeGenerator.generateUniqueCode();
+        GameGift gameGift = new GameGift();
+        gameGift.setGiftCode(code);
+        gameGift.setGiftType(2);
+        gameGift.setRemainingQuantity(-1);
+        gameGift.setTotalQuantity(-1);
+        gameGift.setIsActive(1);
+        gameGift.setStartTime(new Date());
+        gameGift.setUpdateTime(new Date());
+        gameGift.setEndTime(endTime);
+        gameGift.setGiftName("世界BOSS排名奖励");
+        gameGift.setDescription("恭喜少侠在世界BOSS讨伐中伤害排名 " + rankDesc + "，专属排名奖励已奉上,含" + soulNum + "魂+功勋" + gongxunNum + "+钻石" + diamondNum + "+金币" + goldNum + "。");
+        gameGift.setCreateTime(new Date());
+        gameGiftMapper.insert(gameGift);
+        GameGift gifts = gameGiftMapper.selectByGiftCode(code);
+        // 魂（game_item_base 道具，itemType=5 进背包，itemId=1100015）
+        insertWorldBossGiftContent(gifts.getGiftId(), 5, WORLD_BOSS_REWARD_SOUL_ID, soulNum);
+        // 功勋（itemType=7，receive() 发放链中累加 user.gongxun）
+        insertWorldBossGiftContent(gifts.getGiftId(), 7, 0L, gongxunNum);
+        // 钻石（灵石，itemType=1）
+        insertWorldBossGiftContent(gifts.getGiftId(), 1, 0L, diamondNum);
+        // 金币（itemType=2）
+        insertWorldBossGiftContent(gifts.getGiftId(), 2, 0L, goldNum);
+        for (WorldBossRecord record : tierRecords) {
+            if (record.getRoleId() == null) {
+                continue;
+            }
+            GameGiftExchangeCode exRecord = new GameGiftExchangeCode();
+            exRecord.setGiftId(gifts.getGiftId());
+            exRecord.setUseUserId(record.getRoleId());
+            exRecord.setExchangeCode(code);
+            List<GameGiftExchangeCode> codeList = gameGiftExchangeCodeMapper.selectByUserCode2(exRecord);
+            if (Xtool.isNull(codeList)) {
+                exRecord.setCreateTime(new Date());
+                gameGiftExchangeCodeMapper.insertSelective(exRecord);
+            }
+            // 标记该记录已结算（防重复发放+留痕）
+            worldBossService.markRewardGot(record.getId());
+        }
+        log.info("世界BOSS结算：{} {} 奖励已发放，人数={}，兑换码={}", bossDate, rankDesc, tierRecords.size(), code);
+    }
+
+    /** 插入一条礼包内容 */
+    private void insertWorldBossGiftContent(Long giftId, int itemType, Long itemId, int quantity) {
+        GameGiftContent gameGiftContent = new GameGiftContent();
+        gameGiftContent.setGiftId(giftId);
+        gameGiftContent.setItemType(itemType);
+        gameGiftContent.setItemQuantity(quantity);
+        gameGiftContent.setItemId(itemId);
+        gameGiftContent.setCreateTime(new Date());
+        gameGiftContentMapper.insert(gameGiftContent);
     }
 
     @Override
@@ -7629,6 +7799,17 @@ public class GameServiceServiceImpl implements GameServiceService {
                 addBagItem(userId, 14, random6.nextInt(401) + 599);
                 // 紫金矿 id:15，范围 199 ~ 599
                 addBagItem(userId, 15, random6.nextInt(401) + 199);
+                break;
+            case 101: // 白虎祈愿礼包：白虎魂魄1~10枚、青铜矿999~1999枚、玄铁矿599~999枚、紫金矿199~599枚
+                Random random7 = new Random();
+                // 白虎魂魄（id 1115）：1~10枚，进背包
+                addBagItem(userId, 1115, random7.nextInt(10) + 1);
+                // 青铜矿 id:13，范围 999 ~ 1999
+                addBagItem(userId, 13, random7.nextInt(1001) + 999);
+                // 玄铁矿 id:14，范围 599 ~ 999
+                addBagItem(userId, 14, random7.nextInt(401) + 599);
+                // 紫金矿 id:15，范围 199 ~ 599
+                addBagItem(userId, 15, random7.nextInt(401) + 199);
                 break;
             default:
                 // 功勋商城定向物品（itemId>=1105000，如 1105000、1106000…）：使用后记录用户热点 redian（去除后三位得到英雄卡id，如 1105000→1105）；
@@ -9641,6 +9822,40 @@ public class GameServiceServiceImpl implements GameServiceService {
     }
 
     @Override
+    public BaseResp worldBossInfo(TokenDto token, HttpServletRequest request) {
+        BaseResp baseResp = new BaseResp();
+        if (token == null || Xtool.isNull(token.getToken())) {
+            baseResp.setSuccess(0);
+            baseResp.setErrorMsg("登录过期");
+            return baseResp;
+        }
+        if (Xtool.isNull(token.getUserId())) {
+            baseResp.setSuccess(0);
+            baseResp.setErrorMsg("登录过期");
+            return baseResp;
+        }
+        // 当天排班：无排班也返回成功，前端按 hasSchedule=false 禁用按钮（入1中兜底自恢复，错过 00:00 也能生成）
+        WorldBossDaily bossDaily = worldBossService.getScheduleByDateWithFallback(LocalDate.now());
+        Map<String, Object> info = new HashMap<>();
+        info.put("serverTime", LocalTime.now().withNano(0).toString());
+        if (bossDaily == null || bossDaily.getBaseBossId() == null) {
+            info.put("hasSchedule", false);
+        } else {
+            info.put("hasSchedule", true);
+            WorldBossBase boss = worldBossService.getBossTemplate(bossDaily.getBaseBossId());
+            info.put("bossName", boss != null ? boss.getBossName() : "");
+            // LocalTime.toString()：整分时为 "09:00"，有秒时为 "09:00:30"，前端按 : 分段解析
+            info.put("startTime", bossDaily.getStartTime() == null ? null : bossDaily.getStartTime().withNano(0).toString());
+            info.put("endTime", bossDaily.getEndTime() == null ? null : bossDaily.getEndTime().withNano(0).toString());
+            info.put("hpRate", bossDaily.getHpRate() == null ? "1.00" : bossDaily.getHpRate().toString());
+            info.put("isOpen", bossDaily.getIsOpen());
+        }
+        baseResp.setSuccess(1);
+        baseResp.setData(info);
+        return baseResp;
+    }
+
+    @Override
     public BaseResp worldBossChallenge(TokenDto token, HttpServletRequest request) throws Exception {
         BaseResp baseResp = new BaseResp();
         if (token == null || Xtool.isNull(token.getToken())) {
@@ -9660,9 +9875,9 @@ public class GameServiceServiceImpl implements GameServiceService {
             baseResp.setErrorMsg("用户不存在");
             return baseResp;
         }
-        // 世界BOSS从当天排班定位：world_boss_daily.base_boss_id -> world_boss_base 模板
+        // 世界BOSS从当天排班定位：world_boss_daily.base_boss_id -> world_boss_base 模板（兜底自恢复，错过 00:00 也能生成）
         LocalDate today = LocalDate.now();
-        WorldBossDaily bossDaily = worldBossService.getScheduleByDate(today);
+        WorldBossDaily bossDaily = worldBossService.getScheduleByDateWithFallback(today);
         WorldBossBase worldBoss = null;
         if (bossDaily == null) {
             baseResp.setSuccess(0);
@@ -9692,6 +9907,18 @@ public class GameServiceServiceImpl implements GameServiceService {
         if (dailyHpRate.compareTo(BigDecimal.ZERO) <= 0) {
             baseResp.setSuccess(0);
             baseResp.setErrorMsg("今日BOSS已被击败，明日重置后再来挑战");
+            return baseResp;
+        }
+        // 后台生效：仅在当天排班时间窗（默认 09:00-23:00）内开放挑战；早于开启/晚于结束均拦截，且不消耗CD/功勋
+        LocalTime openNow = LocalTime.now();
+        if (bossDaily.getStartTime() != null && openNow.isBefore(bossDaily.getStartTime())) {
+            baseResp.setSuccess(0);
+            baseResp.setErrorMsg("世界BOSS将于 " + bossDaily.getStartTime() + " 开启，敬请等待");
+            return baseResp;
+        }
+        if (bossDaily.getEndTime() != null && openNow.isAfter(bossDaily.getEndTime())) {
+            baseResp.setSuccess(0);
+            baseResp.setErrorMsg("今日世界BOSS挑战已结束（" + bossDaily.getStartTime() + "-" + bossDaily.getEndTime() + "）");
             return baseResp;
         }
         // 每次挑战CD 1分钟：以 Redis 原子占位(setIfAbsent+60s TTL)实现，冷却期内不可重复挑战
@@ -9727,46 +9954,101 @@ public class GameServiceServiceImpl implements GameServiceService {
         int bossStartAtk = (int) Math.round(bossBaseAtk * dailyAtkRate.doubleValue());
         int bossStartSpeed = (int) Math.round(bossBaseSpeed * dailySpeedRate.doubleValue());
         String bossUnitId = "B" + WORLD_BOSS_CARRIER_CARD_ID;
+        // 战斗中全程最低血量 tracking：仅用于兜底（若末尾找不到任何 BOSS 事件，按最低点结算，不会高于真实状态）
         int bossFinalHp = bossStartHp;
         int bossHitCount = 0;
         long bossDamage = 0L;
         List<BattleLog> bossLogs = (List<BattleLog>) battle.getJson().get("battleLogs");
         if (bossLogs != null) {
             for (BattleLog bl : bossLogs) {
+                boolean dmgEffect = isWorldBossDamageEffect(bl.getEffectType());
                 // 单目标事件：直接读 targetUnitId/targetHpAfter
                 if (bossUnitId.equals(bl.getTargetUnitId())) {
                     if (bl.getTargetHpAfter() >= 0) {
-                        bossFinalHp = bl.getTargetHpAfter();
+                        bossFinalHp = Math.min(bossFinalHp, bl.getTargetHpAfter());
                     }
                     if (bl.getSingleTargetValue() > 0) {
                         bossHitCount++;
+                        // 伤害统计=实际打出的伤害之和（不按应龙剩余血量截断，含斩杀溢出）
+                        if (dmgEffect) {
+                            bossDamage += bl.getSingleTargetValue();
+                        }
                     }
                 }
                 // 多目标(AoE)事件：从 multiTargetDataMap 中取 boss 的目标数据
                 if (bl.getMultiTargetDataMap() != null && bl.getMultiTargetDataMap().containsKey(bossUnitId)) {
                     TargetBattleData td = bl.getMultiTargetDataMap().get(bossUnitId);
                     if (td.getHpAfter() >= 0) {
-                        bossFinalHp = td.getHpAfter();
+                        bossFinalHp = Math.min(bossFinalHp, td.getHpAfter());
                     }
                     if (td.getValue() != null && td.getValue() > 0) {
                         bossHitCount++;
+                        if (dmgEffect) {
+                            bossDamage += td.getValue();
+                        }
                     }
                 }
             }
         }
+        // 倍率按 BOSS 战斗结束时的实际剩余血量计算：从日志末尾倒序找最后一条携带 BOSS 血量快照的事件
+        // （伤害/回血/死亡等日志都记录当时绝对 currentHp），否则苍龙吸水等回合末回血把血量拉回后，
+        // hp_rate 仍按全程最低点结算，与实际终态不符
+        int bossEndHp = -1;
+        if (bossLogs != null) {
+            for (int i = bossLogs.size() - 1; i >= 0 && bossEndHp < 0; i--) {
+                BattleLog bl = bossLogs.get(i);
+                if (bossUnitId.equals(bl.getTargetUnitId()) && bl.getTargetHpAfter() >= 0) {
+                    bossEndHp = bl.getTargetHpAfter();
+                } else if (bossUnitId.equals(bl.getSourceUnitId()) && bl.getSourceHpAfter() >= 0) {
+                    bossEndHp = bl.getSourceHpAfter();
+                } else if (bl.getMultiTargetDataMap() != null && bl.getMultiTargetDataMap().containsKey(bossUnitId)) {
+                    int hpAfter = bl.getMultiTargetDataMap().get(bossUnitId).getHpAfter();
+                    if (hpAfter >= 0) {
+                        bossEndHp = hpAfter;
+                    }
+                }
+            }
+        }
+        if (bossEndHp >= 0) {
+            bossFinalHp = bossEndHp;
+        }
+        // 击杀保底 0；未产生任何 BOSS 事件时保持开局值
         bossFinalHp = Math.max(0, Math.min(bossFinalHp, bossStartHp));
-        bossDamage = Math.max(0L, (long) bossStartHp - bossFinalHp);
+        // bossDamage 已在上方按实际伤害事件累加，不再用 startHp-finalHp 倒推（避免被剩余血量/斩杀溢出截断）
         BigDecimal hpRate = clampWorldBossRate(BigDecimal.valueOf(bossFinalHp).divide(BigDecimal.valueOf(bossBaseHp), 6, RoundingMode.HALF_UP));
         BigDecimal atkRate = clampWorldBossRate(BigDecimal.valueOf(bossStartAtk).divide(BigDecimal.valueOf(bossBaseAtk), 6, RoundingMode.HALF_UP));
         BigDecimal speedRate = clampWorldBossRate(BigDecimal.valueOf(bossStartSpeed).divide(BigDecimal.valueOf(bossBaseSpeed), 6, RoundingMode.HALF_UP));
+        // 血量倍率按本场结束真实状态回写，允许续航回血后较开局小幅回升（clamp 0~1 已兜底）；攻防/速度本场不变，保留只降不升防进位漂移
+        if (atkRate.compareTo(dailyAtkRate) > 0) {
+            atkRate = dailyAtkRate;
+        }
+        if (speedRate.compareTo(dailySpeedRate) > 0) {
+            speedRate = dailySpeedRate;
+        }
+        // 诊断日志：未命中BOSS(bossHitCount=0)时倍率原值回写属预期；命中但库里不变则查 hp_rate 列 decimal 标度
+        log.info("世界BOSS倍率回写：battleId={}, baseHp={}, startHp={}, finalHp={}, damage={}, hits={}, rates={}/{}/{}",
+                battle.getId(), bossBaseHp, bossStartHp, bossFinalHp, bossDamage, bossHitCount, hpRate, atkRate, speedRate);
         worldBossService.writeDailyRates(today, hpRate, atkRate, speedRate);
-        // 伤害记录：累计本次对BOSS的伤害与命中次数
-        worldBossService.accumulateDamage(today, Long.parseLong(userId), user.getNickname(), bossDamage, bossHitCount);
+        // 伤害记录：累计本次对BOSS的伤害；hit_count 语义为“挑战次数”，每次成功挑战固定 +1（命中次数仅保留在上方诊断日志）
+        worldBossService.accumulateDamage(today, Long.parseLong(userId), user.getNickname(), bossDamage, 1);
         // 击杀（hp_rate回写为0）：全服广播
         if (hpRate.compareTo(BigDecimal.ZERO) <= 0) {
             GameNotice gameNotice = new GameNotice();
             gameNotice.setDescription("恭喜 " + user.getNickname() + " 击杀世界BOSS【" + worldBoss.getBossName() + "】！");
             gameNoticeMapper.insert(gameNotice);
+        } else {
+            // 半血公告：本次挑战使BOSS血量从 >50% 跌破 <=50%（dailyHpRate 为开战前倍率、hpRate 为结算后倍率）。
+            // BOSS续航回血可能让倍率回升，故用 Redis 按“当天”占位去重，每天仅播报一次。
+            BigDecimal halfHpRate = new BigDecimal("0.5");
+            if (dailyHpRate.compareTo(halfHpRate) > 0 && hpRate.compareTo(halfHpRate) <= 0) {
+                String halfKey = "worldboss:halfhp:notice:" + today;
+                Boolean firstHalf = redisTemplate.opsForValue().setIfAbsent(halfKey, "1", 1, TimeUnit.DAYS);
+                if (firstHalf != null && firstHalf) {
+                    GameNotice gameNotice = new GameNotice();
+                    gameNotice.setDescription("世界BOSS【" + worldBoss.getBossName() + "】血量已跌破一半，全服勇士加速输出！");
+                    gameNoticeMapper.insert(gameNotice);
+                }
+            }
         }
         UserInfo userInfo = new UserInfo();
         BeanUtils.copyProperties(user, userInfo);
@@ -9809,12 +10091,16 @@ public class GameServiceServiceImpl implements GameServiceService {
         BigDecimal lvBd = new BigDecimal(WORLD_BOSS_LV);
         BigDecimal starFactor = boss.getStar().subtract(BigDecimal.ONE).multiply(new BigDecimal("0.15")).add(BigDecimal.ONE);
         BigDecimal factor = lvBd.divide(new BigDecimal(80)).add(new BigDecimal("0.8")).multiply(starFactor).multiply(lvBd);
-        long targetHp = Math.round((worldBoss.getBaseHp() == null ? 0L : worldBoss.getBaseHp()) * hpRate.doubleValue());
+        long baseHp = worldBoss.getBaseHp() == null ? 0L : worldBoss.getBaseHp();
+        // 血量上限保持基准原值（不乘倍率）；当天剩余血量（开战初始当前血量）= baseHp × hpRate
+        long targetHp = baseHp;
         long targetAtk = Math.round((worldBoss.getBaseAtk() == null ? 0L : worldBoss.getBaseAtk()) * atkRate.doubleValue());
         long targetSpeed = Math.round((worldBoss.getBaseSpeed() == null ? 0L : worldBoss.getBaseSpeed()) * speedRate.doubleValue());
         boss.setHpGrowth(BigDecimal.valueOf(targetHp).divide(factor, 20, RoundingMode.DOWN));
         boss.setAttackGrowth(BigDecimal.valueOf(targetAtk).divide(factor, 20, RoundingMode.DOWN));
         boss.setSpeedGrowth(BigDecimal.valueOf(targetSpeed).divide(factor, 20, RoundingMode.DOWN));
+        // 初始当前血量按倍率扣减（至少留 1 点，避免开局即判死）
+        boss.setInitHp(Math.max(1, (int) Math.round(baseHp * hpRate.doubleValue())));
         List<Characters> rightCharacter = new ArrayList<>();
         rightCharacter.add(boss);
         // 四象护法：卡牌配置+预制等级，站位 2~5；取不到卡则跳过该护法
@@ -9830,6 +10116,25 @@ public class GameServiceServiceImpl implements GameServiceService {
             rightCharacter.add(g);
         }
         return rightCharacter;
+    }
+
+    /** 判断战斗日志效果是否为“对目标造成伤害”的类型（世界BOSS实际伤害统计用，排除治疗/护盾/buff等非伤害事件） */
+    private boolean isWorldBossDamageEffect(EffectType effectType) {
+        if (effectType == null) {
+            return false;
+        }
+        switch (effectType) {
+            case DAMAGE:
+            case TRUE_DAMAGE:
+            case FIRE_DAMAGE:
+            case MISSILE_DAMAGE:
+            case BURN:
+            case POISON:
+            case DRAIN:
+                return true;
+            default:
+                return false;
+        }
     }
 
     /** 世界BOSS倍率 clamp 到 0~1（防御越界，保证只降不升） */
@@ -11335,6 +11640,17 @@ public class GameServiceServiceImpl implements GameServiceService {
             // 飞升加成：每级flyup增加3%属性
             List<CraftEq> craftEqList = GameConfigCache.getAllCraftEqs();
             for (EqCharacters eqCharacter : eqCharacters) {
+                // 属性兼容兜底：缓存/旧数据中可能残留null，避免拆箱NPE（与下方求和处的防护一致）
+                if (eqCharacter.getWlAtk() == null) eqCharacter.setWlAtk(0);
+                if (eqCharacter.getHyAtk() == null) eqCharacter.setHyAtk(0);
+                if (eqCharacter.getFdAtk() == null) eqCharacter.setFdAtk(0);
+                if (eqCharacter.getDsAtk() == null) eqCharacter.setDsAtk(0);
+                if (eqCharacter.getWlDef() == null) eqCharacter.setWlDef(0);
+                if (eqCharacter.getHyDef() == null) eqCharacter.setHyDef(0);
+                if (eqCharacter.getDsDef() == null) eqCharacter.setDsDef(0);
+                if (eqCharacter.getFdDef() == null) eqCharacter.setFdDef(0);
+                if (eqCharacter.getZlDef() == null) eqCharacter.setZlDef(0);
+                if (eqCharacter.getZlAtk() == null) eqCharacter.setZlAtk(0);
                 if (Xtool.isNotNull(eqCharacter.getFlyup())) {
                     BigDecimal flyupRate = new BigDecimal("1").add(new BigDecimal(eqCharacter.getFlyup()).multiply(new BigDecimal("0.03")));
                     eqCharacter.setWlAtk((new BigDecimal(eqCharacter.getWlAtk())).multiply(flyupRate).intValue());
@@ -11622,7 +11938,8 @@ public class GameServiceServiceImpl implements GameServiceService {
         }
 
         // 应龙·龙族始祖（4技能）：位居1号位置时，按 collHp/collAttack/collSpeed × 技能等级 增加自身生命上限/攻击/速度
-        if ("15".equals(character.getId()) && characters.getGoIntoNum() == 1 && skillLevel[3] > 0) {
+        // 仅玩家版应龙(1116)享受属性加成；世界boss应龙(15)已移除加成，仅保留免疫沉默/换位/眩晕（BattleManager isYinglongBoss 守卫）
+        if ("1116".equals(character.getId()) && characters.getGoIntoNum() == 1 && skillLevel[3] > 0) {
             if (Xtool.isNotNull(characters.getCollHp())) {
                 character.setMaxHp(character.getMaxHp() + skillLevel[3] * characters.getCollHp());
                 character.setHp(character.getHp() + skillLevel[3] * characters.getCollHp());
@@ -11837,6 +12154,12 @@ public class GameServiceServiceImpl implements GameServiceService {
                     guardianA.applyXilianBonuses(eq.getXilianList());
                 }
             }
+            // 开战初始当前血量（未设置则保持满血）
+            if (characters.getInitHp() != null) {
+                guardianA.setCurrentHp(characters.getInitHp());
+                // 同步开战当前血量到战报Character.hp，供前端进场初始化血条（否则小头像恒显满血）
+                character.setHp(characters.getInitHp());
+            }
             campA.add(guardianA);
             character.setUuid("A" + character.getId());
             copyCampA.add(character);
@@ -11864,6 +12187,12 @@ public class GameServiceServiceImpl implements GameServiceService {
                 for (EqCharacters eq : characters.getEqCharactersList()) {
                     guardianB.applyXilianBonuses(eq.getXilianList());
                 }
+            }
+            // 开战初始当前血量（世界BOSS血池持久化：上限满值、当前按倍率扣减）；未设置则保持满血
+            if (characters.getInitHp() != null) {
+                guardianB.setCurrentHp(characters.getInitHp());
+                // 同步开战当前血量到战报Character.hp，供前端进场初始化血条（否则BOSS小头像恒显满血）
+                character.setHp(characters.getInitHp());
             }
             campB.add(guardianB);
             character.setUuid("B" + character.getId());
@@ -14008,6 +14337,414 @@ public class GameServiceServiceImpl implements GameServiceService {
         baseResp.setSuccess(1);
         baseResp.setData(eqCharacter.getIsSuo());
         baseResp.setErrorMsg("操作成功");
+        return baseResp;
+    }
+
+    // ==================================================================================
+    // 装备技能书系统（Phase 1：数据 + 后端 + 前端 UI，不接入战斗）
+    // ==================================================================================
+    /** 凝神石道具 item_id（game_item_base / game_player_bag） */
+    private static final int NINGSHEN_ITEM_ID = 557;
+    /** 技能书道具 item_id：初级/中级/高级 */
+    private static final int[] SKILL_BOOK_ITEM_IDS = {454, 455, 456};
+    /** 单件装备可保存的技能总数上限（含使用中 1 条） */
+    private static final int MAX_SKILL_SLOT = 5;
+
+    /** 保存技能的凝神石消耗：档位基础值(低10/中20/高40) + step(5) × 当前已学技能数 */
+    private int eqSaveCost(int tier, int currentCount) {
+        int base = tier == 0 ? 10 : (tier == 1 ? 20 : 40);
+        return base + 5 * currentCount;
+    }
+
+    /** 读取背包中凝神石数量 */
+    private BigDecimal getNingshenCount(String userId) {
+        GamePlayerBag bag = gamePlayerBagMapper.goIntoListByIdAndItemId(userId, NINGSHEN_ITEM_ID);
+        return (bag == null || bag.getItemCount() == null) ? BigDecimal.ZERO : bag.getItemCount();
+    }
+
+    /** 扣减背包物品数量（不少于0；扣到0置 is_delete=1） */
+    private void consumeBagItem(String userId, int itemId, int amount) {
+        GamePlayerBag bag = gamePlayerBagMapper.goIntoListByIdAndItemId(userId, itemId);
+        if (bag == null || bag.getItemCount() == null) return;
+        BigDecimal remain = bag.getItemCount().subtract(new BigDecimal(amount));
+        if (remain.compareTo(BigDecimal.ZERO) > 0) {
+            bag.setItemCount(remain);
+        } else {
+            bag.setItemCount(BigDecimal.ZERO);
+            bag.setIsDelete("1");
+        }
+        gamePlayerBagMapper.updateById(bag);
+    }
+
+    /**
+     * 技能等级实时计算（简化版）：level = max(1, floor(宝石等级之和 / 槽数))。
+     * 宝石等级来自 craft_eq.level（按镶嵌宝石 itemId 匹配，取最大值，与宝石加成口径一致）；
+     * 槽位数 = ceil(星级)（与前端 team 节点 i<star 的可用槽数一致），空槽按 0 计入分母。
+     */
+    private int calcEqSkillLevel(Integer eqUuid, BigDecimal star) {
+        int slotCount = (star == null) ? 0 : (int) Math.ceil(star.doubleValue());
+        if (slotCount <= 0) return 1;
+        List<GameEquipInlay> inlays = gameEquipInlayMapper.selectList(new LambdaQueryWrapper<GameEquipInlay>()
+                .eq(GameEquipInlay::getEquipUniqueId, eqUuid));
+        int sum = 0;
+        if (inlays != null && !inlays.isEmpty()) {
+            List<CraftEq> craftEqList = GameConfigCache.getAllCraftEqs();
+            for (GameEquipInlay inlay : inlays) {
+                if (inlay.getItemId() == null) continue;
+                int lv = craftEqList.stream()
+                        .filter(c -> inlay.getItemId().equals(c.getItemId()))
+                        .mapToInt(CraftEq::getLevel).max().orElse(0);
+                sum += lv;
+            }
+        }
+        int level = (int) Math.floor((double) sum / slotCount);
+        return Math.max(1, level);
+    }
+
+    /** 按 weight 权重从技能池随机抽 1 个 */
+    private EqSkillBase drawByWeight(List<EqSkillBase> pool) {
+        int total = pool.stream().mapToInt(s -> (s.getWeight() == null ? 0 : s.getWeight())).sum();
+        if (total <= 0) return pool.get(new Random().nextInt(pool.size()));
+        int r = new Random().nextInt(total);
+        int acc = 0;
+        for (EqSkillBase s : pool) {
+            acc += (s.getWeight() == null ? 0 : s.getWeight());
+            if (r < acc) return s;
+        }
+        return pool.get(pool.size() - 1);
+    }
+
+    /** 技能效果数值 = 每级效果值 effect_value × 技能等级(受宝石影响)；无配置返回 null */
+    private BigDecimal calcEqSkillValue(BigDecimal perLevel, int level) {
+        if (perLevel == null) return null;
+        BigDecimal v = perLevel.multiply(new BigDecimal(level)).stripTrailingZeros();
+        if (v.scale() < 0) v = v.setScale(0);
+        return v;
+    }
+
+    /** 把描述里的 {v} 占位符替换为按等级换算的具体数值 */
+    private String fillEqSkillDesc(String desc, BigDecimal perLevel, int level) {
+        if (desc == null) return null;
+        BigDecimal v = calcEqSkillValue(perLevel, level);
+        if (v == null) return desc;
+        return desc.replace("{v}", v.toPlainString());
+    }
+
+    /** 解析装备穿戴英雄的卡 id：同站位(go_into_num)的角色；未穿戴返回 null */
+    private String resolveWearerHeroId(Integer userId, Integer goIntoNum) {
+        if (userId == null || goIntoNum == null || goIntoNum == 0) return null;
+        List<Characters> chars = charactersMapper.selectByUserId(userId);
+        if (chars == null) return null;
+        for (Characters c : chars) {
+            if (c.getGoIntoNum() != null && c.getGoIntoNum().equals(goIntoNum)
+                    && (c.getIsDelete() == null || "0".equals(c.getIsDelete()))) {
+                return c.getId();
+            }
+        }
+        return null;
+    }
+
+    /** 组装某装备已学技能列表：回填技能名/档位/描述/图标 + 实时技能等级；使用中排首位 */
+    private List<EqCharacterSkill> buildEqSkillList(Integer eqUuid, BigDecimal star) {
+        List<EqCharacterSkill> list = eqCharacterSkillMapper.selectList(new LambdaQueryWrapper<EqCharacterSkill>()
+                .eq(EqCharacterSkill::getEqUuid, eqUuid)
+                .orderByDesc(EqCharacterSkill::getIsActive)
+                .orderByAsc(EqCharacterSkill::getSlotIndex));
+        int level = calcEqSkillLevel(eqUuid, star);
+        for (EqCharacterSkill s : list) {
+            EqSkillBase base = eqSkillBaseMapper.selectById(s.getSkillId());
+            if (base != null) {
+                s.setName(base.getName());
+                s.setTier(base.getTier());
+                s.setEffectValue(calcEqSkillValue(base.getEffectValue(), level));
+                s.setDescription(fillEqSkillDesc(base.getDescription(), base.getEffectValue(), level));
+            }
+            s.setSkillLevel(level);
+        }
+        return list;
+    }
+
+    /** 统一登录/参数校验：返回 User；失败时 baseResp 已置错误 */
+    private User eqSkillUser(TokenDto token, BaseResp baseResp) {
+        if (token == null || Xtool.isNull(token.getToken())) {
+            baseResp.setSuccess(0);
+            baseResp.setErrorMsg("登录过期");
+            return null;
+        }
+        if (Xtool.isNull(token.getUserId())) {
+            baseResp.setSuccess(0);
+            baseResp.setErrorMsg("登录过期");
+            return null;
+        }
+        User user = userMapper.selectUserByUserId(Integer.parseInt(token.getUserId()));
+        if (user == null) {
+            baseResp.setSuccess(0);
+            baseResp.setErrorMsg("用户不存在");
+            return null;
+        }
+        return user;
+    }
+
+    @Override
+    public BaseResp eqSkillList(TokenDto token, HttpServletRequest request) throws Exception {
+        BaseResp baseResp = new BaseResp();
+        User user = eqSkillUser(token, baseResp);
+        if (user == null) return baseResp;
+        if (Xtool.isNull(token.getId())) {
+            baseResp.setSuccess(0);
+            baseResp.setErrorMsg("参数错误");
+            return baseResp;
+        }
+        String userId = token.getUserId();
+        Integer eqUuid = Integer.parseInt(token.getId());
+        EqCharacters eqCharacter = eqCharactersMapper.listById(userId, token.getId());
+        if (eqCharacter == null) {
+            baseResp.setSuccess(0);
+            baseResp.setErrorMsg("装备不存在");
+            return baseResp;
+        }
+        List<EqCharacterSkill> skillList = buildEqSkillList(eqUuid, eqCharacter.getStar());
+        Map<String, Object> data = new HashMap<>();
+        data.put("skillList", skillList);
+        data.put("skillLevel", calcEqSkillLevel(eqUuid, eqCharacter.getStar()));
+        data.put("ningshenCount", getNingshenCount(userId));
+        data.put("skillCount", skillList.size());
+        data.put("maxSlot", MAX_SKILL_SLOT);
+        data.put("ningshenItemId", NINGSHEN_ITEM_ID);
+        baseResp.setSuccess(1);
+        baseResp.setData(data);
+        return baseResp;
+    }
+
+    @Override
+    public BaseResp eqSkillBookList(TokenDto token, HttpServletRequest request) throws Exception {
+        BaseResp baseResp = new BaseResp();
+        User user = eqSkillUser(token, baseResp);
+        if (user == null) return baseResp;
+        String userId = token.getUserId();
+        List<Map<String, Object>> books = new ArrayList<>();
+        for (int bookItemId : SKILL_BOOK_ITEM_IDS) {
+            GamePlayerBag bag = gamePlayerBagMapper.goIntoListByIdAndItemId(userId, bookItemId);
+            BigDecimal count = (bag == null || bag.getItemCount() == null) ? BigDecimal.ZERO : bag.getItemCount();
+            if (count.compareTo(BigDecimal.ZERO) <= 0) continue;
+            GameItemBase item = GameConfigCache.getItemBase(bookItemId);
+            EqSkillBook cfg = eqSkillBookMapper.selectById(bookItemId);
+            Map<String, Object> m = new HashMap<>();
+            m.put("bookItemId", bookItemId);
+            m.put("stackCount", count);
+            if (item != null) {
+                m.put("name", item.getItemName());
+                m.put("description", item.getDescription());
+                m.put("icon", item.getIcon());
+                m.put("quality", item.getQuality());
+            }
+            if (cfg != null) {
+                m.put("tier", cfg.getTier());
+                m.put("drawScope", cfg.getDrawScope());
+            }
+            books.add(m);
+        }
+        baseResp.setSuccess(1);
+        baseResp.setData(books);
+        return baseResp;
+    }
+
+    @Override
+    @Transactional
+    @NoRepeatSubmit(limitSeconds = 1)
+    public BaseResp eqDrawSkill(TokenDto token, HttpServletRequest request) throws Exception {
+        BaseResp baseResp = new BaseResp();
+        User user = eqSkillUser(token, baseResp);
+        if (user == null) return baseResp;
+        if (Xtool.isNull(token.getId()) || Xtool.isNull(token.getStr())) {
+            baseResp.setSuccess(0);
+            baseResp.setErrorMsg("参数错误");
+            return baseResp;
+        }
+        String userId = token.getUserId();
+        Integer eqUuid = Integer.parseInt(token.getId());
+        Integer bookItemId = Integer.parseInt(token.getStr());
+        EqCharacters eqCharacter = eqCharactersMapper.listById(userId, token.getId());
+        if (eqCharacter == null) {
+            baseResp.setSuccess(0);
+            baseResp.setErrorMsg("装备不存在");
+            return baseResp;
+        }
+        EqSkillBook book = eqSkillBookMapper.selectById(bookItemId);
+        if (book == null) {
+            baseResp.setSuccess(0);
+            baseResp.setErrorMsg("技能书配置不存在");
+            return baseResp;
+        }
+        GamePlayerBag bag = gamePlayerBagMapper.goIntoListByIdAndItemId(userId, bookItemId);
+        if (bag == null || bag.getItemCount() == null || bag.getItemCount().compareTo(BigDecimal.ONE) < 0) {
+            baseResp.setSuccess(0);
+            baseResp.setErrorMsg("技能书不足");
+            return baseResp;
+        }
+        // 组池：通用池按档位；英雄池按穿戴英雄
+        List<EqSkillBase> pool;
+        if (book.getDrawScope() != null && book.getDrawScope() == 1) {
+            String heroId = Xtool.isNull(book.getHeroId())
+                    ? resolveWearerHeroId(user.getUserId(), eqCharacter.getGoIntoNum())
+                    : book.getHeroId();
+            if (heroId == null) {
+                baseResp.setSuccess(0);
+                baseResp.setErrorMsg("英雄技能书只能用于已穿戴的装备");
+                return baseResp;
+            }
+            pool = eqSkillBaseMapper.selectList(new LambdaQueryWrapper<EqSkillBase>()
+                    .eq(EqSkillBase::getScope, 1).eq(EqSkillBase::getHeroId, heroId));
+        } else {
+            pool = eqSkillBaseMapper.selectList(new LambdaQueryWrapper<EqSkillBase>()
+                    .eq(EqSkillBase::getScope, 0).eq(EqSkillBase::getTier, book.getTier()));
+        }
+        if (pool == null || pool.isEmpty()) {
+            baseResp.setSuccess(0);
+            baseResp.setErrorMsg("暂无可领悟的技能，请联系运营配置");
+            return baseResp;
+        }
+        // 消耗 1 本技能书
+        consumeBagItem(userId, bookItemId, 1);
+        EqSkillBase drawn = drawByWeight(pool);
+        int level = calcEqSkillLevel(eqUuid, eqCharacter.getStar());
+        GamePlayerBag bagAfter = gamePlayerBagMapper.goIntoListByIdAndItemId(userId, bookItemId);
+        BigDecimal bookRemain = (bagAfter == null || bagAfter.getItemCount() == null) ? BigDecimal.ZERO : bagAfter.getItemCount();
+        Map<String, Object> data = new HashMap<>();
+        data.put("skillId", drawn.getSkillId());
+        data.put("name", drawn.getName());
+        data.put("tier", drawn.getTier());
+        data.put("description", fillEqSkillDesc(drawn.getDescription(), drawn.getEffectValue(), level));
+        data.put("effectValue", calcEqSkillValue(drawn.getEffectValue(), level));
+        data.put("level", level);
+        data.put("bookRemain", bookRemain);
+        baseResp.setSuccess(1);
+        baseResp.setData(data);
+        return baseResp;
+    }
+
+    @Override
+    @Transactional
+    @NoRepeatSubmit(limitSeconds = 1)
+    public BaseResp eqSaveSkill(TokenDto token, HttpServletRequest request) throws Exception {
+        BaseResp baseResp = new BaseResp();
+        User user = eqSkillUser(token, baseResp);
+        if (user == null) return baseResp;
+        if (Xtool.isNull(token.getId()) || Xtool.isNull(token.getStr())) {
+            baseResp.setSuccess(0);
+            baseResp.setErrorMsg("参数错误");
+            return baseResp;
+        }
+        String userId = token.getUserId();
+        Integer eqUuid = Integer.parseInt(token.getId());
+        Integer skillId = Integer.parseInt(token.getStr());
+        EqCharacters eqCharacter = eqCharactersMapper.listById(userId, token.getId());
+        if (eqCharacter == null) {
+            baseResp.setSuccess(0);
+            baseResp.setErrorMsg("装备不存在");
+            return baseResp;
+        }
+        EqSkillBase skill = eqSkillBaseMapper.selectById(skillId);
+        if (skill == null) {
+            baseResp.setSuccess(0);
+            baseResp.setErrorMsg("技能不存在");
+            return baseResp;
+        }
+        List<EqCharacterSkill> exist = eqCharacterSkillMapper.selectList(new LambdaQueryWrapper<EqCharacterSkill>()
+                .eq(EqCharacterSkill::getEqUuid, eqUuid));
+        // 相同技能无法保存
+        for (EqCharacterSkill s : exist) {
+            if (s.getSkillId() != null && s.getSkillId().equals(skillId)) {
+                baseResp.setSuccess(0);
+                baseResp.setErrorMsg("已拥有该技能，无法重复保存");
+                return baseResp;
+            }
+        }
+        // 技能栏已满
+        if (exist.size() >= MAX_SKILL_SLOT) {
+            baseResp.setSuccess(0);
+            baseResp.setErrorMsg("技能栏已满");
+            return baseResp;
+        }
+        // 凝神石消耗
+        int cost = eqSaveCost(skill.getTier() == null ? 0 : skill.getTier(), exist.size());
+        BigDecimal ningshen = getNingshenCount(userId);
+        if (ningshen.compareTo(new BigDecimal(cost)) < 0) {
+            baseResp.setSuccess(0);
+            baseResp.setErrorMsg("凝神石不足，需要" + cost);
+            return baseResp;
+        }
+        consumeBagItem(userId, NINGSHEN_ITEM_ID, cost);
+        // 首条自动置为使用中
+        EqCharacterSkill rec = new EqCharacterSkill();
+        rec.setEqUuid(eqUuid);
+        rec.setUserId(user.getUserId());
+        rec.setSkillId(skillId);
+        rec.setSlotIndex(exist.size());
+        rec.setIsActive(exist.isEmpty() ? 1 : 0);
+        eqCharacterSkillMapper.insert(rec);
+        Map<String, Object> data = new HashMap<>();
+        data.put("skillList", buildEqSkillList(eqUuid, eqCharacter.getStar()));
+        data.put("ningshenCount", getNingshenCount(userId));
+        data.put("cost", cost);
+        baseResp.setSuccess(1);
+        baseResp.setData(data);
+        baseResp.setErrorMsg("保存成功");
+        return baseResp;
+    }
+
+    @Override
+    @Transactional
+    @NoRepeatSubmit(limitSeconds = 1)
+    public BaseResp eqSetActiveSkill(TokenDto token, HttpServletRequest request) throws Exception {
+        BaseResp baseResp = new BaseResp();
+        User user = eqSkillUser(token, baseResp);
+        if (user == null) return baseResp;
+        if (Xtool.isNull(token.getId()) || Xtool.isNull(token.getStr())) {
+            baseResp.setSuccess(0);
+            baseResp.setErrorMsg("参数错误");
+            return baseResp;
+        }
+        String userId = token.getUserId();
+        Integer eqUuid = Integer.parseInt(token.getId());
+        Integer skillUuid = Integer.parseInt(token.getStr());
+        EqCharacters eqCharacter = eqCharactersMapper.listById(userId, token.getId());
+        if (eqCharacter == null) {
+            baseResp.setSuccess(0);
+            baseResp.setErrorMsg("装备不存在");
+            return baseResp;
+        }
+        EqCharacterSkill target = eqCharacterSkillMapper.selectById(skillUuid);
+        if (target == null || !eqUuid.equals(target.getEqUuid())) {
+            baseResp.setSuccess(0);
+            baseResp.setErrorMsg("技能不存在");
+            return baseResp;
+        }
+        List<EqCharacterSkill> all = eqCharacterSkillMapper.selectList(new LambdaQueryWrapper<EqCharacterSkill>()
+                .eq(EqCharacterSkill::getEqUuid, eqUuid));
+        // 与当前使用中相同则拒绝替换
+        for (EqCharacterSkill s : all) {
+            if (s.getIsActive() != null && s.getIsActive() == 1
+                    && s.getSkillId() != null && s.getSkillId().equals(target.getSkillId())) {
+                baseResp.setSuccess(0);
+                baseResp.setErrorMsg("该技能已在使用中");
+                return baseResp;
+            }
+        }
+        // 全部置 0，再把目标置 1
+        for (EqCharacterSkill s : all) {
+            if (s.getIsActive() != null && s.getIsActive() == 1 && !s.getUuid().equals(target.getUuid())) {
+                s.setIsActive(0);
+                eqCharacterSkillMapper.updateById(s);
+            }
+        }
+        target.setIsActive(1);
+        eqCharacterSkillMapper.updateById(target);
+        Map<String, Object> data = new HashMap<>();
+        data.put("skillList", buildEqSkillList(eqUuid, eqCharacter.getStar()));
+        baseResp.setSuccess(1);
+        baseResp.setData(data);
+        baseResp.setErrorMsg("替换成功");
         return baseResp;
     }
 

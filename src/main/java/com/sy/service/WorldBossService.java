@@ -6,6 +6,7 @@ import com.sy.model.game.WorldBossRecord;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.LocalTime;
 import java.util.List;
 
 /**
@@ -35,6 +36,14 @@ public interface WorldBossService {
     /** 查询指定日期的排班（boss_date 唯一，可能为 null） */
     WorldBossDaily getScheduleByDate(LocalDate date);
 
+    /**
+     * 带自恢复的排班查询：先按日期查，若当天无排班（如 00:00 定时任务因调度线程池卡死/停机错过未补跑）
+     * 则兜底调用一次 prepareDailySchedule 生成当天排班后再返回。默认时间窗 09:00-23:00。
+     *
+     * @return 当天排班；无启用模板时仍可能为 null
+     */
+    WorldBossDaily getScheduleByDateWithFallback(LocalDate date);
+
     /** 查询指定日期已开启的排班（is_open=1） */
     List<WorldBossDaily> listOpenSchedules(LocalDate date);
 
@@ -56,7 +65,7 @@ public interface WorldBossService {
      * @param roleId   玩家角色ID
      * @param roleName 玩家角色名
      * @param damage   本次伤害
-     * @param hitCount 本次攻击次数
+     * @param hitCount 本次挑战次数（语义为“挑战次数”，每次成功挑战固定传 1）
      * @return 累计后的记录
      */
     WorldBossRecord accumulateDamage(LocalDate bossDate, Long roleId, String roleName, long damage, int hitCount);
@@ -99,4 +108,15 @@ public interface WorldBossService {
      * @return 当天有排班且更新成功返回 true
      */
     boolean writeDailyRates(LocalDate date, BigDecimal hpRate, BigDecimal atkRate, BigDecimal speedRate);
+
+    /**
+     * 每日生成当天世界BOSS排班（供定时任务调用）：
+     * <p>若当天已有排班行：将 hp_rate/atk_rate/speed_rate 复位满值(1.00)，刷新开启/结束时间并置 is_open=1；
+     * 若当天无行：从启用模板列表按日期轮换选一个 base_boss_id 新增一行（三率=1.00，is_open=1）。
+     *
+     * @param startTime 当天开启时间（为 null 时默认 09:00）
+     * @param endTime   当天结束时间（为 null 时默认 23:00）
+     * @return 生成/复位后的当天排班；无启用模板时返回 null
+     */
+    WorldBossDaily prepareDailySchedule(LocalDate date, LocalTime startTime, LocalTime endTime);
 }

@@ -31,10 +31,10 @@ public class EqCard {
     private String profession;
     @TableField("introduce")
     private String introduce;
-    //0兵刃1防具2法器3宝具
+    //0兵刃 1防具 2宝具 3法器（与前端装备槽 nameNode 序一致）
     @TableField("eq_type")
     private Integer eqType;
-    //
+    //子类序号 1~12：1剑 2弓 3法杖 4衣服 5头盔 6鞋子 7戒指 8项链 9披风 10印章 11葫芦 12魂幡
     @TableField("eq_type2")
     private Integer eqType2;
     @TableField("wl_atk")

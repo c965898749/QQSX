@@ -35,7 +35,7 @@ public class WorldBossRecord {
     @TableField("total_damage")
     private Long totalDamage;
 
-    /** 攻击次数 */
+    /** 挑战次数（前端以“攻击次数”展示；每次成功世界BOSS挑战 +1） */
     @TableField("hit_count")
     private Integer hitCount;
 

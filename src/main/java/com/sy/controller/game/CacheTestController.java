@@ -93,7 +93,6 @@ public class CacheTestController {
         
         stats.put("cards", GameConfigCache.getAllCards().size());
         stats.put("characters", GameConfigCache.getAllCharacterConfigs().size());
-        stats.put("eqCards", GameConfigCache.getAllEqCards().size());
         stats.put("activityConfigs", GameConfigCache.getAllActivityConfigs().size());
         stats.put("itemBases", GameConfigCache.getAllItemBases().size());
         stats.put("itemShops", GameConfigCache.getAllItemShops().size());

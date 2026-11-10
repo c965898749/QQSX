@@ -105,6 +105,12 @@ public interface GameServiceService {
      * 战后按BOSS最终三维回写当日倍率，击杀(hp_rate=0)时全服广播；每次挑战增加用户功勋5，每次挑战CD 1分钟
      */
     BaseResp worldBossChallenge(TokenDto token, HttpServletRequest request) throws Exception;
+
+    /**
+     * 世界BOSS信息：返回当天排班的开启/结束时间、hp_rate、BOSS名及服务器当前时间，
+     * 供前端控制挑战按钮状态与倒计时（未到点/已结束/已被击败）
+     */
+    BaseResp worldBossInfo(TokenDto token, HttpServletRequest request);
     BaseResp start6(TokenDto token, HttpServletRequest request) throws Exception;
     BaseResp feiShenhechen(TokenDto token, HttpServletRequest request) throws Exception;
     BaseResp jingji(TokenDto token, HttpServletRequest request) throws Exception;
@@ -136,10 +142,26 @@ public interface GameServiceService {
     BaseResp queryBeRobLog(TokenDto token, HttpServletRequest request) throws Exception;
     BaseResp getArenaCards(TokenDto token, HttpServletRequest request) throws Exception;
     void sendRawrd();
+    void worldBossSendReward();
     void executeMothlyTask();
     void deleteAll();
     void sendTuoRawrd();
     void addActCode();
     void syncLastWeekRank();
     BaseResp toggleEquipSuo(TokenDto token, HttpServletRequest request) throws Exception;
+
+    /**
+     * 装备技能书系统（Phase 1：数据 + 后端 + 前端 UI，不接入战斗）。
+     * 技能等级实时按装备宝石计算：max(1, floor((Σ宝石等级 / ceil(星级)) / 10 * 2))。
+     */
+    /** 查询某装备的技能列表(区分使用中/待使用) + 凝神石余额 + 下次保存消耗 + 技能等级 */
+    BaseResp eqSkillList(TokenDto token, HttpServletRequest request) throws Exception;
+    /** 查询背包中拥有的技能书列表(低/中/高/英雄)，含持有数量 */
+    BaseResp eqSkillBookList(TokenDto token, HttpServletRequest request) throws Exception;
+    /** 确认：消耗 1 本技能书，从对应池按权重随机抽 1 个技能（仅返回预览，不落库） */
+    BaseResp eqDrawSkill(TokenDto token, HttpServletRequest request) throws Exception;
+    /** 保存：消耗凝神石，把预览技能写入该装备已学列表；相同技能/技能栏已满则拒绝 */
+    BaseResp eqSaveSkill(TokenDto token, HttpServletRequest request) throws Exception;
+    /** 替换：把某条已学技能设为使用中（免费），与当前使用中相同则拒绝 */
+    BaseResp eqSetActiveSkill(TokenDto token, HttpServletRequest request) throws Exception;
 }

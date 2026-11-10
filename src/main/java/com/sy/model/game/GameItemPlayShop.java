@@ -31,4 +31,6 @@ public class GameItemPlayShop {
     private String description;
     @TableField("is_delete")
     private String isDelete;
+    @TableField("sort")
+    private Integer sort;
 }

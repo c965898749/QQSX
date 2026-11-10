@@ -30,9 +30,6 @@ public class GameConfigCache implements CommandLineRunner {
     private CharactersMapper charactersMapper;
     
     @Autowired
-    private EqCardMapper eqCardMapper;
-    
-    @Autowired
     private ActivityConfigMapper activityConfigMapper;
     
     @Autowired
@@ -43,6 +40,9 @@ public class GameConfigCache implements CommandLineRunner {
     
     @Autowired
     private GameItemPlayShopMapper gameItemPlayShopMapper;
+    
+    @Autowired
+    private GameGongxunShopMapper gameGongxunShopMapper;
     
     @Autowired
     private StarSynthesisMainMapper starSynthesisMainMapper;
@@ -86,9 +86,6 @@ public class GameConfigCache implements CommandLineRunner {
     // 角色基础配置缓存 key: characterId
     private static final Map<String, Characters> CHARACTER_CONFIG_CACHE = new ConcurrentHashMap<>();
     
-    // 装备卡牌配置缓存 key: eqCardId
-    private static final Map<String, EqCard> EQ_CARD_CACHE = new ConcurrentHashMap<>();
-    
     // 活动配置缓存 key: activityCode
     private static final Map<String, ActivityConfig> ACTIVITY_CONFIG_CACHE = new ConcurrentHashMap<>();
     
@@ -97,6 +94,9 @@ public class GameConfigCache implements CommandLineRunner {
     
     // 商店物品配置缓存 key: shopItemId
     private static final Map<Integer, GameItemShop> ITEM_SHOP_CACHE = new ConcurrentHashMap<>();
+    
+    // 功勋商城价格配置缓存 key: itemId
+    private static final Map<Integer, GameGongxunShop> GONGXUN_SHOP_CACHE = new ConcurrentHashMap<>();
     
     // 玩法商店配置缓存
     private static List<GameItemPlayShop> ITEM_PLAY_SHOP_CACHE = null;
@@ -203,20 +203,6 @@ public class GameConfigCache implements CommandLineRunner {
     }
     
     /**
-     * 获取装备卡牌配置
-     */
-    public static EqCard getEqCard(String eqCardId) {
-        return EQ_CARD_CACHE.get(eqCardId);
-    }
-    
-    /**
-     * 获取所有装备卡牌配置
-     */
-    public static List<EqCard> getAllEqCards() {
-        return EQ_CARD_CACHE.values().stream().toList();
-    }
-    
-    /**
      * 获取活动配置
      */
     public static ActivityConfig getActivityConfig(String activityCode) {
@@ -256,6 +242,20 @@ public class GameConfigCache implements CommandLineRunner {
      */
     public static List<GameItemShop> getAllItemShops() {
         return ITEM_SHOP_CACHE.values().stream().toList();
+    }
+    
+    /**
+     * 获取功勋商城价格配置（按 itemId）
+     */
+    public static GameGongxunShop getGongxunShop(Integer itemId) {
+        return GONGXUN_SHOP_CACHE.get(itemId);
+    }
+    
+    /**
+     * 获取所有功勋商城价格配置
+     */
+    public static List<GameGongxunShop> getAllGongxunShops() {
+        return GONGXUN_SHOP_CACHE.values().stream().toList();
     }
     
     /**
@@ -401,11 +401,11 @@ public class GameConfigCache implements CommandLineRunner {
         try {
             loadCardCache();
             loadCharacterConfigCache();
-            loadEqCardCache();
             loadActivityConfigCache();
             loadItemBaseCache();
             loadItemShopCache();
             loadItemPlayShopCache();
+            loadGongxunShopCache();
             loadStarSynthesisCache();
             loadCraftCache();
             loadCeremonialGiftCache();
@@ -421,10 +421,10 @@ public class GameConfigCache implements CommandLineRunner {
             log.info("========== 游戏配置数据加载完成 ==========");
             log.info("卡牌配置数量: {}", CARD_CACHE.size());
             log.info("角色配置数量: {}", CHARACTER_CONFIG_CACHE.size());
-            log.info("装备卡牌配置数量: {}", EQ_CARD_CACHE.size());
             log.info("活动配置数量: {}", ACTIVITY_CONFIG_CACHE.size());
             log.info("物品基础配置数量: {}", ITEM_BASE_CACHE.size());
             log.info("商店物品配置数量: {}", ITEM_SHOP_CACHE.size());
+            log.info("功勋商城价格配置数量: {}", GONGXUN_SHOP_CACHE.size());
             log.info("玩法商店配置数量: {}", ITEM_PLAY_SHOP_CACHE != null ? ITEM_PLAY_SHOP_CACHE.size() : 0);
             log.info("星合成主配置数量: {}", STAR_SYNTHESIS_MAIN_CACHE != null ? STAR_SYNTHESIS_MAIN_CACHE.size() : 0);
             log.info("星合成材料配置数量: {}", STAR_SYNTHESIS_MATERIALS_CACHE != null ? STAR_SYNTHESIS_MATERIALS_CACHE.size() : 0);
@@ -467,17 +467,6 @@ public class GameConfigCache implements CommandLineRunner {
         }
     }
 
-    private void loadEqCardCache() {
-        List<EqCard> eqCards = eqCardMapper.selectAll();
-        if (eqCards != null && !eqCards.isEmpty()) {
-            for (EqCard eqCard : eqCards) {
-                if (eqCard.getId() != null) {
-                    EQ_CARD_CACHE.put(eqCard.getId(), eqCard);
-                }
-            }
-        }
-    }
-
     private void loadActivityConfigCache() {
         List<ActivityConfig> activityConfigs = activityConfigMapper.selectAll();
         if (activityConfigs != null && !activityConfigs.isEmpty()) {
@@ -513,6 +502,17 @@ public class GameConfigCache implements CommandLineRunner {
 
     private void loadItemPlayShopCache() {
         ITEM_PLAY_SHOP_CACHE = gameItemPlayShopMapper.selectAll();
+    }
+    
+    private void loadGongxunShopCache() {
+        List<GameGongxunShop> shops = gameGongxunShopMapper.selectList(null);
+        if (shops != null && !shops.isEmpty()) {
+            for (GameGongxunShop shop : shops) {
+                if (shop.getItemId() != null) {
+                    GONGXUN_SHOP_CACHE.put(shop.getItemId(), shop);
+                }
+            }
+        }
     }
 
     private void loadStarSynthesisCache() {

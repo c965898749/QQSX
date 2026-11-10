@@ -867,6 +867,27 @@ public class GameContoller {
     }
 
     /**
+     * 世界BOSS信息查询（当天排班时间窗/hp_rate/BOSS名/服务器时间，前端按状态控制挑战按钮）
+     *
+     * @param token
+     * @param request
+     * @return
+     */
+    @PostMapping("worldBossInfo")
+    @CrossOrigin
+    public BaseResp worldBossInfo(@RequestBody TokenDto token, HttpServletRequest request) {
+        BaseResp baseResp = new BaseResp();
+        try {
+            baseResp = gameServiceService.worldBossInfo(token, request);
+            return baseResp;
+        } catch (Exception e) {
+            e.printStackTrace();
+            baseResp.setSuccess(0);
+            return baseResp;
+        }
+    }
+
+    /**
      * 夺取，抢夺
      *
      * @param token
@@ -2149,6 +2170,77 @@ public class GameContoller {
         BaseResp baseResp = new BaseResp();
         try {
             baseResp = gameServiceService.toggleEquipSuo(token, request);
+            return baseResp;
+        } catch (Exception e) {
+            e.printStackTrace();
+            baseResp.setSuccess(0);
+            return baseResp;
+        }
+    }
+
+    // ===================== 装备技能书系统（Phase 1）=====================
+    @PostMapping("eqSkillList")
+    @CrossOrigin
+    public BaseResp eqSkillList(@RequestBody TokenDto token, HttpServletRequest request) {
+        BaseResp baseResp = new BaseResp();
+        try {
+            baseResp = gameServiceService.eqSkillList(token, request);
+            return baseResp;
+        } catch (Exception e) {
+            e.printStackTrace();
+            baseResp.setSuccess(0);
+            return baseResp;
+        }
+    }
+
+    @PostMapping("eqSkillBookList")
+    @CrossOrigin
+    public BaseResp eqSkillBookList(@RequestBody TokenDto token, HttpServletRequest request) {
+        BaseResp baseResp = new BaseResp();
+        try {
+            baseResp = gameServiceService.eqSkillBookList(token, request);
+            return baseResp;
+        } catch (Exception e) {
+            e.printStackTrace();
+            baseResp.setSuccess(0);
+            return baseResp;
+        }
+    }
+
+    @PostMapping("eqDrawSkill")
+    @CrossOrigin
+    public BaseResp eqDrawSkill(@RequestBody TokenDto token, HttpServletRequest request) {
+        BaseResp baseResp = new BaseResp();
+        try {
+            baseResp = gameServiceService.eqDrawSkill(token, request);
+            return baseResp;
+        } catch (Exception e) {
+            e.printStackTrace();
+            baseResp.setSuccess(0);
+            return baseResp;
+        }
+    }
+
+    @PostMapping("eqSaveSkill")
+    @CrossOrigin
+    public BaseResp eqSaveSkill(@RequestBody TokenDto token, HttpServletRequest request) {
+        BaseResp baseResp = new BaseResp();
+        try {
+            baseResp = gameServiceService.eqSaveSkill(token, request);
+            return baseResp;
+        } catch (Exception e) {
+            e.printStackTrace();
+            baseResp.setSuccess(0);
+            return baseResp;
+        }
+    }
+
+    @PostMapping("eqSetActiveSkill")
+    @CrossOrigin
+    public BaseResp eqSetActiveSkill(@RequestBody TokenDto token, HttpServletRequest request) {
+        BaseResp baseResp = new BaseResp();
+        try {
+            baseResp = gameServiceService.eqSetActiveSkill(token, request);
             return baseResp;
         } catch (Exception e) {
             e.printStackTrace();

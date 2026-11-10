@@ -14,6 +14,7 @@ import org.springframework.stereotype.Service;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.math.BigDecimal;
 import java.util.Collections;
 import java.util.List;
@@ -77,6 +78,22 @@ public class WorldBossServiceImpl implements WorldBossService {
         // boss_date 唯一，最多一条
         return worldBossDailyMapper.selectOne(new LambdaQueryWrapper<WorldBossDaily>()
                 .eq(WorldBossDaily::getBossDate, date));
+    }
+
+    @Override
+    public WorldBossDaily getScheduleByDateWithFallback(LocalDate date) {
+        if (date == null) {
+            return null;
+        }
+        WorldBossDaily daily = getScheduleByDate(date);
+        if (daily != null) {
+            return daily;
+        }
+        // 自恢复：当天无排班（多为 00:00 定时任务错过未跑），兜底生成一次再查；prepareDailySchedule 幂等，
+        // 时间窗传 null 走默认 09:00-23:00
+        log.warn("世界BOSS排班自恢复：{} 无排班，兜底调用 prepareDailySchedule 生成", date);
+        prepareDailySchedule(date, null, null);
+        return getScheduleByDate(date);
     }
 
     @Override
@@ -239,6 +256,53 @@ public class WorldBossServiceImpl implements WorldBossService {
         daily.setSpeedRate(speedRate);
         daily.setUpdateTime(LocalDateTime.now());
         worldBossDailyMapper.updateById(daily);
+        log.info("世界BOSS每日倍率已更新：date={}, id={}, hpRate={}, atkRate={}, speedRate={}", date, daily.getId(), hpRate, atkRate, speedRate);
         return true;
+    }
+
+    @Override
+    public WorldBossDaily prepareDailySchedule(LocalDate date, LocalTime startTime, LocalTime endTime) {
+        if (date == null) {
+            return null;
+        }
+        LocalTime open = startTime != null ? startTime : LocalTime.of(9, 0);
+        LocalTime close = endTime != null ? endTime : LocalTime.of(23, 0);
+        WorldBossDaily daily = worldBossDailyMapper.selectOne(new LambdaQueryWrapper<WorldBossDaily>()
+                .eq(WorldBossDaily::getBossDate, date));
+        if (daily != null) {
+            // 已存在：三率复位满值，刷新时间窗并重新开启
+            daily.setHpRate(FULL_RATE);
+            daily.setAtkRate(FULL_RATE);
+            daily.setSpeedRate(FULL_RATE);
+            daily.setStartTime(open);
+            daily.setEndTime(close);
+            daily.setIsOpen(1);
+            daily.setUpdateTime(LocalDateTime.now());
+            worldBossDailyMapper.updateById(daily);
+            log.info("世界BOSS每日排班复位：date={} 三率=1.00 时间窗={}-{}", date, open, close);
+            return daily;
+        }
+        // 新增：从启用模板按日期轮换选一个
+        List<WorldBossBase> actives = listActiveBossTemplates();
+        if (actives == null || actives.isEmpty()) {
+            log.warn("世界BOSS每日排班：{} 无启用模板，无法新增", date);
+            return null;
+        }
+        int idx = (int) Math.floorMod(date.toEpochDay(), actives.size());
+        WorldBossBase boss = actives.get(idx);
+        WorldBossDaily nd = new WorldBossDaily();
+        nd.setBossDate(date);
+        nd.setBaseBossId(boss.getId());
+        nd.setStartTime(open);
+        nd.setEndTime(close);
+        nd.setHpRate(FULL_RATE);
+        nd.setAtkRate(FULL_RATE);
+        nd.setSpeedRate(FULL_RATE);
+        nd.setIsOpen(1);
+        nd.setCreateTime(LocalDateTime.now());
+        nd.setUpdateTime(LocalDateTime.now());
+        worldBossDailyMapper.insert(nd);
+        log.info("世界BOSS每日排班新增：date={} base_boss_id={}({}) 时间窗={}-{}", date, boss.getId(), boss.getBossName(), open, close);
+        return nd;
     }
 }
