@@ -12,7 +12,8 @@ import java.util.Map;
  * <p>背景：世界BOSS伤害榜已改成多服合并，榜上会出现别服玩家。各实例的主库彼此独立
  * 且 userId 会跨服重号，本服库里那个 id 是另一个人，所以「查看对方战队」必须把请求
  * 转给玩家所在服的实例，用它自己库里的数据回答。
- * <p>只在 application.properties 的 crossserver.* 下配置，两套部署各自填对端地址。
+ * <p>对端地址现在以共用库的 world_boss_server_peer 表为准（见 {@code WorldBossNodeRegistry}），
+ * 这里的 peers 只是表为空时的兜底；只有内部口令还留在 application.properties（表里只存服务名与 IP）。
  */
 @Data
 @Component
@@ -23,9 +24,9 @@ public class CrossServerProperties {
     private String secret = "";
 
     /**
-     * 对端节点表：服务器名=基础URL，多个用分号分隔。
-     * <p>服务器名必须和那个实例的 worldboss.server-name 完全一致（榜单就是按它认服的）；
-     * 只列「别人的服」，列了自己的那行也不会影响（本服判断优先走 worldboss.server-name）。
+     * 对端节点兜底：服务器名=基础URL，多个用分号分隔。
+     * <p>只在两张节点表都读不到内容时才会用到（开发机、老部署还没往表里填行）。
+     * 服务器名必须与对端在 world_boss_server 里那行完全一致（榜单就是按名字认服的）；只列“别人的服”。
      */
     private String peers = "";
 

@@ -89,7 +89,7 @@ public interface WorldBossService {
     /**
      * 查询某玩家在指定日期的记录。
      * <p>世界BOSS库由多个服务器实例共用，而 userId 在各服会重复，因此取本服口径时
-     * server 必须传自己的 worldboss.server-name（传 null 则不按服过滤，仅运维排查时用）。
+     * server 必须传本服名（由 world_boss_server 表按本机 IP 命中，拿法见 GameServiceServiceImpl#worldBossServerName；传 null 则不按服过滤，仅运维排查时用）。
      */
     WorldBossRecord findRoleRecord(LocalDate bossDate, Long roleId, String server);
 

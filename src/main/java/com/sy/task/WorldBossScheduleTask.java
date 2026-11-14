@@ -6,6 +6,7 @@ import com.sy.model.game.WorldBossBase;
 import com.sy.model.game.WorldBossDaily;
 import com.sy.service.GameServiceService;
 import com.sy.service.WorldBossService;
+import com.sy.tool.WorldBossNodeRegistry;
 import com.sy.tool.WorldBossSchemaHealer;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -38,6 +39,10 @@ public class WorldBossScheduleTask {
     @Autowired
     private WorldBossSchemaHealer worldBossSchemaHealer;
 
+    /** 节点表预加载：heal 刚把 world_boss_server 建出来时靠它立刻重读，不靠快照过期 */
+    @Autowired
+    private WorldBossNodeRegistry worldBossNodeRegistry;
+
     /** 世界BOSS每日开启时间 09:00 */
     private static final LocalTime OPEN_TIME = LocalTime.of(9, 0);
     /** 世界BOSS每日结束时间 23:00 */
@@ -69,6 +74,8 @@ public class WorldBossScheduleTask {
             String healed = worldBossSchemaHealer.heal();
             if (healed != null && !healed.contains("无需变更")) {
                 log.warn("世界BOSS库结构自愈：{}", healed);
+                // 节点两张表有可能就是这次刚建好的：不重读的话，本服身份最长还要等一个快照周期
+                log.info("世界BOSS节点表重读：{}", worldBossNodeRegistry.reload());
             }
             int created = worldBossService.createFutureSchedules(today, scheduleAheadDays);
             if (created > 0) {
@@ -90,6 +97,8 @@ public class WorldBossScheduleTask {
      * 进程一起来就把世界BOSS库的结构与数据补到可用，并一次铺出今天往后 scheduleAheadDays 天的排班行。
      * <p>先 heal 再补建：列齐了、is_active 不再是 NULL，插入那一句才走得过去。
      * 补完玩家立刻就能打，不用等任何 cron，也不用管以前那天定时任务有没有跑成。
+     * <p>末尾主动重读一次节点表：两个启动监听器（本任务的 heal 与 WorldBossNodeRegistry 的预加载）顺序不定，
+     * 预加载跑在前面的话表还不存在，这一步把刚建好的 world_boss_server / _peer 读进来，本服名不用等 60 秒。
      */
     @EventListener(ApplicationReadyEvent.class)
     public void ensureWorldBossDailyRowOnStartup() {
@@ -99,6 +108,7 @@ public class WorldBossScheduleTask {
             int created = worldBossService.createFutureSchedules(today, scheduleAheadDays);
             log.info("世界BOSS排班启动自检：新增 {} 行（覆盖 {} ~ {}），{}",
                     created, today, today.plusDays(scheduleAheadDays - 1L), worldBossService.dailyScheduleReport(today));
+            log.info("世界BOSS节点启动预加载：{}", worldBossNodeRegistry.reload());
         } catch (Exception e) {
             log.error("世界BOSS排班启动自检异常，date=" + today, e);
         }

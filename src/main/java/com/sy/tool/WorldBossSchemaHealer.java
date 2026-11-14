@@ -179,6 +179,9 @@ public class WorldBossSchemaHealer {
             done.addAll(ensureColumns(jdbc, "world_boss_record", RECORD_COLUMNS, failed));
             ensureRecordIndex(jdbc, done, failed);
 
+            // 2.1) 节点表（只有服务名与 IP）：本服身份与对端地址都靠它，启动预加载在它们上面跑
+            ensureNodeTables(jdbc, done);
+
             // 3) 三个倍率列统一到 6 位小数：标度太小（DECIMAL(3,2)）时单次伤害占比会被四舍五入回原值，
             //    表现为「打了但 hp_rate 纹丝不动」
             ensureRateScale(jdbc, done, failed);
@@ -319,6 +322,34 @@ public class WorldBossSchemaHealer {
         } catch (Exception e) {
             // 没索引只是慢一点，不影响能不能打，记进结论即可
             failed.add("idx_boss_date_role 未建成：" + brief(e));
+        }
+    }
+
+    /**
+     * 两张节点表：只存服务名与 IP，已经存在就什么都不做。
+     * <p>不替运营插数据：本服叫什么、内网 IP 是哪个只有人知道，插错了会让记录写到错的服上；
+     * 表为空时 {@code WorldBossNodeRegistry} 会回退到原来的 properties，服务不会因为空表而进不去。
+     */
+    private void ensureNodeTables(JdbcTemplate jdbc, List<String> done) {
+        try {
+            jdbc.execute("CREATE TABLE IF NOT EXISTS `world_boss_server` ("
+                    + "`id` INT NOT NULL AUTO_INCREMENT COMMENT '主键',"
+                    + "`server_name` VARCHAR(64) NOT NULL COMMENT '服务器名（与前端 serverList 一致）',"
+                    + "`server_ip` VARCHAR(64) NOT NULL COMMENT '这台机器自己的内网 IP，进程用它对号入座',"
+                    + "PRIMARY KEY (`id`), UNIQUE KEY `uk_server_name` (`server_name`),"
+                    + " UNIQUE KEY `uk_server_ip` (`server_ip`)"
+                    + ") ENGINE=InnoDB DEFAULT CHARSET=utf8 COMMENT='世界BOSS各服身份表（只存服务名与IP）'");
+            jdbc.execute("CREATE TABLE IF NOT EXISTS `world_boss_server_peer` ("
+                    + "`id` INT NOT NULL AUTO_INCREMENT COMMENT '主键',"
+                    + "`server_name` VARCHAR(64) NOT NULL COMMENT '对端服务器名',"
+                    + "`server_ip` VARCHAR(64) NOT NULL COMMENT '对端内网 IP，端口用配置 worldboss.peer-port',"
+                    + "PRIMARY KEY (`id`), UNIQUE KEY `uk_peer_name` (`server_name`)"
+                    + ") ENGINE=InnoDB DEFAULT CHARSET=utf8 COMMENT='世界BOSS跨服节点子表（其他服，可无限扩充）'");
+            if (!tableExists(jdbc, "world_boss_server")) {
+                done.add("world_boss_server 建表未生效（多为权限不够）");
+            }
+        } catch (Exception e) {
+            log.warn("世界BOSS节点表自愈失败（节点信息会回退到配置文件）：{}", brief(e));
         }
     }
 

@@ -328,7 +328,7 @@ public class WorldBossServiceImpl implements WorldBossService {
                 .eq(WorldBossRecord::getBossDate, bossDate)
                 .eq(WorldBossRecord::getRoleId, roleId)
                 // 多服共库，而 userId 在各服会重复：不带 server 就可能把别服同 id 玩家的记录当成“我的”，
-                // 取本服口径请传 worldboss.server-name（传 null 则不过滤，仅运维排查时用）
+                // 取本服口径请传本服名（world_boss_server 表按本机 IP 命中出来的那个；传 null 则不过滤，仅运维排查时用）
                 .eq(hasText(server), WorldBossRecord::getServer, server)
                 .orderByDesc(WorldBossRecord::getTotalDamage)
                 .last("limit 1"));

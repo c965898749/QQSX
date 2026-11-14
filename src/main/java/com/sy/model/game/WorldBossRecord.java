@@ -45,7 +45,7 @@ public class WorldBossRecord {
     @TableField("role_lv")
     private Integer roleLv;
 
-    /** 所属服务器名（取配置 worldboss.server-name，如“梦回西游”“再续前缘”）；名次与榜单已改为全服合并，该字段只用于判定记录归属哪个服（发奖只能由本服实例发） */
+    /** 所属服务器名（写入时取本服名，即 world_boss_server 里按本机 IP 命中的那个 server_name）；名次与榜单已改为全服合并，该字段只用于判定记录归属哪个服（发奖只能由本服实例发） */
     @TableField("server")
     private String server;
 

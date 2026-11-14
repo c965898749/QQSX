@@ -5,7 +5,8 @@ import com.sy.config.CrossServerProperties;
 import com.sy.model.resp.BaseResp;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.context.event.EventListener;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -17,13 +18,13 @@ import org.springframework.web.client.RestTemplate;
 import java.util.HashMap;
 import java.util.Map;
 
-import javax.annotation.PostConstruct;
-
 /**
  * 跨服内部接口客户端：本服实例去对端实例要数据（目前只有「查看对方战队」）。
  * <p>为什么在服务端转发而不是让前端直连对端：前端的 token 是各自服的登录态，
  * 拿本服的 token 去请求别服接口在鉴权上不成立；由后端用内部口令转发，
  * 客户端只面对自己那一个服务器地址，也不用考虑跨域和对端地址暴露给玩家。
+ * <p>对端地址与本服名都取自 {@link WorldBossNodeRegistry}（即 world_boss_server / world_boss_server_peer 两张表），
+ * 只有口令还留在 crossserver.secret：表里只存服务名与 IP。
  */
 @Slf4j
 @Component
@@ -35,29 +36,31 @@ public class CrossServerClient {
     @Autowired
     private ObjectMapper objectMapper;
 
-    /** 本实例服务器名，作为 fromServer 带过去供对端排障 */
-    @Value("${worldboss.server-name:}")
-    private String worldBossServerName;
+    /** 节点表预加载结果：本服名与对端地址都从这里拿（表读不到时它会自己回退到 properties） */
+    @Autowired
+    private WorldBossNodeRegistry worldBossNodeRegistry;
 
     private volatile RestTemplate restTemplate;
 
     /**
-     * 启动时把跨服配置的真实生效情况打一行日志：配错（光填了口令没填地址、或者两者反了）
-     * 在玩家点开后没有任何外在症状，只能到榜上点别人才发现，事后查成本很高
+     * 启动完成后把跨服配置的真实生效情况打一行日志：配错（光填了口令没填地址、或者两者反了）
+     * 在玩家点开后没有任何外在症状，只能到榜上点别人才发现，事后查成本很高。
+     * <p>放在启动完成而不是 Bean 初始化：那一步要读世界BOSS库，不能让节点表把进程启动卡住。
      */
-    @PostConstruct
+    @EventListener(ApplicationReadyEvent.class)
     public void logCrossServerConfig() {
         if (!crossServerProperties.enabled()) {
             log.info("跨服查看战队未启用（crossserver.secret 为空）：世界BOSS榜上别服玩家点开头像会提示暂未开放");
             return;
         }
-        Map<String, String> peers = crossServerProperties.peerMap();
+        Map<String, String> peers = worldBossNodeRegistry.peerMap();
         if (peers.isEmpty()) {
-            log.warn("跨服查看战队已设口令但未配 crossserver.peers（或格式不是 服务器名=地址）：别服玩家的查看请求会全部被拒");
+            log.warn("跨服查看战队已设口令但没有任何对端节点（world_boss_server_peer 与 crossserver.peers 都是空的）：别服玩家的查看请求会全部被拒");
             return;
         }
-        log.info("跨服查看战队已启用，对端节点={}，超时={}/{}ms",
-                peers, crossServerProperties.getConnectTimeout(), crossServerProperties.getReadTimeout());
+        log.info("跨服查看战队已启用，{}，超时={}/{}ms",
+                worldBossNodeRegistry.describe(),
+                crossServerProperties.getConnectTimeout(), crossServerProperties.getReadTimeout());
     }
 
     /**
@@ -82,10 +85,10 @@ public class CrossServerClient {
             log.warn("跨服查看战队被请求但未配置 crossserver.secret，server={} targetUserId={}", server, targetUserId);
             return baseResp;
         }
-        String peerUrl = crossServerProperties.peerUrl(server);
+        String peerUrl = worldBossNodeRegistry.peerUrl(server);
         if (peerUrl == null) {
             baseResp.setErrorMsg("该玩家所在服务器暂不支持跨服查看");
-            log.warn("跨服查看战队：peers 里没有服务器「{}」，请补 crossserver.peers 配置", server);
+            log.warn("跨服查看战队：节点表里没有服务器「{}」，请往 world_boss_server_peer 加一行（服务名+内网IP）", server);
             return baseResp;
         }
         String url = apiUrl(peerUrl);
@@ -94,7 +97,7 @@ public class CrossServerClient {
             payload.put("secret", crossServerProperties.getSecret().trim());
             payload.put("targetUserId", targetUserId);
             payload.put("arenaLevel", arenaLevel == null ? 0 : arenaLevel);
-            payload.put("fromServer", worldBossServerName);
+            payload.put("fromServer", worldBossNodeRegistry.serverName());
             payload.put("requesterUserId", playerUserId);
             HttpHeaders headers = new HttpHeaders();
             headers.setContentType(MediaType.APPLICATION_JSON);

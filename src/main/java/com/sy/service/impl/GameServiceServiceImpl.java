@@ -2824,8 +2824,26 @@ public class GameServiceServiceImpl implements GameServiceService {
         gameGiftRecordMapper.insert(record);
 
         // 9. 发放奖励（调用道具/金币发放接口，此处简化）
+        // 同步构建奖励明细列表下发，前端 Rewards 弹窗直观展示（与 dailyReceive 的返回结构对齐）
         List<GameGiftContent> contents = gameGiftContentMapper.selectByGiftId(giftId);
+        List<PveReward> rewards = new ArrayList<>();
         for (GameGiftContent content : contents) {
+            PveReward pveReward = new PveReward();
+            pveReward.setItemId(content.getItemId() == null ? null : Integer.parseInt(content.getItemId() + ""));
+            pveReward.setRewardAmount(content.getItemQuantity());
+            pveReward.setRewardType(content.getItemType() + "");
+            pveReward.setIndex(0);
+            if ("5".equals(content.getItemType() + "") || "6".equals(content.getItemType() + "")) {
+                // 材料类：名称/图标取自道具基础配置
+                // getItemBase 的参数是 Integer，而 content.getItemId() 是 Long（上面 setItemId 也是这么转的），
+                // 直接传编译不过：不兼容的类型: Long无法转换为Integer
+                GameItemBase base = GameConfigCache.getItemBase(content.getItemId() == null ? null : content.getItemId().intValue());
+                if (base != null) {
+                    pveReward.setItemName(base.getItemName());
+                    pveReward.setImg(base.getIcon());
+                }
+            }
+            rewards.add(pveReward);
             if ("7".equals(content.getItemType() + "")) {
                 //功勋（世界BOSS排名礼包等，user.gongxun 独立字段，末尾 updateuser 落库）
                 user.setGongxun((user.getGongxun() == null ? 0 : user.getGongxun()) + content.getItemQuantity());
@@ -2904,7 +2922,10 @@ public class GameServiceServiceImpl implements GameServiceService {
         //获取卡牌数据
         List<Characters> characterList = charactersMapper.selectByUserId(user.getUserId());
         info.setCharacterList(formateCharacter(characterList));
-        baseResp.setData(info);
+        Map resultMap = new HashMap();
+        resultMap.put("rewards", rewards);
+        resultMap.put("user", info);
+        baseResp.setData(resultMap);
         baseResp.setSuccess(1);
         baseResp.setErrorMsg("领取成功");
         return baseResp;
@@ -6950,7 +6971,7 @@ public class GameServiceServiceImpl implements GameServiceService {
             log.error("世界BOSS伤害榜查询异常，返回空榜", e);
         }
         // 本服服务器名：前端在世界BOSS榜“我的伤害”行展示，玩家不在榜上时也能取到
-        map.put("worldBossServer", worldBossServerName == null ? "" : worldBossServerName);
+        map.put("worldBossServer", worldBossServerName());
         map.put("worldBossRanking", worldBossRanking);
         baseResp.setData(map);
         baseResp.setSuccess(1);
@@ -6963,10 +6984,16 @@ public class GameServiceServiceImpl implements GameServiceService {
     /**
      * 本实例所属服务器名（世界BOSS库由多个服务器实例共用：伤害记录写入与每日发奖范本按它划分，
      * 名次与榜单则是全服合并）。
-     * <p>梦回西游与再续前缘两套部署各配自己的名字（需与前端 serverList 的服务名一致，榜单会直接展示给玩家）；未配置时为空串，退化为不分服（本地/单服）。
+     * <p>名字来自共用库的 world_boss_server 表：进程拿自己网卡的内网 IP 去对号入座，命中哪一行就代表“我是哪个服”，
+     * 两套部署不用再在配置文件里各写一行中文（还得写 Unicode 转义）。表里认不出自己时它才回退旧的 worldboss.server-name。
      */
-    @Value("${worldboss.server-name:}")
-    private String worldBossServerName;
+    @Autowired
+    private WorldBossNodeRegistry worldBossNodeRegistry;
+
+    /** 本服名（可能为空串：未分服的本地/单服部署）；每次现取，改完表最多等一个快照周期就生效，不用重启 */
+    private String worldBossServerName() {
+        return worldBossNodeRegistry.serverName();
+    }
 
     /** 跨服查看战队的配置（内部口令 + 对端地址表），未配置时跨服点击降级成一句提示而不报错 */
     @Autowired
@@ -7002,6 +7029,12 @@ public class GameServiceServiceImpl implements GameServiceService {
     @Transactional
     public void worldBossSendReward() {
         LocalDate today = LocalDate.now();
+        // 多服部署却认不出自己时不发奖：本服名为空串会被当成“不分服”，
+        // 那会把共库里别的服的记录也在本服主库里生成兑换码（同一个 userId 在两边是两个人，错发且不可补）
+        if (worldBossNodeRegistry.selfUnknown()) {
+            log.error("世界BOSS结算跳过：{} 认不出本服是谁，不能判定哪批记录属于本服。{}", today, worldBossNodeRegistry.describe());
+            return;
+        }
         // 1) 全服统一名次回写
         int ranked = worldBossService.assignRanks(today, WB_RANK_SCOPE, null);
         if (ranked <= 0) {
@@ -7011,7 +7044,7 @@ public class GameServiceServiceImpl implements GameServiceService {
         // 2) 全服前100里属于本服的那部分：名次用全服的，兑换码只发给本服记录
         List<WorldBossRecord> myTop = pickMyServerRecords(worldBossService.rankList(today, WB_RANK_SCOPE, null));
         // 3) 本服全部达标记录（200万以上，含没进全服前100的），幂等判定要一起算上
-        List<WorldBossRecord> myBonus = worldBossService.listByMinDamage(today, worldBossServerName, WB_BONUS_DAMAGE_200W);
+        List<WorldBossRecord> myBonus = worldBossService.listByMinDamage(today, worldBossServerName(), WB_BONUS_DAMAGE_200W);
         // 幂等保护：本服这次该拿奖的记录（上榜的 + 达标的）都已标记已结算，说明今天已经跑过，直接跳过防重复发码
         Map<Long, WorldBossRecord> mySettle = new LinkedHashMap<>();
         for (WorldBossRecord record : myTop) {
@@ -7023,7 +7056,7 @@ public class GameServiceServiceImpl implements GameServiceService {
         boolean allSettled = !mySettle.isEmpty()
                 && mySettle.values().stream().allMatch(r -> r.getIsRewardGet() != null && r.getIsRewardGet() == 1);
         if (allSettled) {
-            log.info("世界BOSS结算：{} [{}] 已结算过，跳过重复", today, worldBossServerName);
+            log.info("世界BOSS结算：{} [{}] 已结算过，跳过重复", today, worldBossServerName());
             return;
         }
         // 礼包兑换截止：一个月后（与竞技场排名奖励一致）
@@ -7048,7 +7081,7 @@ public class GameServiceServiceImpl implements GameServiceService {
         // 3) 全服前10名且伤害达到 8888 万：+10 魂 +20000 功勋 +2000 钻石 +2000 万金币
         //    rank 字段已由第 1 步按全服回写，可直接用它判定名次；listByMinDamage 带 server 条件，拿到的就是本服记录
         List<WorldBossRecord> elite = new ArrayList<>();
-        for (WorldBossRecord record : worldBossService.listByMinDamage(today, worldBossServerName, WB_BONUS_DAMAGE_8888W)) {
+        for (WorldBossRecord record : worldBossService.listByMinDamage(today, worldBossServerName(), WB_BONUS_DAMAGE_8888W)) {
             if (record.getBossRank() != null && record.getBossRank() > 0 && record.getBossRank() <= WB_BONUS_TOP_RANK) {
                 elite.add(record);
             }
@@ -7061,10 +7094,10 @@ public class GameServiceServiceImpl implements GameServiceService {
      * <p>历史存量记录 server 为空串，依旧被排除在本服之外（与分服口径时期一致，只影响改口径当天）。
      */
     private boolean isMyWorldBossServer(String server) {
-        if (isBlankStr(worldBossServerName)) {
+        if (isBlankStr(worldBossServerName())) {
             return true;
         }
-        return server != null && worldBossServerName.equals(server.trim());
+        return server != null && worldBossServerName().equals(server.trim());
     }
 
     /** 从全服榜单里挑出本服记录（名次保持全服口径，只用来限定“给谁发码”） */
@@ -7109,14 +7142,14 @@ public class GameServiceServiceImpl implements GameServiceService {
         String description = "恭喜少侠在世界BOSS讨伐中伤害排名 " + rankDesc + "，专属排名奖励已奉上,含"
                 + worldBossRewardContent(soulNum, gongxunNum, diamondNum, goldNum) + "。";
         sendWorldBossGiftPack(tierRecords, soulNum, gongxunNum, diamondNum, goldNum, "世界BOSS排名奖励", description, endTime);
-        log.info("世界BOSS结算：{} [{}] {} 奖励已发放，人数={}", bossDate, worldBossServerName, rankDesc, tierRecords.size());
+        log.info("世界BOSS结算：{} [{}] {} 奖励已发放，人数={}", bossDate, worldBossServerName(), rankDesc, tierRecords.size());
     }
 
     /** 伤害达标类奖励：先按门槛取本服全量达标记录，再交给 sendWorldBossBonusPack 发放 */
     private void sendWorldBossDamageBonus(long minDamage, LocalDate bossDate,
                                           int soulNum, int gongxunNum, int diamondNum, int goldNum,
                                           String title, Date endTime) {
-        sendWorldBossBonusPack(worldBossService.listByMinDamage(bossDate, worldBossServerName, minDamage),
+        sendWorldBossBonusPack(worldBossService.listByMinDamage(bossDate, worldBossServerName(), minDamage),
                 bossDate, soulNum, gongxunNum, diamondNum, goldNum, title, endTime);
     }
 
@@ -7133,7 +7166,7 @@ public class GameServiceServiceImpl implements GameServiceService {
         String description = "恭喜少侠在世界BOSS讨伐中" + title + "，达标奖励已奉上，含"
                 + worldBossRewardContent(soulNum, gongxunNum, diamondNum, goldNum) + "。";
         sendWorldBossGiftPack(records, soulNum, gongxunNum, diamondNum, goldNum, "世界BOSS伤害达标奖励", description, endTime);
-        log.info("世界BOSS结算：{} [{}] {} 达标奖励已发放，人数={}", bossDate, worldBossServerName, title, records.size());
+        log.info("世界BOSS结算：{} [{}] {} 达标奖励已发放，人数={}", bossDate, worldBossServerName(), title, records.size());
     }
 
     /**
@@ -10043,6 +10076,14 @@ public class GameServiceServiceImpl implements GameServiceService {
     @Override
     public BaseResp worldBossChallenge(TokenDto token, HttpServletRequest request) throws Exception {
         BaseResp baseResp = new BaseResp();
+        // 认不出自己就不让打：world_boss_record.server 是“这条记录归哪个服”的唯一依据，
+        // 空着写进去的记录到 23:05 谁也发不了奖（下面的结算在同样情况下会直接跳过），玩家白打一次还被扣活力
+        if (worldBossNodeRegistry.selfUnknown()) {
+            baseResp.setSuccess(0);
+            baseResp.setErrorMsg("世界BOSS暂未开放，请稍后再试（服务器身份未识别：world_boss_server 里没有本机IP的行）");
+            log.error("世界BOSS挑战被拒：{}", worldBossNodeRegistry.describe());
+            return baseResp;
+        }
         if (token == null || Xtool.isNull(token.getToken())) {
             baseResp.setSuccess(0);
             baseResp.setErrorMsg("登录过期");
@@ -10241,7 +10282,7 @@ public class GameServiceServiceImpl implements GameServiceService {
         // 伤害记录：累计本次对BOSS的伤害；hit_count 语义为“挑战次数”，每次成功挑战固定 +1（命中次数仅保留在上方诊断日志）
         // 头像/等级/服务器名一并写入（世界BOSS库多服共用且 roleId 会重号，合并榜单靠这几个快照字段展示别服玩家）
         worldBossService.accumulateDamage(today, Long.parseLong(userId), user.getNickname(), user.getGameImg(),
-                user.getLv() == null ? null : user.getLv().intValue(), worldBossServerName, bossDamage, 1);
+                user.getLv() == null ? null : user.getLv().intValue(), worldBossServerName(), bossDamage, 1);
         // 击杀（hp_rate回写为0）：全服广播
         if (hpRate.compareTo(BigDecimal.ZERO) <= 0) {
             GameNotice gameNotice = new GameNotice();
