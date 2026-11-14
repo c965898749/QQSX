@@ -8,9 +8,12 @@
 --   · 已学列表里每条技能的「baocun(替换)」= 免费把它设为「使用中」(is_active=1)。
 --   · 相同技能不能重复保存；不能把与当前使用中相同的技能再替换。
 --   · 凝神石消耗 cost = 档位基础值(低10/中20/高40) + step(5) × 该装备当前已学技能数。
---   · 技能等级不落库，实时按装备宝石计算：level = max(1, floor((Σ宝石等级 / ceil(星级)) / 10 * 2))。
+--   · 技能等级不落库，实时按装备宝石计算：level = max(1, min(50, floor(Σ宝石等级 / ceil(星级))))（=宝石平均等级）。
 --   · 装备穿戴判定沿用 go_into_num != 0；穿戴英雄 hero_id = characters.id(同站位)。
 --   · 本期 effect_type / effect_value 仅预留，不改变战斗数值。
+--   · ⚠ 数值平衡：等级能到 50（宝石满级 Lv50），所以本文件里所有 effect_value 已按 ÷5 折算，
+--     最终数值 = 折算后每级值 × 等级，满级恰好等于最初的“每级值 ×10”设计区间。
+--     改等级公式与改 effect_value 只能动一边，否则数值会翻倍叠加（详见 GameServiceServiceImpl#calcEqSkillLevel）。
 --
 -- ⚠ 执行前务必备库。
 -- =====================================================================================
@@ -30,7 +33,8 @@
 --    tier：0低 1中 2高（通用池档位）；scope：0通用池 1英雄池
 --    hero_id：scope=1 时非空，对应 characters.id（穿戴英雄卡编码）；scope=0 时为 NULL
 --    weight：抽取权重（同池内相对概率）；effect_type 预留（本期不生效）；
---    effect_value = 每级效果值（非最终值），实际数值 = effect_value × 技能等级(受宝石影响)；
+--    effect_value = 每级效果值（非最终值），实际数值 = effect_value × 技能等级(=宝石平均等级，1~50)；
+--    下面的数值已按 ÷5 折算过（原设计值/5），目的是让 Lv50 落在原设计的 Lv10 数值上；
 --    description 中的 {v} 为数值占位符，后端按等级回填成具体数字后再下发。
 -- -------------------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS eq_skill_base (
@@ -49,28 +53,38 @@ CREATE TABLE IF NOT EXISTS eq_skill_base (
     KEY idx_pool (scope, tier, hero_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='装备技能表(技能池)';
 
--- 通用池种子（低/中/高三档；effect_value=每级数值，description 用 {v} 占位）
-INSERT INTO eq_skill_base (skill_id, name, tier, scope, description, weight, effect_value) VALUES
-    (1,  '破甲',     0, 0, '攻击时无视目标{v}%防御。',                 30, 2.00),
-    (2,  '嗜血',     0, 0, '造成伤害时按{v}%回复自身生命。',            30, 3.00),
-    (3,  '铁骨',     0, 0, '受到的物理伤害降低{v}%。',                 30, 2.00),
-    (4,  '迅捷',     0, 0, '提升自身出手速度{v}点。',                   20, 5.00),
-    (5,  '连击',     1, 0, '普攻有{v}%几率追加一次攻击。',             25, 4.00),
-    (6,  '格挡',     1, 0, '有{v}%几率完全抵挡一次伤害。',             25, 3.00),
-    (7,  '狂暴',     1, 0, '生命越低攻击越高，最多提升{v}%攻击。',       20, 4.00),
-    (8,  '法术精通', 1, 0, '提升技能伤害系数{v}%。',                   20, 6.00),
-    (9,  '不灭',     2, 0, '受到致命伤害时保留1点生命并提升{v}%防御。',  10, 5.00),
-    (10, '天罡护体', 2, 0, '受击时反弹{v}%物理伤害。',                 10, 3.00),
-    (11, '致命一击', 2, 0, '攻击有{v}%几率造成高额暴击伤害。',         8,  8.00),
-    (12, '万象归一', 2, 0, '回合开始时按{v}%几率净化自身所有负面状态。',      7,  10.00)
-ON DUPLICATE KEY UPDATE name=VALUES(name), tier=VALUES(tier), scope=VALUES(scope), description=VALUES(description), weight=VALUES(weight), effect_value=VALUES(effect_value);
+-- 通用池数值修正（低/中/高三档；effect_value=每级数值【已 ÷5 折算】）
+--   · 只用 UPDATE 改 effect_value，不再用 INSERT ... ON DUPLICATE KEY UPDATE：
+--     后者会把运营在库里改过的 name / description / weight 一并冲回种子值。
+--   · 写的是绝对值，重复执行结果一致（幂等）。
+--   · ⚠ 本段不再负责建数据：若是全新库（表是空的），UPDATE 影响 0 行，
+--     需先手工插入下面这 12 行，或从 git 历史版本取原来的 INSERT 段执行。
+--   · ⚠ 本段也不管 effect_type：当年建表把它当预留列、INSERT 里没写，所以这 16 条（含下面 13~16）
+--     的 effect_type 在库里是 NULL。补标签的 UPDATE 在 eq_skill_base_100.sql 末尾（幂等，可直接重跑）；
+--     目前无任何代码读取 effect_type，NULL 不影响线上，只影响以后实装战斗结算时的按类归类。
+UPDATE eq_skill_base SET effect_value = 0.40 WHERE skill_id = 1;   -- 破甲     无视防御%   → 满级 20%
+UPDATE eq_skill_base SET effect_value = 0.60 WHERE skill_id = 2;   -- 嗜血     吸血%       → 满级 30%
+UPDATE eq_skill_base SET effect_value = 0.40 WHERE skill_id = 3;   -- 铁骨     物理减伤%   → 满级 20%
+UPDATE eq_skill_base SET effect_value = 1.00 WHERE skill_id = 4;   -- 迅捷     速度点      → 满级 50 点
+UPDATE eq_skill_base SET effect_value = 0.80 WHERE skill_id = 5;   -- 连击     追击几率%   → 满级 40%
+UPDATE eq_skill_base SET effect_value = 0.60 WHERE skill_id = 6;   -- 格挡     抵挡几率%   → 满级 30%
+UPDATE eq_skill_base SET effect_value = 0.80 WHERE skill_id = 7;   -- 狂暴     攻击上限%   → 满级 40%
+UPDATE eq_skill_base SET effect_value = 1.20 WHERE skill_id = 8;   -- 法术精通 技能系数%   → 满级 60%
+UPDATE eq_skill_base SET effect_value = 1.00 WHERE skill_id = 9;   -- 不灭     防御%       → 满级 50%
+UPDATE eq_skill_base SET effect_value = 0.60 WHERE skill_id = 10;  -- 天罡护体 反弹%       → 满级 30%
+UPDATE eq_skill_base SET effect_value = 1.60 WHERE skill_id = 11;  -- 致命一击 暴击几率%   → 满级 80%
+UPDATE eq_skill_base SET effect_value = 2.00 WHERE skill_id = 12;  -- 万象归一 净化几率%   → 满级 100%（嫌强可改 1.60 = 80%）
+
+-- 检查：应为 12；小于 12 说明有行不存在，对应的 UPDATE 没生效，需先补建行
+SELECT COUNT(*) AS 通用池行数, SUM(effect_value IS NULL) AS 未配数值的行
+FROM eq_skill_base WHERE scope = 0 AND skill_id BETWEEN 1 AND 12;
 
 -- 英雄池种子（scope=1，示例；运营按需在 characters.id 对应英雄上扩展行）
 INSERT INTO eq_skill_base (skill_id, name, tier, hero_id, scope, description, weight, effect_value) VALUES
-    (13, '烈焰焚天',   2, '101', 1, '该英雄专属：攻击附加灼烧，每层灼烧造成{v}%最大生命持续伤害。', 50,  1.00),
-    (14, '寒冰护盾',   2, '101', 1, '该英雄专属：受击时生成吸收{v}%最大生命的护盾。',               50,  5.00),
-    (15, '疾风连斩',   2, '102', 1, '该英雄专属：出手极快，攻速提升{v}%。',                       100, 5.00),
-    (16, '大地的怒吼', 2, '103', 1, '该英雄专属：普攻附带{v}%几率范围眩晕。',                     100, 10.00)
+    (13, '烈焰焚天',   2, '101', 1, '该英雄专属：攻击附加灼烧，每层灼烧造成{v}%最大生命持续伤害。', 50,  0.20),
+    (14, '寒冰护盾',   2, '101', 1, '该英雄专属：受击时生成吸收{v}%最大生命的护盾。',               50,  1.00),
+    (15, '疾风连斩',   2, '102', 1, '该英雄专属：出手极快，攻速提升{v}%。',                       100, 1.00),
+    (16, '大地的怒吼', 2, '103', 1, '该英雄专属：普攻附带{v}%几率范围眩晕。',                     100, 2.00)
 ON DUPLICATE KEY UPDATE name=VALUES(name), tier=VALUES(tier), hero_id=VALUES(hero_id), scope=VALUES(scope), description=VALUES(description), weight=VALUES(weight), effect_value=VALUES(effect_value);
 
 -- -------------------------------------------------------------------------------------

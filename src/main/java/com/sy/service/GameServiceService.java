@@ -2,6 +2,7 @@ package com.sy.service;
 
 import com.sy.model.User;
 import com.sy.model.game.ChatMsg;
+import com.sy.model.game.CrossTeamReq;
 import com.sy.model.game.LevelUpResult;
 import com.sy.model.game.TokenDto;
 import com.sy.model.resp.BaseResp;
@@ -115,6 +116,18 @@ public interface GameServiceService {
     BaseResp feiShenhechen(TokenDto token, HttpServletRequest request) throws Exception;
     BaseResp jingji(TokenDto token, HttpServletRequest request) throws Exception;
     BaseResp duoquJingji(TokenDto token, HttpServletRequest request) throws Exception;
+    /**
+     * 查看对方战队信息：token.userId=我方，token.id=对方userId，
+     * 返回对方上阵卡牌、这些卡牌身上穿戴的装备，以及昵称/等级/头像，
+     * 组装管线与 loginGame 一致，保证双方战力口径相同
+     */
+    BaseResp otherTeamInfo(TokenDto token, HttpServletRequest request) throws Exception;
+
+    /**
+     * 跨服内部接口入口（cross/otherTeamInfo）：对端实例查本服玩家战队，组装管线与 otherTeamInfo 共用。
+     * 只校 crossserver.secret 口令，不校玩家 token
+     */
+    BaseResp crossOtherTeamInfo(CrossTeamReq req) throws Exception;
     BaseResp kuanList(TokenDto token, HttpServletRequest request) throws Exception;
     BaseResp videoList(TokenDto token, HttpServletRequest request) throws Exception;
     BaseResp bosList(TokenDto token, HttpServletRequest request) throws Exception;

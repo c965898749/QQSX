@@ -862,6 +862,10 @@ public class GameContoller {
         } catch (Exception e) {
             e.printStackTrace();
             baseResp.setSuccess(0);
+            // 必须给个 errorMsg：前端取的是 data.errorMsg || "服务器异常"，不给就会把排班库异常直接弹给玩家
+            // 但也不能只留一句“暂未开放”：线上那次真实原因是 world_boss_record 缺 role_lv 列，
+            // 被这句盖住后只能看出“打不了”、看不出卡在哪一步，所以把最里层异常一并带出去
+            baseResp.setErrorMsg("世界BOSS暂未开放，请稍后再试（" + bossCauseBrief(e) + "）");
             return baseResp;
         }
     }
@@ -883,8 +887,28 @@ public class GameContoller {
         } catch (Exception e) {
             e.printStackTrace();
             baseResp.setSuccess(0);
+            // 排班库不可用时也不该把异常抛到前端，按“无排班”降级即可（前端拿到 success!=1 会保持 unknown 状态，不会谎报“今日无世界BOSS”）
+            baseResp.setErrorMsg("世界BOSS暂未开放，请稍后再试（" + bossCauseBrief(e) + "）");
             return baseResp;
         }
+    }
+
+    /**
+     * 世界BOSS 报错文案里的异常摘要：只取最里层一句消息，并裁到很短。
+     * <p>之所以取最里层：MyBatis 会把 SQL 错误包三四层，外层只会说“nested exception”，
+     * 真正能定位问题的是里面那句 Unknown column / Table doesn't exist。
+     */
+    private static String bossCauseBrief(Throwable e) {
+        Throwable t = e;
+        while (t.getCause() != null && t.getCause() != t) {
+            t = t.getCause();
+        }
+        String msg = t.getMessage();
+        if (msg == null || msg.trim().isEmpty()) {
+            msg = t.getClass().getSimpleName();
+        }
+        msg = msg.replaceAll("\\s+", " ").trim();
+        return msg.length() > 120 ? msg.substring(0, 120) : msg;
     }
 
     /**
@@ -983,6 +1007,28 @@ public class GameContoller {
             return baseResp;
         }
     }
+    /**
+     * 查看对方战队信息
+     * @param token
+     * @param request
+     * @return
+     */
+    @PostMapping("otherTeamInfo")
+    @CrossOrigin
+    public BaseResp otherTeamInfo(@RequestBody TokenDto token, HttpServletRequest request) {
+        BaseResp baseResp = new BaseResp();
+        try {
+            baseResp = gameServiceService.otherTeamInfo(token, request);
+            return baseResp;
+        } catch (Exception e) {
+            e.printStackTrace();
+            baseResp.setSuccess(0);
+            // 必须给个 errorMsg：前端取的是 data.errorMsg || "服务器异常"，不给就把内部异常原样弹给玩家
+            baseResp.setErrorMsg("查看对方战队失败，请稍后再试");
+            return baseResp;
+        }
+    }
+
     /**
      * 获取好友列表
      *
